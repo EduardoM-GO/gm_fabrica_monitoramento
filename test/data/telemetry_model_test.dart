@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gm_fabrica_monitoramento/data/models/telemetry_model.dart';
+import 'package:gm_fabrica_monitoramento/data/model/telemetry_model.dart';
 
 void main() {
   group('Telemetry Model Parsing', () {
@@ -36,25 +36,25 @@ void main() {
       expect(telem.freezer2!.isProbeOk, false);
     });
 
-    test('Parses frame with only 1 freezer correctly and keeps freezer2 null', () {
-      final json = {
-        't': 'telem',
-        'up': 14205,
-        'c': 84,
-        'f1': {'temp': 9.25, 'd': 0, 'ok': 1},
-      };
+    test(
+      'Parses frame with only 1 freezer correctly and keeps freezer2 null',
+      () {
+        final json = {
+          't': 'telem',
+          'up': 14205,
+          'c': 84,
+          'f1': {'temp': 9.25, 'd': 0, 'ok': 1},
+        };
 
-      final frame = IncomingFrame.fromJson(json) as TelemetryFrame;
-      expect(frame.freezer1, isNotNull);
-      expect(frame.freezer1!.temp, 9.25);
-      expect(frame.freezer2, isNull);
-    });
+        final frame = IncomingFrame.fromJson(json) as TelemetryFrame;
+        expect(frame.freezer1, isNotNull);
+        expect(frame.freezer1!.temp, 9.25);
+        expect(frame.freezer2, isNull);
+      },
+    );
 
     test('Parses instant hit frame correctly', () {
-      final json = {
-        't': 'hit',
-        'c': 85,
-      };
+      final json = {'t': 'hit', 'c': 85};
 
       final frame = IncomingFrame.fromJson(json);
       expect(frame, isA<HitFrame>());
@@ -71,4 +71,3 @@ void main() {
     });
   });
 }
-

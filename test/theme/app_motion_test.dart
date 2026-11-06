@@ -1,95 +1,104 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gm_fabrica_monitoramento/core/theme/app_motion.dart';
+import 'package:gm_fabrica_monitoramento/src/core/themes/app_motion.dart';
 
 void main() {
   group('AppMotion Tokens & Widgets', () {
-    testWidgets('PressableScale reacts to pointer down and up without blocking taps',
-        (WidgetTester tester) async {
-      bool tapped = false;
+    testWidgets(
+      'PressableScale reacts to pointer down and up without blocking taps',
+      (WidgetTester tester) async {
+        bool tapped = false;
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: Center(
-              child: PressableScale(
-                onTap: () => tapped = true,
-                child: const Text('Button'),
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: PressableScale(
+                  onTap: () => tapped = true,
+                  child: const Text('Button'),
+                ),
               ),
             ),
           ),
-        ),
-      );
+        );
 
-      final animatedScaleFinder = find.byType(AnimatedScale);
-      expect(animatedScaleFinder, findsOneWidget);
+        final animatedScaleFinder = find.byType(AnimatedScale);
+        expect(animatedScaleFinder, findsOneWidget);
 
-      AnimatedScale scaleWidget = tester.widget<AnimatedScale>(animatedScaleFinder);
-      expect(scaleWidget.scale, 1.0);
+        AnimatedScale scaleWidget = tester.widget<AnimatedScale>(
+          animatedScaleFinder,
+        );
+        expect(scaleWidget.scale, 1.0);
 
-      // Pointer down simulates press
-      final gesture = await tester.startGesture(tester.getCenter(find.text('Button')));
-      await tester.pump();
+        // Pointer down simulates press
+        final gesture = await tester.startGesture(
+          tester.getCenter(find.text('Button')),
+        );
+        await tester.pump();
 
-      scaleWidget = tester.widget<AnimatedScale>(animatedScaleFinder);
-      expect(scaleWidget.scale, 0.96);
+        scaleWidget = tester.widget<AnimatedScale>(animatedScaleFinder);
+        expect(scaleWidget.scale, 0.96);
 
-      // Pointer up simulates release
-      await gesture.up();
-      await tester.pumpAndSettle();
+        // Pointer up simulates release
+        await gesture.up();
+        await tester.pumpAndSettle();
 
-      scaleWidget = tester.widget<AnimatedScale>(animatedScaleFinder);
-      expect(scaleWidget.scale, 1.0);
-      expect(tapped, isTrue);
-    });
+        scaleWidget = tester.widget<AnimatedScale>(animatedScaleFinder);
+        expect(scaleWidget.scale, 1.0);
+        expect(tapped, isTrue);
+      },
+    );
 
-    testWidgets('SlidingCounterText rolls only the changed digit (e.g. 24 -> 25)',
-        (WidgetTester tester) async {
-      int count = 24;
+    testWidgets(
+      'SlidingCounterText rolls only the changed digit (e.g. 24 -> 25)',
+      (WidgetTester tester) async {
+        int count = 24;
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: StatefulBuilder(
-            builder: (context, setState) {
-              return Scaffold(
-                body: SlidingCounterText(
-                  value: count,
-                  style: const TextStyle(fontSize: 32),
-                ),
-                floatingActionButton: FloatingActionButton(
-                  onPressed: () => setState(() => count = 25),
-                ),
-              );
-            },
+        await tester.pumpWidget(
+          MaterialApp(
+            home: StatefulBuilder(
+              builder: (context, setState) {
+                return Scaffold(
+                  body: SlidingCounterText(
+                    value: count,
+                    style: const TextStyle(fontSize: 32),
+                  ),
+                  floatingActionButton: FloatingActionButton(
+                    onPressed: () => setState(() => count = 25),
+                  ),
+                );
+              },
+            ),
           ),
-        ),
-      );
+        );
 
-      // Value 24: Tens place has '2', units place has '4'
-      expect(find.bySemanticsLabel('24'), findsOneWidget);
-      expect(find.text('2'), findsOneWidget);
-      expect(find.text('4'), findsOneWidget);
+        // Value 24: Tens place has '2', units place has '4'
+        expect(find.bySemanticsLabel('24'), findsOneWidget);
+        expect(find.text('2'), findsOneWidget);
+        expect(find.text('4'), findsOneWidget);
 
-      // Increment 24 -> 25
-      await tester.tap(find.byType(FloatingActionButton));
-      await tester.pump(); // Deliver tap, starts transition
-      await tester.pump(const Duration(milliseconds: 90));
+        // Increment 24 -> 25
+        await tester.tap(find.byType(FloatingActionButton));
+        await tester.pump(); // Deliver tap, starts transition
+        await tester.pump(const Duration(milliseconds: 90));
 
-      // Tens digit '2' remains completely stationary (still 1 widget)
-      expect(find.text('2'), findsOneWidget);
+        // Tens digit '2' remains completely stationary (still 1 widget)
+        expect(find.text('2'), findsOneWidget);
 
-      // Units digit '4' is exiting while '5' is entering
-      expect(find.text('5'), findsOneWidget);
+        // Units digit '4' is exiting while '5' is entering
+        expect(find.text('5'), findsOneWidget);
 
-      await tester.pumpAndSettle();
-      expect(find.bySemanticsLabel('25'), findsOneWidget);
-      expect(find.text('2'), findsOneWidget);
-      expect(find.text('5'), findsOneWidget);
-      expect(find.text('4'), findsNothing);
-    });
+        await tester.pumpAndSettle();
+        expect(find.bySemanticsLabel('25'), findsOneWidget);
+        expect(find.text('2'), findsOneWidget);
+        expect(find.text('5'), findsOneWidget);
+        expect(find.text('4'), findsNothing);
+      },
+    );
 
-    testWidgets('SmoothProgressBar smoothly updates progress value',
-        (WidgetTester tester) async {
+    testWidgets('SmoothProgressBar smoothly updates progress value', (
+      WidgetTester tester,
+    ) async {
       double progress = 0.2;
 
       await tester.pumpWidget(
@@ -114,7 +123,11 @@ void main() {
       // Settle initial progress to 0.2
       await tester.pumpAndSettle();
       expect(
-        tester.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator)).value,
+        tester
+            .widget<LinearProgressIndicator>(
+              find.byType(LinearProgressIndicator),
+            )
+            .value,
         closeTo(0.2, 0.001),
       );
 
@@ -137,8 +150,9 @@ void main() {
       expect(finalIndicator.value, closeTo(0.8, 0.001));
     });
 
-    testWidgets('BreathingGlow renders and cycles opacity when pulsing',
-        (WidgetTester tester) async {
+    testWidgets('BreathingGlow renders and cycles opacity when pulsing', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
@@ -164,8 +178,9 @@ void main() {
       expect(find.text('Lote Pronto'), findsOneWidget);
     });
 
-    testWidgets('Respects disableAnimations (reduced motion)',
-        (WidgetTester tester) async {
+    testWidgets('Respects disableAnimations (reduced motion)', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: MediaQuery(
@@ -188,9 +203,13 @@ void main() {
       );
 
       // PressableScale does not scale when animations are disabled
-      final gesture = await tester.startGesture(tester.getCenter(find.text('Reduced Press')));
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('Reduced Press')),
+      );
       await tester.pump();
-      final scaleWidget = tester.widget<AnimatedScale>(find.byType(AnimatedScale));
+      final scaleWidget = tester.widget<AnimatedScale>(
+        find.byType(AnimatedScale),
+      );
       expect(scaleWidget.scale, 1.0);
       await gesture.up();
 
