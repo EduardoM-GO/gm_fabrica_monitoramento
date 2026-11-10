@@ -1,11 +1,11 @@
 import 'package:uuid/uuid.dart';
 
 final class GeneratorId {
-  final Uuid _uuid;
+  GeneratorId._();
 
-  GeneratorId() : _uuid = const Uuid();
+  static const _uuid = Uuid();
 
-  String getid() {
+  static String getid() {
     return _uuid.v4();
   }
 }

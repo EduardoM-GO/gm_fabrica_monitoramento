@@ -529,6 +529,17 @@ class $FreezerEventsTableTable extends FreezerEventsTable
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _batchIdMeta = const VerificationMeta(
+    'batchId',
+  );
+  @override
+  late final GeneratedColumn<String> batchId = GeneratedColumn<String>(
+    'batch_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
   static const VerificationMeta _recordedAtMeta = const VerificationMeta(
     'recordedAt',
   );
@@ -552,18 +563,18 @@ class $FreezerEventsTableTable extends FreezerEventsTable
     type: DriftSqlType.double,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _doorOpenMeta = const VerificationMeta(
-    'doorOpen',
+  static const VerificationMeta _isDoorOpenMeta = const VerificationMeta(
+    'isDoorOpen',
   );
   @override
-  late final GeneratedColumn<bool> doorOpen = GeneratedColumn<bool>(
-    'door_open',
+  late final GeneratedColumn<bool> isDoorOpen = GeneratedColumn<bool>(
+    'is_door_open',
     aliasedName,
     false,
     type: DriftSqlType.bool,
     requiredDuringInsert: true,
     defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("door_open" IN (0, 1))',
+      'CHECK ("is_door_open" IN (0, 1))',
     ),
   );
   @override
@@ -583,9 +594,10 @@ class $FreezerEventsTableTable extends FreezerEventsTable
     id,
     syncStatus,
     freezerId,
+    batchId,
     recordedAt,
     temperature,
-    doorOpen,
+    isDoorOpen,
     triggerReason,
   ];
   @override
@@ -613,6 +625,14 @@ class $FreezerEventsTableTable extends FreezerEventsTable
     } else if (isInserting) {
       context.missing(_freezerIdMeta);
     }
+    if (data.containsKey('batch_id')) {
+      context.handle(
+        _batchIdMeta,
+        batchId.isAcceptableOrUnknown(data['batch_id']!, _batchIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_batchIdMeta);
+    }
     if (data.containsKey('recorded_at')) {
       context.handle(
         _recordedAtMeta,
@@ -630,13 +650,16 @@ class $FreezerEventsTableTable extends FreezerEventsTable
     } else if (isInserting) {
       context.missing(_temperatureMeta);
     }
-    if (data.containsKey('door_open')) {
+    if (data.containsKey('is_door_open')) {
       context.handle(
-        _doorOpenMeta,
-        doorOpen.isAcceptableOrUnknown(data['door_open']!, _doorOpenMeta),
+        _isDoorOpenMeta,
+        isDoorOpen.isAcceptableOrUnknown(
+          data['is_door_open']!,
+          _isDoorOpenMeta,
+        ),
       );
     } else if (isInserting) {
-      context.missing(_doorOpenMeta);
+      context.missing(_isDoorOpenMeta);
     }
     return context;
   }
@@ -661,6 +684,10 @@ class $FreezerEventsTableTable extends FreezerEventsTable
         DriftSqlType.string,
         data['${effectivePrefix}freezer_id'],
       )!,
+      batchId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}batch_id'],
+      )!,
       recordedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}recorded_at'],
@@ -669,9 +696,9 @@ class $FreezerEventsTableTable extends FreezerEventsTable
         DriftSqlType.double,
         data['${effectivePrefix}temperature'],
       )!,
-      doorOpen: attachedDatabase.typeMapping.read(
+      isDoorOpen: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
-        data['${effectivePrefix}door_open'],
+        data['${effectivePrefix}is_door_open'],
       )!,
       triggerReason: $FreezerEventsTableTable.$convertertriggerReason.fromSql(
         attachedDatabase.typeMapping.read(
@@ -699,17 +726,19 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
   final String id;
   final SyncStatusEnum syncStatus;
   final String freezerId;
+  final String batchId;
   final DateTime recordedAt;
   final double temperature;
-  final bool doorOpen;
+  final bool isDoorOpen;
   final TriggerFreezerEnum triggerReason;
   const FreezerEvent({
     required this.id,
     required this.syncStatus,
     required this.freezerId,
+    required this.batchId,
     required this.recordedAt,
     required this.temperature,
-    required this.doorOpen,
+    required this.isDoorOpen,
     required this.triggerReason,
   });
   @override
@@ -722,9 +751,10 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
       );
     }
     map['freezer_id'] = Variable<String>(freezerId);
+    map['batch_id'] = Variable<String>(batchId);
     map['recorded_at'] = Variable<DateTime>(recordedAt);
     map['temperature'] = Variable<double>(temperature);
-    map['door_open'] = Variable<bool>(doorOpen);
+    map['is_door_open'] = Variable<bool>(isDoorOpen);
     {
       map['trigger_reason'] = Variable<int>(
         $FreezerEventsTableTable.$convertertriggerReason.toSql(triggerReason),
@@ -738,9 +768,10 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
       id: Value(id),
       syncStatus: Value(syncStatus),
       freezerId: Value(freezerId),
+      batchId: Value(batchId),
       recordedAt: Value(recordedAt),
       temperature: Value(temperature),
-      doorOpen: Value(doorOpen),
+      isDoorOpen: Value(isDoorOpen),
       triggerReason: Value(triggerReason),
     );
   }
@@ -756,9 +787,10 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
         serializer.fromJson<int>(json['syncStatus']),
       ),
       freezerId: serializer.fromJson<String>(json['freezerId']),
+      batchId: serializer.fromJson<String>(json['batchId']),
       recordedAt: serializer.fromJson<DateTime>(json['recordedAt']),
       temperature: serializer.fromJson<double>(json['temperature']),
-      doorOpen: serializer.fromJson<bool>(json['doorOpen']),
+      isDoorOpen: serializer.fromJson<bool>(json['isDoorOpen']),
       triggerReason: $FreezerEventsTableTable.$convertertriggerReason.fromJson(
         serializer.fromJson<int>(json['triggerReason']),
       ),
@@ -773,9 +805,10 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
         $FreezerEventsTableTable.$convertersyncStatus.toJson(syncStatus),
       ),
       'freezerId': serializer.toJson<String>(freezerId),
+      'batchId': serializer.toJson<String>(batchId),
       'recordedAt': serializer.toJson<DateTime>(recordedAt),
       'temperature': serializer.toJson<double>(temperature),
-      'doorOpen': serializer.toJson<bool>(doorOpen),
+      'isDoorOpen': serializer.toJson<bool>(isDoorOpen),
       'triggerReason': serializer.toJson<int>(
         $FreezerEventsTableTable.$convertertriggerReason.toJson(triggerReason),
       ),
@@ -786,17 +819,19 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
     String? id,
     SyncStatusEnum? syncStatus,
     String? freezerId,
+    String? batchId,
     DateTime? recordedAt,
     double? temperature,
-    bool? doorOpen,
+    bool? isDoorOpen,
     TriggerFreezerEnum? triggerReason,
   }) => FreezerEvent(
     id: id ?? this.id,
     syncStatus: syncStatus ?? this.syncStatus,
     freezerId: freezerId ?? this.freezerId,
+    batchId: batchId ?? this.batchId,
     recordedAt: recordedAt ?? this.recordedAt,
     temperature: temperature ?? this.temperature,
-    doorOpen: doorOpen ?? this.doorOpen,
+    isDoorOpen: isDoorOpen ?? this.isDoorOpen,
     triggerReason: triggerReason ?? this.triggerReason,
   );
   FreezerEvent copyWithCompanion(FreezerEventsTableCompanion data) {
@@ -806,13 +841,16 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
           ? data.syncStatus.value
           : this.syncStatus,
       freezerId: data.freezerId.present ? data.freezerId.value : this.freezerId,
+      batchId: data.batchId.present ? data.batchId.value : this.batchId,
       recordedAt: data.recordedAt.present
           ? data.recordedAt.value
           : this.recordedAt,
       temperature: data.temperature.present
           ? data.temperature.value
           : this.temperature,
-      doorOpen: data.doorOpen.present ? data.doorOpen.value : this.doorOpen,
+      isDoorOpen: data.isDoorOpen.present
+          ? data.isDoorOpen.value
+          : this.isDoorOpen,
       triggerReason: data.triggerReason.present
           ? data.triggerReason.value
           : this.triggerReason,
@@ -825,9 +863,10 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
           ..write('id: $id, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('freezerId: $freezerId, ')
+          ..write('batchId: $batchId, ')
           ..write('recordedAt: $recordedAt, ')
           ..write('temperature: $temperature, ')
-          ..write('doorOpen: $doorOpen, ')
+          ..write('isDoorOpen: $isDoorOpen, ')
           ..write('triggerReason: $triggerReason')
           ..write(')'))
         .toString();
@@ -838,9 +877,10 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
     id,
     syncStatus,
     freezerId,
+    batchId,
     recordedAt,
     temperature,
-    doorOpen,
+    isDoorOpen,
     triggerReason,
   );
   @override
@@ -850,9 +890,10 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
           other.id == this.id &&
           other.syncStatus == this.syncStatus &&
           other.freezerId == this.freezerId &&
+          other.batchId == this.batchId &&
           other.recordedAt == this.recordedAt &&
           other.temperature == this.temperature &&
-          other.doorOpen == this.doorOpen &&
+          other.isDoorOpen == this.isDoorOpen &&
           other.triggerReason == this.triggerReason);
 }
 
@@ -860,18 +901,20 @@ class FreezerEventsTableCompanion extends UpdateCompanion<FreezerEvent> {
   final Value<String> id;
   final Value<SyncStatusEnum> syncStatus;
   final Value<String> freezerId;
+  final Value<String> batchId;
   final Value<DateTime> recordedAt;
   final Value<double> temperature;
-  final Value<bool> doorOpen;
+  final Value<bool> isDoorOpen;
   final Value<TriggerFreezerEnum> triggerReason;
   final Value<int> rowid;
   const FreezerEventsTableCompanion({
     this.id = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.freezerId = const Value.absent(),
+    this.batchId = const Value.absent(),
     this.recordedAt = const Value.absent(),
     this.temperature = const Value.absent(),
-    this.doorOpen = const Value.absent(),
+    this.isDoorOpen = const Value.absent(),
     this.triggerReason = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -879,23 +922,26 @@ class FreezerEventsTableCompanion extends UpdateCompanion<FreezerEvent> {
     required String id,
     this.syncStatus = const Value.absent(),
     required String freezerId,
+    required String batchId,
     this.recordedAt = const Value.absent(),
     required double temperature,
-    required bool doorOpen,
+    required bool isDoorOpen,
     required TriggerFreezerEnum triggerReason,
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        freezerId = Value(freezerId),
+       batchId = Value(batchId),
        temperature = Value(temperature),
-       doorOpen = Value(doorOpen),
+       isDoorOpen = Value(isDoorOpen),
        triggerReason = Value(triggerReason);
   static Insertable<FreezerEvent> custom({
     Expression<String>? id,
     Expression<int>? syncStatus,
     Expression<String>? freezerId,
+    Expression<String>? batchId,
     Expression<DateTime>? recordedAt,
     Expression<double>? temperature,
-    Expression<bool>? doorOpen,
+    Expression<bool>? isDoorOpen,
     Expression<int>? triggerReason,
     Expression<int>? rowid,
   }) {
@@ -903,9 +949,10 @@ class FreezerEventsTableCompanion extends UpdateCompanion<FreezerEvent> {
       if (id != null) 'id': id,
       if (syncStatus != null) 'sync_status': syncStatus,
       if (freezerId != null) 'freezer_id': freezerId,
+      if (batchId != null) 'batch_id': batchId,
       if (recordedAt != null) 'recorded_at': recordedAt,
       if (temperature != null) 'temperature': temperature,
-      if (doorOpen != null) 'door_open': doorOpen,
+      if (isDoorOpen != null) 'is_door_open': isDoorOpen,
       if (triggerReason != null) 'trigger_reason': triggerReason,
       if (rowid != null) 'rowid': rowid,
     });
@@ -915,9 +962,10 @@ class FreezerEventsTableCompanion extends UpdateCompanion<FreezerEvent> {
     Value<String>? id,
     Value<SyncStatusEnum>? syncStatus,
     Value<String>? freezerId,
+    Value<String>? batchId,
     Value<DateTime>? recordedAt,
     Value<double>? temperature,
-    Value<bool>? doorOpen,
+    Value<bool>? isDoorOpen,
     Value<TriggerFreezerEnum>? triggerReason,
     Value<int>? rowid,
   }) {
@@ -925,9 +973,10 @@ class FreezerEventsTableCompanion extends UpdateCompanion<FreezerEvent> {
       id: id ?? this.id,
       syncStatus: syncStatus ?? this.syncStatus,
       freezerId: freezerId ?? this.freezerId,
+      batchId: batchId ?? this.batchId,
       recordedAt: recordedAt ?? this.recordedAt,
       temperature: temperature ?? this.temperature,
-      doorOpen: doorOpen ?? this.doorOpen,
+      isDoorOpen: isDoorOpen ?? this.isDoorOpen,
       triggerReason: triggerReason ?? this.triggerReason,
       rowid: rowid ?? this.rowid,
     );
@@ -947,14 +996,17 @@ class FreezerEventsTableCompanion extends UpdateCompanion<FreezerEvent> {
     if (freezerId.present) {
       map['freezer_id'] = Variable<String>(freezerId.value);
     }
+    if (batchId.present) {
+      map['batch_id'] = Variable<String>(batchId.value);
+    }
     if (recordedAt.present) {
       map['recorded_at'] = Variable<DateTime>(recordedAt.value);
     }
     if (temperature.present) {
       map['temperature'] = Variable<double>(temperature.value);
     }
-    if (doorOpen.present) {
-      map['door_open'] = Variable<bool>(doorOpen.value);
+    if (isDoorOpen.present) {
+      map['is_door_open'] = Variable<bool>(isDoorOpen.value);
     }
     if (triggerReason.present) {
       map['trigger_reason'] = Variable<int>(
@@ -975,9 +1027,10 @@ class FreezerEventsTableCompanion extends UpdateCompanion<FreezerEvent> {
           ..write('id: $id, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('freezerId: $freezerId, ')
+          ..write('batchId: $batchId, ')
           ..write('recordedAt: $recordedAt, ')
           ..write('temperature: $temperature, ')
-          ..write('doorOpen: $doorOpen, ')
+          ..write('isDoorOpen: $isDoorOpen, ')
           ..write('triggerReason: $triggerReason, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -3171,6 +3224,430 @@ class FreezersTableCompanion extends UpdateCompanion<Freezer> {
   }
 }
 
+class $RoomEventsTableTable extends RoomEventsTable
+    with TableInfo<$RoomEventsTableTable, RoomEvent> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $RoomEventsTableTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<SyncStatusEnum, int> syncStatus =
+      GeneratedColumn<int>(
+        'sync_status',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(0),
+      ).withConverter<SyncStatusEnum>(
+        $RoomEventsTableTable.$convertersyncStatus,
+      );
+  static const VerificationMeta _batchIdMeta = const VerificationMeta(
+    'batchId',
+  );
+  @override
+  late final GeneratedColumn<String> batchId = GeneratedColumn<String>(
+    'batch_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _recordedAtMeta = const VerificationMeta(
+    'recordedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> recordedAt = GeneratedColumn<DateTime>(
+    'recorded_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  static const VerificationMeta _temperatureMeta = const VerificationMeta(
+    'temperature',
+  );
+  @override
+  late final GeneratedColumn<double> temperature = GeneratedColumn<double>(
+    'temperature',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _humidityMeta = const VerificationMeta(
+    'humidity',
+  );
+  @override
+  late final GeneratedColumn<double> humidity = GeneratedColumn<double>(
+    'humidity',
+    aliasedName,
+    false,
+    type: DriftSqlType.double,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    syncStatus,
+    batchId,
+    recordedAt,
+    temperature,
+    humidity,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'room_events_table';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<RoomEvent> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('batch_id')) {
+      context.handle(
+        _batchIdMeta,
+        batchId.isAcceptableOrUnknown(data['batch_id']!, _batchIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_batchIdMeta);
+    }
+    if (data.containsKey('recorded_at')) {
+      context.handle(
+        _recordedAtMeta,
+        recordedAt.isAcceptableOrUnknown(data['recorded_at']!, _recordedAtMeta),
+      );
+    }
+    if (data.containsKey('temperature')) {
+      context.handle(
+        _temperatureMeta,
+        temperature.isAcceptableOrUnknown(
+          data['temperature']!,
+          _temperatureMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_temperatureMeta);
+    }
+    if (data.containsKey('humidity')) {
+      context.handle(
+        _humidityMeta,
+        humidity.isAcceptableOrUnknown(data['humidity']!, _humidityMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_humidityMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  RoomEvent map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return RoomEvent(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      syncStatus: $RoomEventsTableTable.$convertersyncStatus.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.int,
+          data['${effectivePrefix}sync_status'],
+        )!,
+      ),
+      batchId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}batch_id'],
+      )!,
+      recordedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}recorded_at'],
+      )!,
+      temperature: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}temperature'],
+      )!,
+      humidity: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}humidity'],
+      )!,
+    );
+  }
+
+  @override
+  $RoomEventsTableTable createAlias(String alias) {
+    return $RoomEventsTableTable(attachedDatabase, alias);
+  }
+
+  static JsonTypeConverter2<SyncStatusEnum, int, int> $convertersyncStatus =
+      const EnumIndexConverter<SyncStatusEnum>(SyncStatusEnum.values);
+}
+
+class RoomEvent extends DataClass implements Insertable<RoomEvent> {
+  final String id;
+  final SyncStatusEnum syncStatus;
+  final String batchId;
+  final DateTime recordedAt;
+  final double temperature;
+  final double humidity;
+  const RoomEvent({
+    required this.id,
+    required this.syncStatus,
+    required this.batchId,
+    required this.recordedAt,
+    required this.temperature,
+    required this.humidity,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    {
+      map['sync_status'] = Variable<int>(
+        $RoomEventsTableTable.$convertersyncStatus.toSql(syncStatus),
+      );
+    }
+    map['batch_id'] = Variable<String>(batchId);
+    map['recorded_at'] = Variable<DateTime>(recordedAt);
+    map['temperature'] = Variable<double>(temperature);
+    map['humidity'] = Variable<double>(humidity);
+    return map;
+  }
+
+  RoomEventsTableCompanion toCompanion(bool nullToAbsent) {
+    return RoomEventsTableCompanion(
+      id: Value(id),
+      syncStatus: Value(syncStatus),
+      batchId: Value(batchId),
+      recordedAt: Value(recordedAt),
+      temperature: Value(temperature),
+      humidity: Value(humidity),
+    );
+  }
+
+  factory RoomEvent.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return RoomEvent(
+      id: serializer.fromJson<String>(json['id']),
+      syncStatus: $RoomEventsTableTable.$convertersyncStatus.fromJson(
+        serializer.fromJson<int>(json['syncStatus']),
+      ),
+      batchId: serializer.fromJson<String>(json['batchId']),
+      recordedAt: serializer.fromJson<DateTime>(json['recordedAt']),
+      temperature: serializer.fromJson<double>(json['temperature']),
+      humidity: serializer.fromJson<double>(json['humidity']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'syncStatus': serializer.toJson<int>(
+        $RoomEventsTableTable.$convertersyncStatus.toJson(syncStatus),
+      ),
+      'batchId': serializer.toJson<String>(batchId),
+      'recordedAt': serializer.toJson<DateTime>(recordedAt),
+      'temperature': serializer.toJson<double>(temperature),
+      'humidity': serializer.toJson<double>(humidity),
+    };
+  }
+
+  RoomEvent copyWith({
+    String? id,
+    SyncStatusEnum? syncStatus,
+    String? batchId,
+    DateTime? recordedAt,
+    double? temperature,
+    double? humidity,
+  }) => RoomEvent(
+    id: id ?? this.id,
+    syncStatus: syncStatus ?? this.syncStatus,
+    batchId: batchId ?? this.batchId,
+    recordedAt: recordedAt ?? this.recordedAt,
+    temperature: temperature ?? this.temperature,
+    humidity: humidity ?? this.humidity,
+  );
+  RoomEvent copyWithCompanion(RoomEventsTableCompanion data) {
+    return RoomEvent(
+      id: data.id.present ? data.id.value : this.id,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      batchId: data.batchId.present ? data.batchId.value : this.batchId,
+      recordedAt: data.recordedAt.present
+          ? data.recordedAt.value
+          : this.recordedAt,
+      temperature: data.temperature.present
+          ? data.temperature.value
+          : this.temperature,
+      humidity: data.humidity.present ? data.humidity.value : this.humidity,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('RoomEvent(')
+          ..write('id: $id, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('batchId: $batchId, ')
+          ..write('recordedAt: $recordedAt, ')
+          ..write('temperature: $temperature, ')
+          ..write('humidity: $humidity')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(id, syncStatus, batchId, recordedAt, temperature, humidity);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is RoomEvent &&
+          other.id == this.id &&
+          other.syncStatus == this.syncStatus &&
+          other.batchId == this.batchId &&
+          other.recordedAt == this.recordedAt &&
+          other.temperature == this.temperature &&
+          other.humidity == this.humidity);
+}
+
+class RoomEventsTableCompanion extends UpdateCompanion<RoomEvent> {
+  final Value<String> id;
+  final Value<SyncStatusEnum> syncStatus;
+  final Value<String> batchId;
+  final Value<DateTime> recordedAt;
+  final Value<double> temperature;
+  final Value<double> humidity;
+  final Value<int> rowid;
+  const RoomEventsTableCompanion({
+    this.id = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.batchId = const Value.absent(),
+    this.recordedAt = const Value.absent(),
+    this.temperature = const Value.absent(),
+    this.humidity = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  RoomEventsTableCompanion.insert({
+    required String id,
+    this.syncStatus = const Value.absent(),
+    required String batchId,
+    this.recordedAt = const Value.absent(),
+    required double temperature,
+    required double humidity,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       batchId = Value(batchId),
+       temperature = Value(temperature),
+       humidity = Value(humidity);
+  static Insertable<RoomEvent> custom({
+    Expression<String>? id,
+    Expression<int>? syncStatus,
+    Expression<String>? batchId,
+    Expression<DateTime>? recordedAt,
+    Expression<double>? temperature,
+    Expression<double>? humidity,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (batchId != null) 'batch_id': batchId,
+      if (recordedAt != null) 'recorded_at': recordedAt,
+      if (temperature != null) 'temperature': temperature,
+      if (humidity != null) 'humidity': humidity,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  RoomEventsTableCompanion copyWith({
+    Value<String>? id,
+    Value<SyncStatusEnum>? syncStatus,
+    Value<String>? batchId,
+    Value<DateTime>? recordedAt,
+    Value<double>? temperature,
+    Value<double>? humidity,
+    Value<int>? rowid,
+  }) {
+    return RoomEventsTableCompanion(
+      id: id ?? this.id,
+      syncStatus: syncStatus ?? this.syncStatus,
+      batchId: batchId ?? this.batchId,
+      recordedAt: recordedAt ?? this.recordedAt,
+      temperature: temperature ?? this.temperature,
+      humidity: humidity ?? this.humidity,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<int>(
+        $RoomEventsTableTable.$convertersyncStatus.toSql(syncStatus.value),
+      );
+    }
+    if (batchId.present) {
+      map['batch_id'] = Variable<String>(batchId.value);
+    }
+    if (recordedAt.present) {
+      map['recorded_at'] = Variable<DateTime>(recordedAt.value);
+    }
+    if (temperature.present) {
+      map['temperature'] = Variable<double>(temperature.value);
+    }
+    if (humidity.present) {
+      map['humidity'] = Variable<double>(humidity.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('RoomEventsTableCompanion(')
+          ..write('id: $id, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('batchId: $batchId, ')
+          ..write('recordedAt: $recordedAt, ')
+          ..write('temperature: $temperature, ')
+          ..write('humidity: $humidity, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3186,6 +3663,9 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $CoolingCyclesTableTable coolingCyclesTable =
       $CoolingCyclesTableTable(this);
   late final $FreezersTableTable freezersTable = $FreezersTableTable(this);
+  late final $RoomEventsTableTable roomEventsTable = $RoomEventsTableTable(
+    this,
+  );
   late final ProductionDao productionDao = ProductionDao(this as AppDatabase);
   late final FreezerDao freezerDao = FreezerDao(this as AppDatabase);
   @override
@@ -3200,6 +3680,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     productsTable,
     coolingCyclesTable,
     freezersTable,
+    roomEventsTable,
   ];
 }
 
@@ -3476,9 +3957,10 @@ typedef $$FreezerEventsTableTableCreateCompanionBuilder =
       required String id,
       Value<SyncStatusEnum> syncStatus,
       required String freezerId,
+      required String batchId,
       Value<DateTime> recordedAt,
       required double temperature,
-      required bool doorOpen,
+      required bool isDoorOpen,
       required TriggerFreezerEnum triggerReason,
       Value<int> rowid,
     });
@@ -3487,9 +3969,10 @@ typedef $$FreezerEventsTableTableUpdateCompanionBuilder =
       Value<String> id,
       Value<SyncStatusEnum> syncStatus,
       Value<String> freezerId,
+      Value<String> batchId,
       Value<DateTime> recordedAt,
       Value<double> temperature,
-      Value<bool> doorOpen,
+      Value<bool> isDoorOpen,
       Value<TriggerFreezerEnum> triggerReason,
       Value<int> rowid,
     });
@@ -3519,6 +4002,11 @@ class $$FreezerEventsTableTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<String> get batchId => $composableBuilder(
+    column: $table.batchId,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<DateTime> get recordedAt => $composableBuilder(
     column: $table.recordedAt,
     builder: (column) => ColumnFilters(column),
@@ -3529,8 +4017,8 @@ class $$FreezerEventsTableTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<bool> get doorOpen => $composableBuilder(
-    column: $table.doorOpen,
+  ColumnFilters<bool> get isDoorOpen => $composableBuilder(
+    column: $table.isDoorOpen,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3565,6 +4053,11 @@ class $$FreezerEventsTableTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get batchId => $composableBuilder(
+    column: $table.batchId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get recordedAt => $composableBuilder(
     column: $table.recordedAt,
     builder: (column) => ColumnOrderings(column),
@@ -3575,8 +4068,8 @@ class $$FreezerEventsTableTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<bool> get doorOpen => $composableBuilder(
-    column: $table.doorOpen,
+  ColumnOrderings<bool> get isDoorOpen => $composableBuilder(
+    column: $table.isDoorOpen,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -3607,6 +4100,9 @@ class $$FreezerEventsTableTableAnnotationComposer
   GeneratedColumn<String> get freezerId =>
       $composableBuilder(column: $table.freezerId, builder: (column) => column);
 
+  GeneratedColumn<String> get batchId =>
+      $composableBuilder(column: $table.batchId, builder: (column) => column);
+
   GeneratedColumn<DateTime> get recordedAt => $composableBuilder(
     column: $table.recordedAt,
     builder: (column) => column,
@@ -3617,8 +4113,10 @@ class $$FreezerEventsTableTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<bool> get doorOpen =>
-      $composableBuilder(column: $table.doorOpen, builder: (column) => column);
+  GeneratedColumn<bool> get isDoorOpen => $composableBuilder(
+    column: $table.isDoorOpen,
+    builder: (column) => column,
+  );
 
   GeneratedColumnWithTypeConverter<TriggerFreezerEnum, int> get triggerReason =>
       $composableBuilder(
@@ -3670,18 +4168,20 @@ class $$FreezerEventsTableTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<SyncStatusEnum> syncStatus = const Value.absent(),
                 Value<String> freezerId = const Value.absent(),
+                Value<String> batchId = const Value.absent(),
                 Value<DateTime> recordedAt = const Value.absent(),
                 Value<double> temperature = const Value.absent(),
-                Value<bool> doorOpen = const Value.absent(),
+                Value<bool> isDoorOpen = const Value.absent(),
                 Value<TriggerFreezerEnum> triggerReason = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FreezerEventsTableCompanion(
                 id: id,
                 syncStatus: syncStatus,
                 freezerId: freezerId,
+                batchId: batchId,
                 recordedAt: recordedAt,
                 temperature: temperature,
-                doorOpen: doorOpen,
+                isDoorOpen: isDoorOpen,
                 triggerReason: triggerReason,
                 rowid: rowid,
               ),
@@ -3690,18 +4190,20 @@ class $$FreezerEventsTableTableTableManager
                 required String id,
                 Value<SyncStatusEnum> syncStatus = const Value.absent(),
                 required String freezerId,
+                required String batchId,
                 Value<DateTime> recordedAt = const Value.absent(),
                 required double temperature,
-                required bool doorOpen,
+                required bool isDoorOpen,
                 required TriggerFreezerEnum triggerReason,
                 Value<int> rowid = const Value.absent(),
               }) => FreezerEventsTableCompanion.insert(
                 id: id,
                 syncStatus: syncStatus,
                 freezerId: freezerId,
+                batchId: batchId,
                 recordedAt: recordedAt,
                 temperature: temperature,
-                doorOpen: doorOpen,
+                isDoorOpen: isDoorOpen,
                 triggerReason: triggerReason,
                 rowid: rowid,
               ),
@@ -4908,6 +5410,235 @@ typedef $$FreezersTableTableProcessedTableManager =
       Freezer,
       PrefetchHooks Function()
     >;
+typedef $$RoomEventsTableTableCreateCompanionBuilder =
+    RoomEventsTableCompanion Function({
+      required String id,
+      Value<SyncStatusEnum> syncStatus,
+      required String batchId,
+      Value<DateTime> recordedAt,
+      required double temperature,
+      required double humidity,
+      Value<int> rowid,
+    });
+typedef $$RoomEventsTableTableUpdateCompanionBuilder =
+    RoomEventsTableCompanion Function({
+      Value<String> id,
+      Value<SyncStatusEnum> syncStatus,
+      Value<String> batchId,
+      Value<DateTime> recordedAt,
+      Value<double> temperature,
+      Value<double> humidity,
+      Value<int> rowid,
+    });
+
+class $$RoomEventsTableTableFilterComposer
+    extends Composer<_$AppDatabase, $RoomEventsTableTable> {
+  $$RoomEventsTableTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<SyncStatusEnum, SyncStatusEnum, int>
+  get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<String> get batchId => $composableBuilder(
+    column: $table.batchId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get recordedAt => $composableBuilder(
+    column: $table.recordedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get temperature => $composableBuilder(
+    column: $table.temperature,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get humidity => $composableBuilder(
+    column: $table.humidity,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$RoomEventsTableTableOrderingComposer
+    extends Composer<_$AppDatabase, $RoomEventsTableTable> {
+  $$RoomEventsTableTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get batchId => $composableBuilder(
+    column: $table.batchId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get recordedAt => $composableBuilder(
+    column: $table.recordedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get temperature => $composableBuilder(
+    column: $table.temperature,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get humidity => $composableBuilder(
+    column: $table.humidity,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$RoomEventsTableTableAnnotationComposer
+    extends Composer<_$AppDatabase, $RoomEventsTableTable> {
+  $$RoomEventsTableTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<SyncStatusEnum, int> get syncStatus =>
+      $composableBuilder(
+        column: $table.syncStatus,
+        builder: (column) => column,
+      );
+
+  GeneratedColumn<String> get batchId =>
+      $composableBuilder(column: $table.batchId, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get recordedAt => $composableBuilder(
+    column: $table.recordedAt,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get temperature => $composableBuilder(
+    column: $table.temperature,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get humidity =>
+      $composableBuilder(column: $table.humidity, builder: (column) => column);
+}
+
+class $$RoomEventsTableTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $RoomEventsTableTable,
+          RoomEvent,
+          $$RoomEventsTableTableFilterComposer,
+          $$RoomEventsTableTableOrderingComposer,
+          $$RoomEventsTableTableAnnotationComposer,
+          $$RoomEventsTableTableCreateCompanionBuilder,
+          $$RoomEventsTableTableUpdateCompanionBuilder,
+          (
+            RoomEvent,
+            BaseReferences<_$AppDatabase, $RoomEventsTableTable, RoomEvent>,
+          ),
+          RoomEvent,
+          PrefetchHooks Function()
+        > {
+  $$RoomEventsTableTableTableManager(
+    _$AppDatabase db,
+    $RoomEventsTableTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$RoomEventsTableTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$RoomEventsTableTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$RoomEventsTableTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<SyncStatusEnum> syncStatus = const Value.absent(),
+                Value<String> batchId = const Value.absent(),
+                Value<DateTime> recordedAt = const Value.absent(),
+                Value<double> temperature = const Value.absent(),
+                Value<double> humidity = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => RoomEventsTableCompanion(
+                id: id,
+                syncStatus: syncStatus,
+                batchId: batchId,
+                recordedAt: recordedAt,
+                temperature: temperature,
+                humidity: humidity,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                Value<SyncStatusEnum> syncStatus = const Value.absent(),
+                required String batchId,
+                Value<DateTime> recordedAt = const Value.absent(),
+                required double temperature,
+                required double humidity,
+                Value<int> rowid = const Value.absent(),
+              }) => RoomEventsTableCompanion.insert(
+                id: id,
+                syncStatus: syncStatus,
+                batchId: batchId,
+                recordedAt: recordedAt,
+                temperature: temperature,
+                humidity: humidity,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$RoomEventsTableTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $RoomEventsTableTable,
+      RoomEvent,
+      $$RoomEventsTableTableFilterComposer,
+      $$RoomEventsTableTableOrderingComposer,
+      $$RoomEventsTableTableAnnotationComposer,
+      $$RoomEventsTableTableCreateCompanionBuilder,
+      $$RoomEventsTableTableUpdateCompanionBuilder,
+      (
+        RoomEvent,
+        BaseReferences<_$AppDatabase, $RoomEventsTableTable, RoomEvent>,
+      ),
+      RoomEvent,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -4932,4 +5663,6 @@ class $AppDatabaseManager {
       $$CoolingCyclesTableTableTableManager(_db, _db.coolingCyclesTable);
   $$FreezersTableTableTableManager get freezersTable =>
       $$FreezersTableTableTableManager(_db, _db.freezersTable);
+  $$RoomEventsTableTableTableManager get roomEventsTable =>
+      $$RoomEventsTableTableTableManager(_db, _db.roomEventsTable);
 }

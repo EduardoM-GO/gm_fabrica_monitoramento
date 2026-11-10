@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+import 'package:gm_fabrica_monitoramento/src/domain/models/freezer_event_model.dart';
 import 'package:gm_fabrica_monitoramento/src/utils/generator_id.dart';
 import 'package:gm_fabrica_monitoramento/src/utils/result.dart';
 
@@ -6,7 +7,6 @@ import '../app_database.dart';
 import '../tables/freezer_events_table.dart';
 import '../tables/cooling_cycles_table.dart';
 import '../tables/freezers_table.dart';
-import '../enum/trigger_freezer_enum.dart';
 import '../enum/sync_status_enum.dart';
 
 part 'freezer_dao.g.dart';
@@ -14,34 +14,30 @@ part 'freezer_dao.g.dart';
 @DriftAccessor(tables: [FreezerEventsTable, CoolingCyclesTable, FreezersTable])
 final class FreezerDao extends DatabaseAccessor<AppDatabase>
     with _$FreezerDaoMixin {
-  final GeneratorId _generatorId;
-  FreezerDao(super.db) : _generatorId = GeneratorId();
+  FreezerDao(super.db);
 
   // ==========================================
   // TELEMETRIA E EVENTOS
   // ==========================================
 
-  Future<Result<Unit>> logFreezerEvent(
-    String freezerId,
-    double temp,
-    bool doorOpen,
-    TriggerFreezerEnum trigger,
-  ) => Result.catchInAsync(
-    fn: () async {
-      await into(freezerEventsTable).insert(
-        FreezerEventsTableCompanion.insert(
-          id: _generatorId.getid(),
-          freezerId: freezerId,
-          temperature: temp,
-          doorOpen: doorOpen,
-          triggerReason: trigger,
-        ),
-      );
+  Future<Result<Unit>> logFreezerEvent({required FreezerEventModel event}) =>
+      Result.catchInAsync(
+        fn: () async {
+          await into(freezerEventsTable).insert(
+            FreezerEventsTableCompanion.insert(
+              id: event.id,
+              batchId: event.batch.id,
+              freezerId: event.freezer.id,
+              temperature: event.temperature,
+              isDoorOpen: event.isDoorOpen,
+              triggerReason: event.triggerReason,
+            ),
+          );
 
-      return unit;
-    },
-    tag: 'FreezerDao.logFreezerEvent',
-  );
+          return unit;
+        },
+        tag: 'FreezerDao.logFreezerEvent',
+      );
 
   // ==========================================
   // CICLOS DE RESFRIAMENTO (Gargalo de Produtividade)
@@ -53,7 +49,8 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
     int expectedSeconds,
   ) => Result.catchInAsync(
     fn: () async {
-      final cycleId = _generatorId.getid();
+      final cycleId = GeneratorId.getid();
+
       await into(coolingCyclesTable).insert(
         CoolingCyclesTableCompanion.insert(
           id: cycleId,

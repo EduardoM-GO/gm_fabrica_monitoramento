@@ -14,14 +14,7 @@ final class ProductionRepository {
 
   ProductionRepository(this._dao, this._wsService);
 
-  // ==========================================
-  // 1. ORQUESTRAÇÃO DO HARDWARE (O Maestro)
-  // ==========================================
-
-  /// Inicia a escuta dos sensores físicos.
-  /// Deve ser chamado quando a aplicação/feature arrancar.
   void startListeningToHardware() {
-    // Filtra o stream global para ouvir apenas os "Hits" da calha
     _wsSubscription = _wsService.rawDataStream
         .where((data) => data is HitRawData)
         .cast<HitRawData>()
@@ -57,10 +50,6 @@ final class ProductionRepository {
     return Result.ok(unit);
   }
 
-  // ==========================================
-  // 2. EXPOSIÇÃO PARA A UI (Signals / Controllers)
-  // ==========================================
-
   Future<Result<String>> startProductionBatch({
     required String productId,
     required int currentHardwareCount,
@@ -92,7 +81,6 @@ final class ProductionRepository {
     );
   }
 
-  /// Retorna o fluxo reativo de estornos para a UI recalcular o total líquido
   Stream<int> watchAdjustments(String batchId) {
     return _dao.watchTotalAdjustments(batchId);
   }

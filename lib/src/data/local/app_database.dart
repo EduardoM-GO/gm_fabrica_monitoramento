@@ -14,6 +14,7 @@ import 'package:gm_fabrica_monitoramento/src/data/local/tables/freezers_table.da
 import 'package:gm_fabrica_monitoramento/src/data/local/tables/production_batches_table.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/tables/production_time_lines_table.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/tables/products_table.dart';
+import 'package:gm_fabrica_monitoramento/src/data/local/tables/room_events_table.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
@@ -28,6 +29,7 @@ part 'app_database.g.dart';
     ProductsTable,
     CoolingCyclesTable,
     FreezersTable,
+    RoomEventsTable,
   ],
   daos: [ProductionDao, FreezerDao],
 )

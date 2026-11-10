@@ -33,6 +33,8 @@ sealed class Result<T> {
   }) {
     try {
       return Result.ok(fn());
+    } on BaseException catch (e) {
+      return Result.error(e);
     } catch (e, st) {
       return Result.error(
         BaseException(error: e, stackTrace: st, tag: st.toString()),
@@ -46,6 +48,8 @@ sealed class Result<T> {
   }) async {
     try {
       return Result.ok(await fn());
+    } on BaseException catch (e) {
+      return Result.error(e);
     } catch (e, st) {
       return Result.error(BaseException(error: e, stackTrace: st, tag: tag));
     }

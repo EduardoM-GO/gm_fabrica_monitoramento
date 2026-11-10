@@ -1,4 +1,6 @@
 import 'package:drift/drift.dart';
+import 'package:gm_fabrica_monitoramento/src/domain/models/product_model.dart';
+import 'package:gm_fabrica_monitoramento/src/domain/models/production_batch_model.dart';
 import 'package:gm_fabrica_monitoramento/src/utils/generator_id.dart';
 import 'package:gm_fabrica_monitoramento/src/utils/result.dart';
 
@@ -20,26 +22,54 @@ part 'production_dao.g.dart';
 )
 final class ProductionDao extends DatabaseAccessor<AppDatabase>
     with _$ProductionDaoMixin {
-  final GeneratorId _generatorId;
-  ProductionDao(super.db) : _generatorId = GeneratorId();
+  ProductionDao(super.db);
 
-  Future<Result<String>> startBatch({
-    required String productId,
-    required int initialCount,
+  Future<Result<ProductionBatchModel>> startBatch({
+    required ProductModel product,
   }) => Result.catchInAsync(
     fn: () async {
-      final batchId = _generatorId.getid();
+      final lastBatchResult = await getLastCompletedBatch();
+
+      if (lastBatchResult.isError) {
+        throw lastBatchResult.errorOrThrow;
+      }
+
+      final lastBatch = lastBatchResult.valueOrThrow;
+
+      final batch = ProductionBatchModel(
+        product: product,
+        initialQuantity: lastBatch?.finalHardwareCount ?? 0,
+        actualQuantity: lastBatch?.finalHardwareCount ?? 0,
+      );
+
       await into(productionBatchesTable).insert(
         ProductionBatchesTableCompanion.insert(
-          id: batchId,
-          productId: productId,
-          initialHardwareCount: initialCount,
+          id: batch.id,
+          productId: batch.product.id,
+          initialHardwareCount: batch.initialQuantity,
         ),
       );
-      return batchId;
+
+      return batch;
     },
     tag: 'ProductionDao.startBatch',
   );
+
+  Future<Result<ProductionBatch?>> getLastCompletedBatch() =>
+      Result.catchInAsync(
+        fn: () async {
+          return await (select(productionBatchesTable)
+                ..where((b) => b.finishedAt.isNotNull())
+                ..orderBy([
+                  (b) => OrderingTerm(
+                    expression: b.finishedAt,
+                    mode: OrderingMode.desc,
+                  ),
+                ])) // Correção da query
+              .getSingleOrNull();
+        },
+        tag: 'ProductionDao.getLastCompletedBatch',
+      );
 
   Future<Result<ProductionBatch?>> getActiveBatch() => Result.catchInAsync(
     fn: () async {
@@ -50,50 +80,37 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
     tag: 'ProductionDao.getActiveBatch',
   );
 
-  Future<Result<Unit>> closeBatch({
-    required String batchId,
-    required int finalCount,
-  }) => Result.catchInAsync(
-    fn: () async {
-      await (update(
-        productionBatchesTable,
-      )..where((b) => b.id.equals(batchId))).write(
-        ProductionBatchesTableCompanion(
-          finalHardwareCount: Value(finalCount),
-          finishedAt: Value(DateTime.now()),
-          syncStatus: const Value(SyncStatusEnum.updating), // Marca para sync
-        ),
-      );
-      return unit;
-    },
-    tag: 'ProductionDao.closeBatch',
-  );
-
-  // ==========================================
-  // OPERAÇÕES DA LINHA DO TEMPO (HITS)
-  // ==========================================
-
-  Future<Result<Unit>> logTimelineHit({
-    required String batchId,
-    required int hardwareCount,
-  }) => Result.catchInAsync(
-    fn: () async {
-      await into(productionTimeLinesTable).insert(
-        ProductionTimeLinesTableCompanion.insert(
-          id: _generatorId.getid(),
-          batchId: batchId,
-          currentHardwareCount: hardwareCount,
-        ),
+  Future<Result<Unit>> closeBatch({required ProductionBatchModel batch}) =>
+      Result.catchInAsync(
+        fn: () async {
+          await (update(
+            productionBatchesTable,
+          )..where((b) => b.id.equals(batch.id))).write(
+            ProductionBatchesTableCompanion(
+              finalHardwareCount: Value(batch.actualQuantity),
+              finishedAt: Value(DateTime.now()),
+              syncStatus: const Value(SyncStatusEnum.updating),
+            ),
+          );
+          return unit;
+        },
+        tag: 'ProductionDao.closeBatch',
       );
 
-      return unit;
-    },
-    tag: 'ProductionDao.logTimelineHit',
-  );
-
-  // ==========================================
-  // OPERAÇÕES DE ESTORNO
-  // ==========================================
+  Future<Result<Unit>> logTimelineHit({required ProductionBatchModel batch}) =>
+      Result.catchInAsync(
+        fn: () async {
+          await into(productionTimeLinesTable).insert(
+            ProductionTimeLinesTableCompanion.insert(
+              id: GeneratorId.getid(),
+              batchId: batch.id,
+              currentHardwareCount: batch.actualQuantity,
+            ),
+          );
+          return unit;
+        },
+        tag: 'ProductionDao.logTimelineHit',
+      );
 
   Future<Result<Unit>> addAdjustment({
     required String batchId,
@@ -104,14 +121,13 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
     fn: () async {
       await into(batchAdjustmentsTable).insert(
         BatchAdjustmentsTableCompanion.insert(
-          id: _generatorId.getid(),
+          id: GeneratorId.getid(),
           batchId: batchId,
           deltaQty: deltaQty,
           reason: reason,
           observation: Value(observation),
         ),
       );
-
       return unit;
     },
     tag: 'ProductionDao.addAdjustment',
