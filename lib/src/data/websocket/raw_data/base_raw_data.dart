@@ -3,7 +3,11 @@ import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/enum/type_r
 import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/hit_raw_data.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/telemetry_raw_data.dart';
 
-base class BaseRawData({required TypeRawDataEnum type}) {
+base class BaseRawData {
+  final TypeRawDataEnum type;
+
+  BaseRawData({required this.type});
+
   factory BaseRawData.fromJson(Map<String, dynamic> map) {
     final type = TypeRawDataEnum.fromMap(map);
 

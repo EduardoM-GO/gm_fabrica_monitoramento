@@ -10,6 +10,7 @@ mixin _$ProductionDaoMixin on DatabaseAccessor<AppDatabase> {
       attachedDatabase.batchAdjustmentsTable;
   $ProductionTimeLinesTableTable get productionTimeLinesTable =>
       attachedDatabase.productionTimeLinesTable;
+  $ProductsTableTable get productsTable => attachedDatabase.productsTable;
   ProductionDaoManager get managers => ProductionDaoManager(this);
 }
 
@@ -31,4 +32,6 @@ class ProductionDaoManager {
         _db.attachedDatabase,
         _db.productionTimeLinesTable,
       );
+  $$ProductsTableTableTableManager get productsTable =>
+      $$ProductsTableTableTableManager(_db.attachedDatabase, _db.productsTable);
 }

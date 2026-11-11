@@ -18,7 +18,7 @@ export 'production_state.dart';
 /// Implements the official Flutter MVVM architecture pattern.
 class ProductionViewModel extends ChangeNotifier {
   final IProductionRepository productionRepo;
-  final IWebSocketRepository webSocketRepo;
+  final IWebSocketRepository e;
   final AudioService audioService;
   final SettingsViewModel settingsViewModel;
 
