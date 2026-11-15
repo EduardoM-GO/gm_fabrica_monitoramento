@@ -177,8 +177,8 @@ void main() {
       expect(accounting.discardsCount, 5);
       // Líquido = 250 - 5 = 245
       expect(accounting.netCount, 245);
-      // Caixas de 50: 150 ~/ 50 (3) + 100 ~/ 50 (2) = 5
-      expect(accounting.completedBoxes, 5);
+      // Caixas de 50 (baseadas no líquido de cada lote): 150 ~/ 50 (3) + (100 - 5) ~/ 50 (1) = 4
+      expect(accounting.completedBoxes, 4);
     });
 
     test('batchLogTimelineHits grava múltiplos hits em batch com sucesso', () async {
@@ -257,7 +257,7 @@ void main() {
       expect(viewModel.batchCompletedBoxes.value, 1);
       expect(viewModel.currentBoxCount.value, 0);
 
-      // Registra descarte de 2 ovos quebrados
+      // Registra descarte de 2 ovos quebrados (estava com 1 caixa fechada e 0/50 -> volta para 0 caixas e 48/50)
       await viewModel.addDiscards(
         reason: AdjustmentReasonEnum.brokenShell,
         quantity: 2,
@@ -266,6 +266,79 @@ void main() {
       await Future.delayed(const Duration(milliseconds: 50));
 
       expect(viewModel.dailyDiscardsCount.value, 2);
+      expect(viewModel.batchCompletedBoxes.value, 0);
+      expect(viewModel.currentBoxCount.value, 48);
+
+      // Tentar iniciar outro produto sem encerrar o lote atual deve falhar
+      final secondProduct = ProductModel(
+        id: 'prod_2',
+        name: 'Ovo Trufado 400g',
+        unitWeightGrams: 400,
+        defaultBoxCapacity: 30,
+      );
+      final blockedStart = await viewModel.startBatch(secondProduct);
+      expect(blockedStart.isError, isTrue);
+      expect(viewModel.activeBatch.value?.product.id, 'prod_1');
+
+      // Após encerrar o lote ativo, pode iniciar outro produto
+      final finishRes = await viewModel.finishActiveBatch();
+      expect(finishRes.isOk, isTrue);
+      expect(viewModel.hasActiveBatch.value, isFalse);
+
+      viewModel.dispose();
+    });
+
+    test('Desconto de quebra na 1ª caixa zera em 0/50 (sem ficar negativo) e na 2ª caixa retrocede para 47/50', () async {
+      final viewModel = EggCountViewModel(repository);
+      await viewModel.startBatch(testProduct); // caixa de 50
+
+      // 1ª Caixa: chegam 30 ovos (30/50)
+      fakeWs.rawDataController.add(
+        HitRawData(type: TypeRawDataEnum.hit, totalCount: 30),
+      );
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(viewModel.batchCompletedBoxes.value, 0);
+      expect(viewModel.currentBoxCount.value, 30);
+
+      // Quebrou 33 na 1ª caixa -> fica 0/50 (0 caixas)
+      await viewModel.addDiscards(
+        reason: AdjustmentReasonEnum.brokenShell,
+        quantity: 33,
+      );
+      expect(viewModel.batchCompletedBoxes.value, 0);
+      expect(viewModel.currentBoxCount.value, 0);
+
+      // Próximo ovo passa na esteira -> continua para frente (1/50)
+      fakeWs.rawDataController.add(
+        HitRawData(type: TypeRawDataEnum.hit, totalCount: 31),
+      );
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(viewModel.batchCompletedBoxes.value, 0);
+      expect(viewModel.currentBoxCount.value, 1);
+
+      // Agora avança mais 79 ovos (total líquido vai de 1 para 80 -> 1 caixa fechada + 30/50 na 2ª caixa)
+      fakeWs.rawDataController.add(
+        HitRawData(type: TypeRawDataEnum.hit, totalCount: 110),
+      );
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(viewModel.batchCompletedBoxes.value, 1);
+      expect(viewModel.currentBoxCount.value, 30);
+
+      // Quebrou 33 na 2ª caixa -> volta para a caixa anterior em 47/50 (0 caixas fechadas)
+      await viewModel.addDiscards(
+        reason: AdjustmentReasonEnum.brokenShell,
+        quantity: 33,
+      );
+      expect(viewModel.batchCompletedBoxes.value, 0);
+      expect(viewModel.currentBoxCount.value, 47);
+
+      // Próximo ovo passa na esteira -> continua para frente (48/50)
+      fakeWs.rawDataController.add(
+        HitRawData(type: TypeRawDataEnum.hit, totalCount: 111),
+      );
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(viewModel.batchCompletedBoxes.value, 0);
+      expect(viewModel.currentBoxCount.value, 48);
 
       viewModel.dispose();
     });

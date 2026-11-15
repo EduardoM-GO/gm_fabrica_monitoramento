@@ -364,7 +364,6 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
 
       for (final row in batchRows) {
         final b = row.readTable(productionBatchesTable);
-        final p = row.readTable(productsTable);
         batchIds.add(b.id);
 
         final endCount = b.finalHardwareCount ?? b.initialHardwareCount;
@@ -373,13 +372,12 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
           99999999,
         );
         dailyGrossCount += batchGross;
-
-        final boxCap = p.unitWeightGrams >= 500 ? 40 : 50;
-        completedBoxes += (batchGross ~/ boxCap);
       }
 
-      // 2. Busca todos os descartes/quebras do dia
+      // 2. Busca todos os descartes/quebras (deltaQty < 0) e adições manuais (deltaQty > 0) do dia
       int dailyDiscards = 0;
+      int dailyAdditions = 0;
+      final Map<String, int> netDeltaByBatch = {};
       if (batchIds.isNotEmpty) {
         final adjustments = await (select(batchAdjustmentsTable)..where(
           (a) =>
@@ -389,15 +387,38 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
         )).get();
 
         for (final adj in adjustments) {
-          dailyDiscards += adj.deltaQty.abs();
+          netDeltaByBatch[adj.batchId] =
+              (netDeltaByBatch[adj.batchId] ?? 0) + adj.deltaQty;
+          if (adj.deltaQty < 0) {
+            dailyDiscards += adj.deltaQty.abs();
+          } else if (adj.deltaQty > 0) {
+            dailyAdditions += adj.deltaQty;
+          }
         }
       }
 
-      final netCount = (dailyGrossCount - dailyDiscards).clamp(0, 99999999);
+      for (final row in batchRows) {
+        final b = row.readTable(productionBatchesTable);
+        final p = row.readTable(productsTable);
+        final endCount = b.finalHardwareCount ?? b.initialHardwareCount;
+        final batchGross = (endCount - b.initialHardwareCount).clamp(
+          0,
+          99999999,
+        );
+        final batchNet = (batchGross + (netDeltaByBatch[b.id] ?? 0)).clamp(
+          0,
+          99999999,
+        );
+        final boxCap = p.unitWeightGrams >= 500 ? 40 : 50;
+        completedBoxes += (batchNet ~/ boxCap);
+      }
+
+      final totalGross = dailyGrossCount + dailyAdditions;
+      final netCount = (totalGross - dailyDiscards).clamp(0, 99999999);
 
       return DailyProductionAccountingModel(
         date: targetDate,
-        grossCount: dailyGrossCount,
+        grossCount: totalGross,
         discardsCount: dailyDiscards,
         netCount: netCount,
         completedBoxes: completedBoxes,

@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:math';
 
+import 'package:gm_fabrica_monitoramento/src/core/exceptions/base_exception.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/daos/production_dao.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/enum/adjustment_reason_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/hit_raw_data.dart';
@@ -26,6 +28,7 @@ final class ProductionRepository {
   RoomRawData? _currentRoom;
   int? _lastHardwareCount;
   int? _lastBootId;
+  int _uncountedDiscardOffset = 0;
 
   // Streams reativos para a UI (latência zero - Hot Path)
   final _activeBatchController =
@@ -196,7 +199,6 @@ final class ProductionRepository {
     }
 
     if (delta > 0) {
-      final prevProduced = _activeBatch!.producedQuantity;
       final boxCap = _activeBatch!.product.defaultBoxCapacity > 0
           ? _activeBatch!.product.defaultBoxCapacity
           : 50;
@@ -209,15 +211,16 @@ final class ProductionRepository {
       }
 
       // Atualização instantânea (0ms) da contabilidade diária em memória
-      final newProduced = _activeBatch!.producedQuantity;
-      final addedBoxes = (newProduced ~/ boxCap) - (prevProduced ~/ boxCap);
       final newDailyGross = _currentAccounting.grossCount + delta;
       final newDailyNet =
-          (newDailyGross - _currentAccounting.discardsCount).clamp(0, 99999999);
+          (newDailyGross +
+                  _uncountedDiscardOffset -
+                  _currentAccounting.discardsCount)
+              .clamp(0, 99999999);
       _currentAccounting = _currentAccounting.copyWith(
         grossCount: newDailyGross,
         netCount: newDailyNet,
-        completedBoxes: _currentAccounting.completedBoxes + addedBoxes,
+        completedBoxes: newDailyNet ~/ boxCap,
       );
       if (!_dailyAccountingController.isClosed) {
         _dailyAccountingController.add(_currentAccounting);
@@ -281,7 +284,8 @@ final class ProductionRepository {
     await refreshDailyAccounting();
   }
 
-  /// Inicia um novo lote de produção para um produto
+  /// Inicia um novo lote de produção para um produto.
+  /// Regra de negócio: proibido iniciar outro produto sem antes encerrar o lote atual.
   Future<Result<ProductionBatchModel>> startProductionBatch({
     required ProductModel product,
   }) => Result.catchInAsync(
@@ -289,8 +293,13 @@ final class ProductionRepository {
       await checkAndCloseExpiredBatches();
 
       final activeResult = await _dao.getActiveBatch();
-      if (activeResult.isOk && activeResult.valueOrThrow != null) {
-        await closeActiveBatch(batch: activeResult.valueOrThrow!);
+      if (_activeBatch != null ||
+          (activeResult.isOk && activeResult.valueOrThrow != null)) {
+        throw BaseException(
+          error: 'Encerre o lote atual antes de iniciar outro produto.',
+          stackTrace: StackTrace.current,
+          tag: 'ProductionRepository.startProductionBatch',
+        );
       }
 
       final result = await _dao.startBatch(
@@ -344,28 +353,50 @@ final class ProductionRepository {
         tag: 'ProductionRepository.closeActiveBatch',
       );
 
-  /// Registra descarte / quebra com atualização imediata em memória
+  /// Registra ajuste (quebra/descarte com deltaQty < 0 ou adição manual com deltaQty > 0)
+  /// com atualização imediata em memória (0ms Hot Path).
   Future<Result<Unit>> registerAdjustment({
     required String batchId,
     required int deltaQty,
     required AdjustmentReasonEnum reason,
     String? observation,
   }) async {
-    // Atualiza projeção em memória imediatamente para feedback 0ms
-    final addedDiscards = deltaQty.abs();
-    final updatedDiscards = _currentAccounting.discardsCount + addedDiscards;
-    final updatedNet =
-        (_currentAccounting.grossCount - updatedDiscards).clamp(0, 99999999);
-    _currentAccounting = _currentAccounting.copyWith(
-      discardsCount: updatedDiscards,
-      netCount: updatedNet,
-    );
+    // 1. Despeja qualquer pulso no buffer antes de calcular excesso e gravar ajuste no banco
+    await _flushBuffer();
+
+    final boxCap =
+        (_activeBatch?.product.defaultBoxCapacity ?? 50) > 0
+            ? (_activeBatch?.product.defaultBoxCapacity ?? 50)
+            : 50;
+
+    if (deltaQty < 0) {
+      final addedDiscards = deltaQty.abs();
+      final excessOverNet = max(0, addedDiscards - _currentAccounting.netCount);
+      _uncountedDiscardOffset += excessOverNet;
+
+      final updatedDiscards = _currentAccounting.discardsCount + addedDiscards;
+      final updatedNet =
+          (_currentAccounting.netCount - addedDiscards).clamp(0, 99999999);
+      _currentAccounting = _currentAccounting.copyWith(
+        discardsCount: updatedDiscards,
+        netCount: updatedNet,
+        completedBoxes: updatedNet ~/ boxCap,
+      );
+    } else if (deltaQty > 0) {
+      final updatedGross = _currentAccounting.grossCount + deltaQty;
+      final updatedNet = (_currentAccounting.netCount + deltaQty).clamp(
+        0,
+        99999999,
+      );
+      _currentAccounting = _currentAccounting.copyWith(
+        grossCount: updatedGross,
+        netCount: updatedNet,
+        completedBoxes: updatedNet ~/ boxCap,
+      );
+    }
     if (!_dailyAccountingController.isClosed) {
       _dailyAccountingController.add(_currentAccounting);
     }
-
-    // Despeja qualquer pulso no buffer antes de reconciliar com o banco
-    await _flushBuffer();
 
     final result = await _dao.addAdjustment(
       batchId: batchId,
@@ -387,17 +418,28 @@ final class ProductionRepository {
     final result = await _dao.getDailyAccounting(date: date);
     if (result.isOk) {
       var accounting = result.valueOrThrow;
-      // Se houver pulsos ainda no buffer aguardando flush, preserva a contagem mais recente em memória
-      if (_hitBuffer.isNotEmpty &&
-          _currentAccounting.grossCount > accounting.grossCount) {
-        final gross = _currentAccounting.grossCount;
-        final net = (gross - accounting.discardsCount).clamp(0, 99999999);
-        accounting = accounting.copyWith(
-          grossCount: gross,
-          netCount: net,
-          completedBoxes: _currentAccounting.completedBoxes,
-        );
-      }
+      final boxCap =
+          (_activeBatch?.product.defaultBoxCapacity ?? 50) > 0
+              ? (_activeBatch?.product.defaultBoxCapacity ?? 50)
+              : 50;
+
+      final resolvedGross = (_hitBuffer.isNotEmpty &&
+              _currentAccounting.grossCount > accounting.grossCount)
+          ? _currentAccounting.grossCount
+          : accounting.grossCount;
+
+      final resolvedNet =
+          (resolvedGross + _uncountedDiscardOffset - accounting.discardsCount)
+              .clamp(0, 99999999);
+
+      accounting = accounting.copyWith(
+        grossCount: resolvedGross,
+        netCount: resolvedNet,
+        completedBoxes: _activeBatch != null
+            ? (resolvedNet ~/ boxCap)
+            : accounting.completedBoxes,
+      );
+
       _currentAccounting = accounting;
       if (!_dailyAccountingController.isClosed) {
         _dailyAccountingController.add(_currentAccounting);

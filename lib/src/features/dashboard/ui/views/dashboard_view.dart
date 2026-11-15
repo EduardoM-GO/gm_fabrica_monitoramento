@@ -1,6 +1,8 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_breakpoints.dart';
+import 'package:gm_fabrica_monitoramento/src/core/themes/app_spacing.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_theme.dart';
+import 'package:gm_fabrica_monitoramento/src/core/widgets/status_badge.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/enum/ws_connection_state_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/ui/view_models/freezer_monitoring_view_model.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/ui/views/freezer_monitoring_card.dart';
@@ -12,7 +14,7 @@ import 'package:provider/provider.dart';
 import 'package:signals/signals_flutter.dart';
 
 /// Painel principal Kiosk Zero-Navegação (60/40) para chão de fábrica.
-/// Segue estritamente Material Design 3 e alta densidade visual.
+/// Segue estritamente Material Design 3, superfícies tonais e alta densidade visual.
 final class DashboardView extends StatelessWidget {
   const DashboardView({super.key});
 
@@ -31,48 +33,63 @@ final class DashboardView extends StatelessWidget {
             final isLandscape = AppBreakpoints.isLandscape(context);
             final isWideEnough =
                 constraints.maxWidth >= AppBreakpoints.compactMax;
+            final minViewportHeight =
+                (constraints.maxHeight - (AppSpacing.xs * 2)).clamp(
+                  0.0,
+                  double.infinity,
+                );
 
             return SingleChildScrollView(
               physics: const ClampingScrollPhysics(),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _TopKioskStatusStrip(
-                    eggViewModel: eggViewModel,
-                    freezerViewModel: freezerViewModel,
-                    settingsViewModel: settingsViewModel,
-                  ),
-                  const SizedBox(height: 8),
-                  if (isLandscape && isWideEnough)
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Zona Esquerda (60%): Embalagem e Contagem de Ovos (0ms)
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: AppSpacing.xs,
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minHeight: isLandscape && isWideEnough
+                      ? minViewportHeight
+                      : 0.0,
+                ),
+                child: IntrinsicHeight(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _TopKioskStatusStrip(
+                        eggViewModel: eggViewModel,
+                        freezerViewModel: freezerViewModel,
+                        settingsViewModel: settingsViewModel,
+                      ),
+                      const SizedBox(height: AppSpacing.xs),
+                      if (isLandscape && isWideEnough)
                         Expanded(
-                          flex: 6,
-                          child: EggCountCard(viewModel: eggViewModel),
-                        ),
-                        const SizedBox(width: 10),
-                        // Zona Direita (40%): Monitoramento Adaptativo dos 2 Freezers
-                        Expanded(
-                          flex: 4,
-                          child: FreezerMonitoringZone(
-                            viewModel: freezerViewModel,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              // Zona Esquerda (60%): Embalagem e Contagem de Ovos (0ms)
+                              Expanded(
+                                flex: 6,
+                                child: EggCountCard(viewModel: eggViewModel),
+                              ),
+                              const SizedBox(width: AppSpacing.xs),
+                              // Zona Direita (40%): Monitoramento Adaptativo dos 2 Freezers
+                              Expanded(
+                                flex: 4,
+                                child: FreezerMonitoringZone(
+                                  viewModel: freezerViewModel,
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
-                    )
-                  else
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
+                        )
+                      else ...[
                         EggCountCard(viewModel: eggViewModel),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: AppSpacing.xs),
                         FreezerMonitoringZone(viewModel: freezerViewModel),
                       ],
-                    ),
-                ],
+                    ],
+                  ),
+                ),
               ),
             );
           },
@@ -104,6 +121,7 @@ final class _TopKioskStatusStrip extends StatelessWidget {
         final connState = settingsViewModel.connectionState.value;
         final host = settingsViewModel.espHost.value;
         final isDiscovering = settingsViewModel.isDiscovering.value;
+        final hasDoorAlarm = freezerViewModel.hasDoorAlarm.value;
 
         final (Color statusColor, String statusText) = switch (connState) {
           WsConnectionStateEnum.connected => (
@@ -124,135 +142,150 @@ final class _TopKioskStatusStrip extends StatelessWidget {
           ),
         };
 
-        return Row(
-          children: [
-            // Identificação da Linha de Produção
-            Flexible(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: colorScheme.outlineVariant),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.factory_rounded,
-                      size: 15,
-                      color: colorScheme.primary,
-                    ),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        'G&M CHOCOLATES',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+        return Card.filled(
+          color: colorScheme.surfaceContainerLow,
+          shape: RoundedRectangleBorder(
+            borderRadius: AppSpacing.borderRadiusMd,
+            side: BorderSide(
+              color: hasDoorAlarm
+                  ? colorScheme.error.withValues(alpha: 0.7)
+                  : colorScheme.outlineVariant,
             ),
-
-            const Spacer(),
-
-            // Pill de Ambiente da Sala 4x4m
-            Flexible(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainer,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: colorScheme.outlineVariant),
-                ),
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm,
+              vertical: AppSpacing.xxs,
+            ),
+            child: Row(
+              children: [
+                // Identificação da Linha de Produção (Paleta Cacau & Ouro)
+                Flexible(
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        Icons.thermostat_rounded,
-                        size: 15,
-                        color: colorScheme.secondary,
+                      Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: colorScheme.primaryContainer,
+                          borderRadius: AppSpacing.borderRadiusXs,
+                        ),
+                        child: Icon(
+                          Icons.factory_rounded,
+                          size: 14,
+                          color: colorScheme.onPrimaryContainer,
+                        ),
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        room != null
-                            ? 'Sala: ${room.temp.toStringAsFixed(1)} °C • ${room.humidity.toStringAsFixed(0)}% UR'
-                            : 'Sala: --.- °C • --% UR',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                          color: colorScheme.onSurfaceVariant,
+                      const SizedBox(width: AppSpacing.xs),
+                      Flexible(
+                        child: Text(
+                          'G&M CHOCOLATES',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            fontFamily: AppTheme.fontHeading,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.6,
+                            color: colorScheme.onSurface,
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
-              ),
-            ),
 
-            const SizedBox(width: 8),
+                const Spacer(),
 
-            // Pill de Status WebSocket + Botão de Configurações
-            Flexible(
-              child: InkWell(
-                borderRadius: BorderRadius.circular(10),
-                onTap: () => _openSettings(context),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
+                if (hasDoorAlarm) ...[
+                  const StatusBadge(
+                    label: 'ALARME TÉRMICO',
+                    color: AppTheme.dangerRed,
+                    icon: Icons.warning_amber_rounded,
+                    compact: true,
                   ),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(10),
-                    border:
-                        Border.all(color: statusColor.withValues(alpha: 0.5)),
+                  const SizedBox(width: AppSpacing.xs),
+                ],
+
+                // Pill Tonal de Clima da Sala 4x4m
+                Flexible(
+                  child: Card.filled(
+                    color: colorScheme.surfaceContainerHigh,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: AppSpacing.borderRadiusSm,
+                      side: BorderSide(color: colorScheme.outlineVariant),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xs,
+                        vertical: 4,
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.thermostat_rounded,
+                              size: 14,
+                              color: colorScheme.primary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              room != null
+                                  ? 'Sala: ${room.temp.toStringAsFixed(1)} °C • ${room.humidity.toStringAsFixed(0)}% UR'
+                                  : 'Sala: --.- °C • --% UR',
+                              style: theme.textTheme.labelMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                                color: colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
+                ),
+
+                const SizedBox(width: AppSpacing.xs),
+
+                // Semáforo WebSocket + Ação Tonal de Configurações
+                Flexible(
+                  child: InkWell(
+                    borderRadius: AppSpacing.borderRadiusSm,
+                    onTap: () => _openSettings(context),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Container(
-                          width: 7,
-                          height: 7,
-                          decoration: BoxDecoration(
+                        Flexible(
+                          child: StatusBadge(
+                            label: statusText,
                             color: statusColor,
-                            shape: BoxShape.circle,
+                            showDot: true,
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        Text(
-                          statusText,
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            color: statusColor,
-                            fontWeight: FontWeight.w800,
-                            fontFeatures: const [FontFeature.tabularFigures()],
+                        const SizedBox(width: AppSpacing.xxs),
+                        IconButton.filledTonal(
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints(
+                            minWidth: 28,
+                            minHeight: 28,
                           ),
-                        ),
-                        const SizedBox(width: 6),
-                        Icon(
-                          Icons.settings_rounded,
-                          size: 15,
-                          color: colorScheme.onSurfaceVariant,
+                          padding: EdgeInsets.zero,
+                          iconSize: 15,
+                          tooltip: 'Configurações do Kiosk & ESP32',
+                          onPressed: () => _openSettings(context),
+                          icon: const Icon(Icons.settings_rounded),
                         ),
                       ],
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         );
       },
     );

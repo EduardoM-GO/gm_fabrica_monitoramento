@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:gm_fabrica_monitoramento/src/core/exceptions/base_exception.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/enum/adjustment_reason_enum.dart';
@@ -23,7 +24,10 @@ final class EggCountViewModel {
   late final Signal<int> defaultBoxCapacity;
 
   // --- Signals de Contagem do Lote & Caixa ---
+  late final Signal<int> batchManualAdditions;
+  late final Signal<int> batchNetAdjustment;
   late final Computed<int> batchGrossCount;
+  late final Computed<int> batchEffectiveCount;
   late final Computed<int> currentBoxCount;
   late final Computed<double> boxProgress;
   late final Computed<int> batchCompletedBoxes;
@@ -31,7 +35,7 @@ final class EggCountViewModel {
   // --- Signals da Contabilidade Diária de Ovos ---
   late final Signal<int> dailyGrossCount;
   late final Signal<int> dailyDiscardsCount;
-  late final Computed<int> dailyNetCount;
+  late final Signal<int> dailyNetCount;
   late final Signal<int> dailyCompletedBoxes;
 
   // --- Signals de Telemetria, Sala e Alertas em Tempo Real ---
@@ -72,16 +76,28 @@ final class EggCountViewModel {
       activeBatch.value?.product.defaultBoxCapacity ?? 50,
     );
 
-    // Contagem bruta do lote atual
-    batchGrossCount = computed<int>(
-      () => activeBatch.value?.producedQuantity ?? 0,
-    );
+    // Contagem do dia consolidada (inicializada com o cache do repositório)
+    final initialAccounting = _repository.currentDailyAccounting;
+    dailyGrossCount = signal<int>(initialAccounting.grossCount);
+    dailyDiscardsCount = signal<int>(initialAccounting.discardsCount);
+    dailyNetCount = signal<int>(initialAccounting.netCount);
+    dailyCompletedBoxes = signal<int>(initialAccounting.completedBoxes);
 
-    // Ovos na caixa atual sendo preenchida
+    // Contagem bruta e contagem efetiva líquida (baseada no Líquido do Dia dividido pelo lote)
+    batchManualAdditions = signal<int>(0);
+    batchNetAdjustment = signal<int>(0);
+    batchGrossCount = computed<int>(
+      () =>
+          (activeBatch.value?.producedQuantity ?? 0) +
+          batchManualAdditions.value,
+    );
+    batchEffectiveCount = computed<int>(() => dailyNetCount.value);
+
+    // Ovos na caixa atual = resto da divisão do Líquido do Dia pela capacidade do lote
     currentBoxCount = computed<int>(() {
       final capacity = defaultBoxCapacity.value;
       if (capacity <= 0) return 0;
-      return batchGrossCount.value % capacity;
+      return dailyNetCount.value % capacity;
     });
 
     // Progresso percentual da caixa (0.0 a 1.0)
@@ -91,25 +107,13 @@ final class EggCountViewModel {
       return (currentBoxCount.value / capacity).clamp(0.0, 1.0);
     });
 
-    // Caixas fechadas no lote atual
+    // Caixas fechadas = inteiro da divisão do Líquido do Dia pela capacidade do lote
     batchCompletedBoxes = computed<int>(() {
       final capacity = defaultBoxCapacity.value;
       if (capacity <= 0) return 0;
-      return batchGrossCount.value ~/ capacity;
+      return dailyNetCount.value ~/ capacity;
     });
     _lastCompletedBoxes = batchCompletedBoxes.value;
-
-    // Contabilidade do dia consolidada (inicializada com o cache do repositório)
-    final initialAccounting = _repository.currentDailyAccounting;
-    dailyGrossCount = signal<int>(initialAccounting.grossCount);
-    dailyDiscardsCount = signal<int>(initialAccounting.discardsCount);
-    dailyNetCount = computed<int>(
-      () => (dailyGrossCount.value - dailyDiscardsCount.value).clamp(
-        0,
-        99999999,
-      ),
-    );
-    dailyCompletedBoxes = signal<int>(initialAccounting.completedBoxes);
 
     // Alertas e telemetria
     isConveyorRunningWithoutBatch = signal<bool>(false);
@@ -177,6 +181,7 @@ final class EggCountViewModel {
     batch(() {
       dailyGrossCount.value = accounting.grossCount;
       dailyDiscardsCount.value = accounting.discardsCount;
+      dailyNetCount.value = accounting.netCount;
       dailyCompletedBoxes.value = accounting.completedBoxes;
     });
   }
@@ -206,6 +211,8 @@ final class EggCountViewModel {
   Future<Result<ProductionBatchModel>> startBatch(ProductModel product) async {
     final result = await _repository.startProductionBatch(product: product);
     if (result.isOk) {
+      batchManualAdditions.value = 0;
+      batchNetAdjustment.value = 0;
       defaultBoxCapacity.value = product.defaultBoxCapacity;
       _lastCompletedBoxes = 0;
     }
@@ -216,10 +223,15 @@ final class EggCountViewModel {
   Future<Result<Unit>> finishActiveBatch() async {
     final current = activeBatch.value;
     if (current == null) return const Result.ok(unit);
-    return _repository.closeActiveBatch(batch: current);
+    final res = await _repository.closeActiveBatch(batch: current);
+    if (res.isOk) {
+      batchManualAdditions.value = 0;
+      batchNetAdjustment.value = 0;
+    }
+    return res;
   }
 
-  /// Registra descarte / quebra no lote ativo
+  /// Registra ajuste (quebra/descarte negativo ou correção manual positiva) no lote ativo
   Future<Result<Unit>> addDiscards({
     required AdjustmentReasonEnum reason,
     required int quantity,
@@ -229,21 +241,51 @@ final class EggCountViewModel {
     if (current == null) {
       return Result.error(
         BaseException(
-          error: 'Nenhum lote ativo para lançar descarte',
+          error: 'Nenhum lote ativo para lançar ajuste',
           stackTrace: StackTrace.current,
           tag: 'EggCountViewModel.addDiscards',
         ),
       );
     }
 
-    _audioService?.playEggUndo();
+    final absQty = quantity.abs();
+    final signedDelta = reason.isAddition ? absQty : -absQty;
+    final rawProduced = current.producedQuantity;
+    final boxCap = defaultBoxCapacity.value > 0 ? defaultBoxCapacity.value : 50;
 
-    return _repository.registerAdjustment(
+    if (reason.isAddition) {
+      batchManualAdditions.value += absQty;
+      batchNetAdjustment.value += absQty;
+      final newNet = (dailyNetCount.value + absQty).clamp(0, 99999999);
+      batch(() {
+        dailyGrossCount.value += absQty;
+        dailyNetCount.value = newNet;
+        dailyCompletedBoxes.value = newNet ~/ boxCap;
+      });
+      _audioService?.playEggHit();
+    } else {
+      batchNetAdjustment.value = max(
+        -rawProduced,
+        batchNetAdjustment.value - absQty,
+      );
+      final newNet = (dailyNetCount.value - absQty).clamp(0, 99999999);
+      batch(() {
+        dailyDiscardsCount.value += absQty;
+        dailyNetCount.value = newNet;
+        dailyCompletedBoxes.value = newNet ~/ boxCap;
+      });
+      _audioService?.playEggUndo();
+    }
+    _lastCompletedBoxes = batchCompletedBoxes.value;
+
+    final res = await _repository.registerAdjustment(
       batchId: current.id,
-      deltaQty: -quantity.abs(),
+      deltaQty: signedDelta,
       reason: reason,
       observation: observation,
     );
+    _updateDailyAccounting(_repository.currentDailyAccounting);
+    return res;
   }
 
   /// Atualiza os valores da contabilidade diária

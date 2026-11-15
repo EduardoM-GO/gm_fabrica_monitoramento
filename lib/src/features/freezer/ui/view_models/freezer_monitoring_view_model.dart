@@ -85,6 +85,26 @@ final class FreezerMonitoringViewModel {
     _repository.cancelCycle(freezerId);
   }
 
+  /// Reinicia manualmente a contagem do ciclo (caso o sensor de porta falhe)
+  Future<void> restartCycle(String freezerId) async {
+    await _repository.restartCycle(freezerId);
+  }
+
+  /// Atualiza os tempos de porta (retirada vs. retirada+abastecimento) e tempo alvo base
+  Future<void> updateDoorTimingConfig(
+    String freezerId, {
+    required int unloadMinSeconds,
+    required int reloadMinSeconds,
+    int? targetDurationSeconds,
+  }) async {
+    await _repository.updateDoorTimingConfig(
+      freezerId,
+      unloadMinSeconds: unloadMinSeconds,
+      reloadMinSeconds: reloadMinSeconds,
+      targetDurationSeconds: targetDurationSeconds,
+    );
+  }
+
   /// Reseta a calibração de um freezer para o valor padrão de fábrica
   Future<Result<Unit>> resetCalibration(
     String freezerId, {
