@@ -6,9 +6,19 @@ import 'package:gm_fabrica_monitoramento/src/data/websocket/enum/ws_connection_s
 import 'package:gm_fabrica_monitoramento/src/data/websocket/esp32_discovery_service.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/base_raw_data.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/websocket_service.dart';
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 final class WebsocketServiceImpl implements WebsocketService {
+  /// Timeout curto para conexão em rede local (LAN Wi-Fi)
+  static const Duration _lanConnectTimeout = Duration(milliseconds: 850);
+
+  /// Intervalo de ping WebSocket na LAN para detectar desconexão física rapidamente
+  static const Duration _lanPingInterval = Duration(milliseconds: 1500);
+
+  /// Watchdog de silêncio: se não chegar telemetria/frames em 3.5s, considera desconectado
+  static const Duration _lanSilenceWatchdog = Duration(milliseconds: 3500);
+
   final Esp32DiscoveryService _discoveryService;
   final void Function(String discoveredHost, int port)? onHostDiscovered;
 
@@ -20,6 +30,7 @@ final class WebsocketServiceImpl implements WebsocketService {
   WebSocketChannel? _channel;
   StreamSubscription? _channelSubscription;
   Timer? _reconnectTimer;
+  Timer? _watchdogTimer;
 
   WsConnectionStateEnum _currentState = WsConnectionStateEnum.disconnected;
   bool _isDisposed = false;
@@ -64,7 +75,11 @@ final class WebsocketServiceImpl implements WebsocketService {
 
     try {
       _updateStatus(WsConnectionStateEnum.connecting);
-      _channel = WebSocketChannel.connect(Uri.parse(_url));
+      _channel = IOWebSocketChannel.connect(
+        Uri.parse(_url),
+        connectTimeout: _lanConnectTimeout,
+        pingInterval: _lanPingInterval,
+      );
 
       _channelSubscription = _channel?.stream.listen(
         _onData,
@@ -80,16 +95,35 @@ final class WebsocketServiceImpl implements WebsocketService {
       );
 
       await _channel?.ready.timeout(
-        const Duration(seconds: 4),
-        onTimeout: () => throw TimeoutException('WebSocket connection timeout'),
+        _lanConnectTimeout,
+        onTimeout: () => throw TimeoutException('WebSocket LAN connection timeout'),
       );
 
       _updateStatus(WsConnectionStateEnum.connected);
+      _resetWatchdog();
     } catch (e) {
       _setError(error: e, tag: 'WebsocketServiceImpl._internalConnect');
       _updateStatus(WsConnectionStateEnum.disconnected);
       _scheduleReconnect();
     }
+  }
+
+  /// Reinicia o watchdog de inatividade da LAN: se o ESP32 for desligado ou perder Wi-Fi
+  /// sem enviar pacote FIN, detecta a queda em 3.5s e já reconecta/descobre.
+  void _resetWatchdog() {
+    _watchdogTimer?.cancel();
+    if (_isDisposed || !_currentState.isConnected) return;
+
+    _watchdogTimer = Timer(_lanSilenceWatchdog, () {
+      if (_isDisposed || !_currentState.isConnected) return;
+      log(
+        'LAN watchdog timeout: sem telemetria do ESP32 por ${_lanSilenceWatchdog.inMilliseconds}ms.',
+        name: 'WebsocketServiceImpl._resetWatchdog',
+      );
+      _cleanupChannel();
+      _updateStatus(WsConnectionStateEnum.disconnected);
+      _scheduleReconnect();
+    });
   }
 
   void _setError({required Object? error, required String tag}) {
@@ -108,6 +142,7 @@ final class WebsocketServiceImpl implements WebsocketService {
 
   void _onDone() {
     log('WebSocket connection closed.', name: 'WebsocketServiceImpl._onDone');
+    _watchdogTimer?.cancel();
     _updateStatus(WsConnectionStateEnum.disconnected);
     _scheduleReconnect();
   }
@@ -115,18 +150,26 @@ final class WebsocketServiceImpl implements WebsocketService {
   void _scheduleReconnect() {
     if (_isDisposed) return;
 
+    _watchdogTimer?.cancel();
     _updateStatus(WsConnectionStateEnum.reconnecting);
 
     _reconnectTimer?.cancel();
     _reconnectAttempts++;
 
-    // A cada 3 falhas consecutivas, tenta descobrir automaticamente o IP do ESP32 na sub-rede
-    if (_reconnectAttempts % 3 == 0 && !_isDiscovering) {
+    // Na mesma rede local (LAN), já dispara Auto-Discovery logo na 1ª falha (e a cada 2 tentativas)
+    if ((_reconnectAttempts == 1 || _reconnectAttempts % 2 == 0) &&
+        !_isDiscovering) {
       _tryAutoDiscovery();
     }
 
-    final delaySeconds = (_reconnectAttempts > 5) ? 5 : _reconnectAttempts * 1;
-    _reconnectTimer = Timer(Duration(seconds: delaySeconds), _internalConnect);
+    // Backoff curto de LAN: 500ms na 1ª tentativa, máximo de 1200ms nas seguintes
+    final delayMs = _reconnectAttempts == 1
+        ? 500
+        : (_reconnectAttempts == 2 ? 800 : 1200);
+    _reconnectTimer = Timer(
+      Duration(milliseconds: delayMs),
+      _internalConnect,
+    );
   }
 
   Future<void> _tryAutoDiscovery() async {
@@ -141,6 +184,12 @@ final class WebsocketServiceImpl implements WebsocketService {
         _host = foundHost;
         _url = 'ws://$_host:$_port';
         onHostDiscovered?.call(_host, _port);
+        // Reconecta imediatamente ao novo IP encontrado na LAN
+        _reconnectTimer?.cancel();
+        _reconnectTimer = Timer(
+          const Duration(milliseconds: 50),
+          _internalConnect,
+        );
       }
     } finally {
       _isDiscovering = false;
@@ -148,6 +197,7 @@ final class WebsocketServiceImpl implements WebsocketService {
   }
 
   void _onData(dynamic data) {
+    _resetWatchdog();
     try {
       final decoded = jsonDecode(data.toString());
       if (decoded is! Map<String, dynamic>) {
@@ -164,12 +214,14 @@ final class WebsocketServiceImpl implements WebsocketService {
   @override
   Future<void> disconnect() async {
     _reconnectTimer?.cancel();
+    _watchdogTimer?.cancel();
     _clearError();
     await _cleanupChannel();
     _updateStatus(WsConnectionStateEnum.disconnected);
   }
 
   Future<void> _cleanupChannel() async {
+    _watchdogTimer?.cancel();
     try {
       await _channelSubscription?.cancel();
     } catch (_) {}
@@ -211,6 +263,7 @@ final class WebsocketServiceImpl implements WebsocketService {
   Future<void> dispose() async {
     _isDisposed = true;
     _reconnectTimer?.cancel();
+    _watchdogTimer?.cancel();
     await Future.wait([
       _connectionStateController.close(),
       _rawDataController.close(),

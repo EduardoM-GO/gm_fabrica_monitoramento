@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-/// Serviço de descoberta automática (Auto-Discovery) do ESP32 na rede local Wi-Fi.
-/// Combina resolução mDNS/hostname, último IP conhecido e varredura paralela rápida na sub-rede.
+/// Serviço de descoberta automática (Auto-Discovery) ultra-rápida do ESP32 na rede local Wi-Fi (LAN).
+/// Usa corrida paralela (first-hit) com timeout curto de LAN (150ms) para encontrar o ESP32 em poucos milissegundos.
 final class Esp32DiscoveryService {
   const Esp32DiscoveryService();
 
@@ -10,23 +10,26 @@ final class Esp32DiscoveryService {
   Future<String?> discoverHost({
     int port = 81,
     String? lastKnownHost,
-    Duration probeTimeout = const Duration(milliseconds: 280),
+    Duration probeTimeout = const Duration(milliseconds: 150),
   }) async {
-    // 1. Tenta primeiro o último host válido conhecido ou esp32.local (mDNS)
-    final priorityCandidates = <String>[
+    // 1. Testa em paralelo o último IP conhecido, padrão e mDNS — retorna no primeiro que responder
+    final priorityCandidates = <String>{
       if (lastKnownHost != null && lastKnownHost.trim().isNotEmpty)
         lastKnownHost.trim(),
-      'esp32.local',
       '192.168.0.58',
-    ];
+      'esp32.local',
+    }.toList();
 
-    for (final host in priorityCandidates.toSet()) {
-      if (await _canConnectTcp(host, port, timeout: probeTimeout)) {
-        return host;
-      }
+    final priorityHit = await _firstReachableHost(
+      priorityCandidates,
+      port: port,
+      timeout: probeTimeout,
+    );
+    if (priorityHit != null) {
+      return priorityHit;
     }
 
-    // 2. Descobre o prefixo IPv4 da interface Wi-Fi local (ex: "192.168.0")
+    // 2. Descobre o prefixo IPv4 da interface Wi-Fi local (ex: "192.168.0") e varre em ondas largas
     final subnetPrefixes = await _getLocalIpv4Subnets();
     for (final prefix in subnetPrefixes) {
       final found = await _scanSubnet(
@@ -40,6 +43,34 @@ final class Esp32DiscoveryService {
     }
 
     return null;
+  }
+
+  /// Dispara probes TCP simultâneos e retorna imediatamente o primeiro host que aceitar conexão,
+  /// sem esperar o timeout dos IPs inativos.
+  Future<String?> _firstReachableHost(
+    List<String> hosts, {
+    required int port,
+    required Duration timeout,
+  }) async {
+    if (hosts.isEmpty) return null;
+
+    final completer = Completer<String?>();
+    int remaining = hosts.length;
+
+    for (final host in hosts) {
+      _canConnectTcp(host, port, timeout: timeout).then((ok) {
+        if (ok && !completer.isCompleted) {
+          completer.complete(host);
+          return;
+        }
+        remaining--;
+        if (remaining == 0 && !completer.isCompleted) {
+          completer.complete(null);
+        }
+      });
+    }
+
+    return completer.future;
   }
 
   /// Verifica se um host/IP aceita conexão TCP na porta do WebSocket
@@ -88,25 +119,22 @@ final class Esp32DiscoveryService {
     required int port,
     required Duration timeout,
   }) async {
-    const batchSize = 32;
+    // 3 ondas paralelas de 85 IPs cobrem toda a sub-rede /24 em ~150ms-450ms no pior caso,
+    // e resolvem em ~10-30ms assim que o IP do ESP32 responde.
+    const batchSize = 85;
     for (int start = 1; start <= 254; start += batchSize) {
       final end = (start + batchSize - 1).clamp(1, 254);
-      final futures = <Future<String?>>[];
+      final candidates = <String>[
+        for (int i = start; i <= end; i++) '$prefix.$i',
+      ];
 
-      for (int i = start; i <= end; i++) {
-        final candidateIp = '$prefix.$i';
-        futures.add(
-          _canConnectTcp(candidateIp, port, timeout: timeout).then(
-            (ok) => ok ? candidateIp : null,
-          ),
-        );
-      }
-
-      final results = await Future.wait(futures);
-      for (final hit in results) {
-        if (hit != null) {
-          return hit;
-        }
+      final hit = await _firstReachableHost(
+        candidates,
+        port: port,
+        timeout: timeout,
+      );
+      if (hit != null) {
+        return hit;
       }
     }
     return null;
