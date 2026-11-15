@@ -87,15 +87,17 @@ class FreezerMonitoringCard extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // --- 1. Topo: Nome + Status da Porta Unificado + Config Discreta + Temperatura Atual ---
+            // --- 1. Topo: Identificação (Tier 2) + Porta (Tier 1 se Aberta, Tier 3 se Fechada) + Config Tímida (Tier 3) + Temperatura Hero (Tier 1) ---
             Row(
               children: [
                 Icon(
                   Icons.ac_unit_rounded,
-                  color: accentColor,
-                  size: 16,
+                  color: (isCooling || isReady || isOpen)
+                      ? accentColor
+                      : AppTheme.textMuted,
+                  size: 14,
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 5),
                 Expanded(
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
@@ -107,13 +109,13 @@ class FreezerMonitoringCard extends StatelessWidget {
                           freezer.name.toUpperCase(),
                           style: theme.textTheme.titleSmall?.copyWith(
                             fontFamily: AppTheme.fontHeading,
-                            fontWeight: FontWeight.w900,
+                            fontWeight: FontWeight.w800,
                             letterSpacing: 0.4,
-                            fontSize: 12,
-                            color: colorScheme.onSurface,
+                            fontSize: 11.5,
+                            color: AppTheme.textSecondary,
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 6),
                         StatusBadge(
                           label: isOpen ? 'PORTA ABERTA' : 'PORTA FECHADA',
                           icon: isOpen
@@ -123,6 +125,7 @@ class FreezerMonitoringCard extends StatelessWidget {
                               ? colorScheme.error
                               : AppTheme.successGreen,
                           compact: true,
+                          subtle: !isOpen,
                         ),
                       ],
                     ),
@@ -130,10 +133,10 @@ class FreezerMonitoringCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 4),
 
-                // Botão tímido de configuração dos tempos de porta do sensor
+                // Rotina pouco usada (Tier 3): Botão bem tímido de configuração dos tempos de porta
                 SizedBox(
-                  width: 26,
-                  height: 26,
+                  width: 22,
+                  height: 22,
                   child: IconButton(
                     key: ValueKey('freezer_config_${freezer.freezerId}'),
                     padding: EdgeInsets.zero,
@@ -142,50 +145,40 @@ class FreezerMonitoringCard extends StatelessWidget {
                     onPressed: () => _showDoorTimingConfigDialog(context),
                     icon: Icon(
                       Icons.tune_rounded,
-                      size: 15,
-                      color: colorScheme.onSurfaceVariant.withValues(
-                        alpha: 0.7,
-                      ),
+                      size: 13,
+                      color: AppTheme.textMuted.withValues(alpha: 0.45),
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
+                const SizedBox(width: 6),
 
-                // Temperatura Atual em destaque tabular
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainerHighest.withValues(
-                      alpha: 0.6,
-                    ),
-                    borderRadius: AppSpacing.borderRadiusXs,
-                  ),
-                  child: Text(
-                    isProbeOk
-                        ? '${freezer.currentTemp.toStringAsFixed(1)} °C'
-                        : '--.- °C',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w900,
-                      color: isProbeOk
-                          ? colorScheme.onSurface
-                          : colorScheme.error,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
+                // Métrica Principal (Tier 1): Temperatura Atual grande e de alta visibilidade à distância
+                Text(
+                  isProbeOk
+                      ? '${freezer.currentTemp.toStringAsFixed(1)} °C'
+                      : '--.- °C',
+                  style: TextStyle(
+                    fontFamily: AppTheme.fontHeading,
+                    fontSize: 22,
+                    height: 1.0,
+                    fontWeight: FontWeight.w900,
+                    color: !isProbeOk || isOpen
+                        ? colorScheme.error
+                        : isReady
+                            ? AppTheme.successGreen
+                            : colorScheme.onSurface,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
               ],
             ),
 
-            const SizedBox(height: 6),
+            const SizedBox(height: 5),
 
             // --- 2. Curva de Área Limpa + Alteração desde Último Evento da Porta ---
             FreezerThermalCurvePanel(freezer: freezer),
 
-            const SizedBox(height: 6),
+            const SizedBox(height: 5),
 
             // --- 3. Painel de Tempo Passado / Tempo Alvo (ou Feedback Rápido pós-retirada) ---
             AnimatedSwitcher(
@@ -212,8 +205,10 @@ class FreezerMonitoringCard extends StatelessWidget {
     );
   }
 
-  /// Seção unificada: mostra "Tempo Passado / Tempo Alvo" (ex: 08:30 / 20:00),
-  /// barra de progresso e o botão tímido de Reiniciar Contagem no canto.
+  /// Seção unificada com hierarquia clara:
+  /// - Tier 1: Tempo Corrido em destaque grande + Alerta de Lote Pronto / Porta Aberta
+  /// - Tier 2: Tempo Alvo (/ MM:SS) e botão operacional "Pronto"
+  /// - Tier 3: Estado em repouso e rotina rara "Reiniciar" bem tímida
   Widget _buildTimerAndControlSection(
     BuildContext context,
     ThemeData theme,
@@ -223,6 +218,8 @@ class FreezerMonitoringCard extends StatelessWidget {
     final isOpen = freezer.isDoorOpen;
     final isReady = freezer.status == FreezerStatusEnum.ready;
     final isCooling = freezer.status == FreezerStatusEnum.cooling;
+    final isIdle = freezer.status == FreezerStatusEnum.idle;
+    final hasOvertime = freezer.overtimeSeconds > 0;
 
     final String statusLabel;
     final Color statusColor;
@@ -238,7 +235,18 @@ class FreezerMonitoringCard extends StatelessWidget {
       statusColor = colorScheme.tertiary;
     } else {
       statusLabel = 'AGUARDANDO FORMINHAS';
-      statusColor = colorScheme.onSurfaceVariant;
+      statusColor = AppTheme.textMuted;
+    }
+
+    final Color elapsedColor;
+    if (isReady) {
+      elapsedColor = AppTheme.successGreen;
+    } else if (hasOvertime) {
+      elapsedColor = AppTheme.warningAmber;
+    } else if (isIdle) {
+      elapsedColor = AppTheme.textSecondary;
+    } else {
+      elapsedColor = colorScheme.onSurface;
     }
 
     return Container(
@@ -246,8 +254,13 @@ class FreezerMonitoringCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: isReady
             ? AppTheme.successGreen.withValues(alpha: 0.18)
-            : colorScheme.surfaceContainerHighest.withValues(alpha: 0.38),
+            : colorScheme.surfaceContainerLowest.withValues(alpha: 0.72),
         borderRadius: AppSpacing.borderRadiusSm,
+        border: Border.all(
+          color: isReady
+              ? AppTheme.successGreen.withValues(alpha: 0.5)
+              : colorScheme.outlineVariant.withValues(alpha: 0.35),
+        ),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -256,32 +269,52 @@ class FreezerMonitoringCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Tempo Passado / Tempo Alvo + Estado
+              // Tempo Passado (Hero Tier 1) / Tempo Alvo (Tier 2) + Estado
               Flexible(
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
                     children: [
+                      Text.rich(
+                        TextSpan(
+                          text: freezer.elapsedFormatted,
+                          style: TextStyle(
+                            fontFamily: AppTheme.fontHeading,
+                            fontSize: 21,
+                            height: 1.0,
+                            fontWeight: FontWeight.w900,
+                            color: elapsedColor,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                          children: [
+                            TextSpan(
+                              text: ' / ${freezer.targetFormatted}',
+                              style: TextStyle(
+                                fontFamily: AppTheme.fontBody,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textMuted,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        key: ValueKey('freezer_time_${freezer.freezerId}'),
+                      ),
+                      const SizedBox(width: 8),
                       Text(
                         statusLabel,
                         style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.4,
+                          fontSize: isIdle ? 9.5 : 10.5,
+                          fontWeight: isIdle ? FontWeight.w600 : FontWeight.w900,
+                          letterSpacing: 0.35,
                           color: statusColor,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        '${freezer.elapsedFormatted} / ${freezer.targetFormatted}',
-                        key: ValueKey('freezer_time_${freezer.freezerId}'),
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          color: colorScheme.onSurface,
-                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
                     ],
@@ -290,40 +323,89 @@ class FreezerMonitoringCard extends StatelessWidget {
               ),
               const SizedBox(width: 6),
 
-              // Botão tímido (discreto) para reiniciar/iniciar caso a regra do sensor falhe
+              // Ações do ciclo: "Pronto" em destaque quando em ciclo vs. "Reiniciar" bem tímido
               FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerRight,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    if (!isIdle) ...[
+                      InkWell(
+                        key: ValueKey('freezer_mark_ready_${freezer.freezerId}'),
+                        borderRadius: AppSpacing.borderRadiusXs,
+                        onTap: () => viewModel.markBatchReadyAndCalibrate(
+                          freezer.freezerId,
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppTheme.successGreen.withValues(
+                              alpha: (isReady || hasOvertime || isOpen)
+                                  ? 0.28
+                                  : 0.14,
+                            ),
+                            borderRadius: AppSpacing.borderRadiusXs,
+                            border: Border.all(
+                              color: AppTheme.successGreen.withValues(
+                                alpha: (isReady || hasOvertime || isOpen)
+                                    ? 0.65
+                                    : 0.30,
+                              ),
+                            ),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.check_circle_rounded,
+                                size: 13,
+                                color: AppTheme.successGreen,
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                'Pronto',
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppTheme.successGreen,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                    ],
+                    // Rotina pouco usada (Tier 3): "Reiniciar" bem tímido e discreto
                     InkWell(
                       key: ValueKey('freezer_restart_${freezer.freezerId}'),
                       borderRadius: AppSpacing.borderRadiusXs,
                       onTap: () => viewModel.restartCycle(freezer.freezerId),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 3,
+                          horizontal: 4,
+                          vertical: 2,
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
                               Icons.refresh_rounded,
-                              size: 13,
-                              color: colorScheme.onSurfaceVariant.withValues(
-                                alpha: 0.75,
-                              ),
+                              size: 11,
+                              color: AppTheme.textMuted.withValues(alpha: 0.55),
                             ),
-                            const SizedBox(width: 3),
+                            const SizedBox(width: 2),
                             Text(
                               'Reiniciar',
                               style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: colorScheme.onSurfaceVariant.withValues(
-                                  alpha: 0.75,
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textMuted.withValues(
+                                  alpha: 0.55,
                                 ),
                               ),
                             ),
@@ -331,27 +413,6 @@ class FreezerMonitoringCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (isCooling || isReady) ...[
-                      const SizedBox(width: 2),
-                      InkWell(
-                        key: ValueKey('freezer_cancel_${freezer.freezerId}'),
-                        borderRadius: AppSpacing.borderRadiusXs,
-                        onTap: () => viewModel.cancelCycle(freezer.freezerId),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 3,
-                          ),
-                          child: Icon(
-                            Icons.stop_circle_outlined,
-                            size: 14,
-                            color: colorScheme.onSurfaceVariant.withValues(
-                              alpha: 0.55,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
               ),
@@ -360,11 +421,13 @@ class FreezerMonitoringCard extends StatelessWidget {
           const SizedBox(height: 5),
           SmoothProgressBar(
             value: freezer.progress,
-            minHeight: 5,
+            minHeight: 6,
             progressColor: isReady
                 ? AppTheme.successGreen
                 : (isOpen ? colorScheme.error : colorScheme.tertiary),
-            backgroundColor: colorScheme.surfaceContainerLowest,
+            backgroundColor: colorScheme.surfaceContainerHighest.withValues(
+              alpha: 0.5,
+            ),
             borderRadius: BorderRadius.circular(4),
             duration: AppMotion.durationStandard,
             curve: AppMotion.easeOut,
@@ -652,9 +715,11 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
         : '0.0 °C pós-porta';
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLowest.withValues(alpha: 0.55),
+        color: colorScheme.surfaceContainerLowest.withValues(
+          alpha: hasDoorShift ? 0.65 : 0.35,
+        ),
         borderRadius: AppSpacing.borderRadiusSm,
       ),
       child: Column(
@@ -673,20 +738,22 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
                     children: [
                       Icon(
                         Icons.swap_vert_rounded,
-                        size: 13,
+                        size: hasDoorShift ? 13 : 11,
                         color: hasDoorShift
                             ? curveColor
-                            : colorScheme.onSurfaceVariant,
+                            : AppTheme.textMuted.withValues(alpha: 0.6),
                       ),
                       const SizedBox(width: 4),
                       Text(
                         doorShiftLabel,
                         style: theme.textTheme.labelSmall?.copyWith(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w800,
+                          fontSize: hasDoorShift ? 10.5 : 9.5,
+                          fontWeight: hasDoorShift
+                              ? FontWeight.w800
+                              : FontWeight.w600,
                           color: hasDoorShift
                               ? curveColor
-                              : colorScheme.onSurfaceVariant,
+                              : AppTheme.textMuted.withValues(alpha: 0.65),
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
@@ -700,19 +767,19 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
                   alignment: Alignment.centerRight,
                   child: Text(
                     '+${freezer.accumulatedPenaltySeconds}s no alvo',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      color: AppTheme.warningAmber,
-                      fontFeatures: [FontFeature.tabularFigures()],
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w600,
+                      color: AppTheme.warningAmber.withValues(alpha: 0.72),
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 3),
           SizedBox(
-            height: 28,
+            height: 26,
             child: CustomPaint(
               painter: _ThermalCurvePainter(
                 history: freezer.temperatureHistory,

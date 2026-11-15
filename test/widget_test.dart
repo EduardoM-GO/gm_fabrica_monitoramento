@@ -219,7 +219,7 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('freezer_restart_f1')));
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.text('CRISTALIZANDO'), findsOneWidget);
-      expect(find.byKey(const ValueKey('freezer_cancel_f1')), findsOneWidget);
+      expect(find.byKey(const ValueKey('freezer_mark_ready_f1')), findsOneWidget);
       expect(tester.takeException(), isNull);
 
       // 3.b Simula abertura de porta no Freezer 1 (subida de 3.8 °C -> 7.8 °C) e fechamento

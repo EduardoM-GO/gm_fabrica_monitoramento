@@ -18,6 +18,7 @@ final class FreezerLiveState {
 
   final int expectedDurationSeconds;
   final int remainingSeconds;
+  final int elapsedSeconds;
   final int accumulatedPenaltySeconds;
   final int accumulatedDoorOpenSeconds;
   final int doorOpenCount;
@@ -47,6 +48,7 @@ final class FreezerLiveState {
     this.lastDoorCloseTemp,
     required this.expectedDurationSeconds,
     required this.remainingSeconds,
+    int? elapsedSeconds,
     this.accumulatedPenaltySeconds = 0,
     this.accumulatedDoorOpenSeconds = 0,
     this.doorOpenCount = 0,
@@ -59,15 +61,16 @@ final class FreezerLiveState {
     this.calibratedBaseSeconds = 1200,
     this.unloadMinSeconds = 30,
     this.reloadMinSeconds = 60,
-  });
+  }) : elapsedSeconds =
+           elapsedSeconds ??
+           (status == FreezerStatusEnum.idle
+               ? 0
+               : (expectedDurationSeconds - remainingSeconds));
 
-  /// Segundos já decorridos no ciclo atual (0 quando em repouso).
-  int get elapsedSeconds {
+  /// Segundos corridos a mais do que o planejado (tempo extra necessário para finalizar os ovos).
+  int get overtimeSeconds {
     if (status == FreezerStatusEnum.idle) return 0;
-    return (expectedDurationSeconds - remainingSeconds).clamp(
-      0,
-      expectedDurationSeconds,
-    );
+    return max(0, elapsedSeconds - expectedDurationSeconds);
   }
 
   double get progress {
@@ -77,10 +80,11 @@ final class FreezerLiveState {
     return (elapsedSeconds / expectedDurationSeconds).clamp(0.0, 1.0);
   }
 
-  /// Tempo decorrido formatado (MM:SS), ex.: "08:30".
+  /// Tempo decorrido formatado (MM:SS), ex.: "08:30" ou "22:15" (mesmo acima do alvo).
   String get elapsedFormatted {
-    final m = elapsedSeconds ~/ 60;
-    final s = elapsedSeconds % 60;
+    final total = status == FreezerStatusEnum.idle ? 0 : max(0, elapsedSeconds);
+    final m = total ~/ 60;
+    final s = total % 60;
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
@@ -156,6 +160,7 @@ final class FreezerLiveState {
     double? lastDoorCloseTemp,
     int? expectedDurationSeconds,
     int? remainingSeconds,
+    int? elapsedSeconds,
     int? accumulatedPenaltySeconds,
     int? accumulatedDoorOpenSeconds,
     int? doorOpenCount,
@@ -172,20 +177,32 @@ final class FreezerLiveState {
     int? unloadMinSeconds,
     int? reloadMinSeconds,
   }) {
+    final resolvedStatus = status ?? this.status;
+    final resolvedExpected =
+        expectedDurationSeconds ?? this.expectedDurationSeconds;
+    final resolvedRemaining = remainingSeconds ?? this.remainingSeconds;
+    final resolvedElapsed =
+        elapsedSeconds ??
+        (resolvedStatus == FreezerStatusEnum.idle
+            ? 0
+            : (remainingSeconds != null && expectedDurationSeconds == null
+                  ? max(this.elapsedSeconds, resolvedExpected - resolvedRemaining)
+                  : this.elapsedSeconds));
+
     return FreezerLiveState(
       freezerId: freezerId ?? this.freezerId,
       name: name ?? this.name,
       currentTemp: currentTemp ?? this.currentTemp,
       isDoorOpen: isDoorOpen ?? this.isDoorOpen,
       isSensorOk: isSensorOk ?? this.isSensorOk,
-      status: status ?? this.status,
+      status: resolvedStatus,
       baselineTemp: baselineTemp ?? this.baselineTemp,
       peakTemp: peakTemp ?? this.peakTemp,
       lastDoorOpenTemp: lastDoorOpenTemp ?? this.lastDoorOpenTemp,
       lastDoorCloseTemp: lastDoorCloseTemp ?? this.lastDoorCloseTemp,
-      expectedDurationSeconds:
-          expectedDurationSeconds ?? this.expectedDurationSeconds,
-      remainingSeconds: remainingSeconds ?? this.remainingSeconds,
+      expectedDurationSeconds: resolvedExpected,
+      remainingSeconds: resolvedRemaining,
+      elapsedSeconds: resolvedElapsed,
       accumulatedPenaltySeconds:
           accumulatedPenaltySeconds ?? this.accumulatedPenaltySeconds,
       accumulatedDoorOpenSeconds:

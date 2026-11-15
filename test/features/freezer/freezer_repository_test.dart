@@ -184,5 +184,21 @@ void main() {
       expect(f1.calibratedBaseSeconds, equals(1200));
       expect(f1.isCalibrated, isFalse);
     });
+
+    test('markBatchReadyAndCalibrate finaliza lote e calibra próximo ciclo com tempo real decorrido', () async {
+      await freezerRepo.startManualCycle('f1');
+      final initialBase = freezerRepo.getFreezer('f1')!.calibratedBaseSeconds;
+
+      // Simula que o operador abriu a porta antes do tempo planejado e marcou como pronto
+      await Future<void>.delayed(const Duration(seconds: 2));
+      await freezerRepo.markBatchReadyAndCalibrate('f1');
+
+      final f1 = freezerRepo.getFreezer('f1')!;
+      expect(f1.status, equals(FreezerStatusEnum.idle));
+      expect(f1.activeCycleId, isNull);
+      expect(f1.isCalibrated, isTrue);
+      // Como finalizou muito antes de 1200s, o tempo base calibrado para o próximo ciclo reduz
+      expect(f1.calibratedBaseSeconds, lessThan(initialBase));
+    });
   });
 }

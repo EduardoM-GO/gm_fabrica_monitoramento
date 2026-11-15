@@ -106,24 +106,28 @@ final class EggCountCard extends StatelessWidget {
                       duration: AppMotion.durationFast,
                       curve: AppMotion.easeOut,
                       child: Container(
-                        padding: const EdgeInsets.all(AppSpacing.xs),
+                        padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
                           color: hasBatch
                               ? colorScheme.primaryContainer
-                              : colorScheme.surfaceContainerHighest,
+                              : colorScheme.surfaceContainerHighest.withValues(
+                                  alpha: 0.45,
+                                ),
                           borderRadius: AppSpacing.borderRadiusSm,
                           border: Border.all(
                             color: hasBatch
                                 ? colorScheme.primary.withValues(alpha: 0.5)
-                                : colorScheme.outlineVariant,
+                                : colorScheme.outlineVariant.withValues(
+                                    alpha: 0.4,
+                                  ),
                           ),
                         ),
                         child: Icon(
                           Icons.egg_rounded,
                           color: hasBatch
                               ? colorScheme.onPrimaryContainer
-                              : colorScheme.onSurfaceVariant,
-                          size: 20,
+                              : AppTheme.textMuted,
+                          size: 18,
                         ),
                       ),
                     ),
@@ -140,7 +144,11 @@ final class EggCountCard extends StatelessWidget {
                                   style: theme.textTheme.titleMedium?.copyWith(
                                     fontFamily: AppTheme.fontHeading,
                                     fontWeight: FontWeight.w900,
+                                    fontSize: hasBatch ? 16 : 14,
                                     letterSpacing: 0.5,
+                                    color: hasBatch
+                                        ? colorScheme.onSurface
+                                        : AppTheme.textSecondary,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -151,8 +159,9 @@ final class EggCountCard extends StatelessWidget {
                                 label: hasBatch ? 'LOTE ATIVO' : 'EM REPOUSO',
                                 color: hasBatch
                                     ? AppTheme.successGreen
-                                    : colorScheme.onSurfaceVariant,
+                                    : AppTheme.textMuted,
                                 compact: true,
+                                subtle: !hasBatch,
                               ),
                             ],
                           ),
@@ -162,7 +171,8 @@ final class EggCountCard extends StatelessWidget {
                                 ? 'Caixa #${completedBoxes + 1} em enchimento • Capacidade: $boxCap ovos ($completedBoxes cx no lote)'
                                 : 'Selecione um produto para iniciar a contagem na esteira',
                             style: theme.textTheme.labelSmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
+                              fontSize: 10.5,
+                              color: AppTheme.textMuted,
                               fontFeatures: const [
                                 FontFeature.tabularFigures(),
                               ],
@@ -174,38 +184,54 @@ final class EggCountCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: AppSpacing.xs),
-                    Card.filled(
-                      color: colorScheme.surfaceContainerHigh,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: AppSpacing.borderRadiusSm,
-                        side: BorderSide(color: colorScheme.outlineVariant),
+                    // Cadência da esteira (Tier 3 quando parada, Tier 2 em movimento)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xs,
+                        vertical: 4,
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.xs,
-                          vertical: 5,
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.speed_rounded,
-                              size: 15,
-                              color: colorScheme.primary,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${speed.toStringAsFixed(0)} ovos/min',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                                fontWeight: FontWeight.w800,
-                                color: colorScheme.onSurface,
+                      decoration: BoxDecoration(
+                        color: speed > 0
+                            ? colorScheme.surfaceContainerHigh
+                            : colorScheme.surfaceContainerLowest.withValues(
+                                alpha: 0.5,
                               ),
-                            ),
-                          ],
+                        borderRadius: AppSpacing.borderRadiusXs,
+                        border: Border.all(
+                          color: speed > 0
+                              ? colorScheme.primary.withValues(alpha: 0.4)
+                              : colorScheme.outlineVariant.withValues(
+                                  alpha: 0.35,
+                                ),
                         ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.speed_rounded,
+                            size: 13,
+                            color: speed > 0
+                                ? colorScheme.primary
+                                : AppTheme.textMuted,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${speed.toStringAsFixed(0)} ovos/min',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontSize: 11,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                              fontWeight: speed > 0
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                              color: speed > 0
+                                  ? colorScheme.onSurface
+                                  : AppTheme.textMuted,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
@@ -213,21 +239,26 @@ final class EggCountCard extends StatelessWidget {
 
                 const SizedBox(height: AppSpacing.xs),
 
-                // --- Display Central Tonificado: Contador Odômetro + Progresso da Caixa ---
+                // --- Display Central Hero (Tier 1): Contador da Caixa em Enchimento ---
                 Card.filled(
-                  color: colorScheme.surfaceContainerLow,
+                  color: colorScheme.surfaceContainerLowest,
                   shape: RoundedRectangleBorder(
                     borderRadius: AppSpacing.borderRadiusLg,
                     side: BorderSide(
                       color: isAnimating
-                          ? colorScheme.primary.withValues(alpha: 0.6)
-                          : colorScheme.outlineVariant,
+                          ? colorScheme.primary
+                          : hasBatch
+                              ? colorScheme.primary.withValues(alpha: 0.35)
+                              : colorScheme.outlineVariant.withValues(
+                                  alpha: 0.5,
+                                ),
+                      width: isAnimating ? 2.0 : 1.2,
                     ),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: AppSpacing.md,
-                      vertical: AppSpacing.xs,
+                      vertical: 8,
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -242,23 +273,23 @@ final class EggCountCard extends StatelessWidget {
                               style: theme.textTheme.displayLarge?.copyWith(
                                 fontFamily: AppTheme.fontHeading,
                                 fontWeight: FontWeight.w900,
-                                fontSize: 54,
-                                height: 1.05,
+                                fontSize: 64,
+                                height: 1.0,
                                 fontFeatures: const [
                                   FontFeature.tabularFigures(),
                                 ],
                                 color: hasBatch
-                                    ? colorScheme.onSurface
-                                    : colorScheme.onSurfaceVariant,
+                                    ? colorScheme.primary
+                                    : AppTheme.textMuted,
                               ),
                             ),
                             const SizedBox(width: AppSpacing.xs),
                             Text(
                               '/ $boxCap ovos',
                               style: theme.textTheme.headlineSmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 20,
+                                color: AppTheme.textSecondary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 18,
                                 fontFeatures: const [
                                   FontFeature.tabularFigures(),
                                 ],
@@ -269,7 +300,7 @@ final class EggCountCard extends StatelessWidget {
                         const SizedBox(height: 6),
                         SmoothProgressBar(
                           value: progress,
-                          minHeight: 8,
+                          minHeight: 10,
                           progressColor: progress >= 1.0
                               ? AppTheme.successGreen
                               : colorScheme.primary,
@@ -283,22 +314,23 @@ final class EggCountCard extends StatelessWidget {
 
                 const SizedBox(height: AppSpacing.xs),
 
-                // --- Barra de Ações Rápidas do Operador (Kiosk 1-Toque) ---
+                // --- Barra de Ações: Ação Frequente em Destaque vs. Rotina Rara Tímida ---
                 if (!hasBatch)
                   PressableScale(
                     child: FilledButton.icon(
                       style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(42),
+                        minimumSize: const Size.fromHeight(44),
                         shape: RoundedRectangleBorder(
                           borderRadius: AppSpacing.borderRadiusMd,
                         ),
                       ),
                       onPressed: () => _showProductSelectorSheet(context),
-                      icon: const Icon(Icons.play_arrow_rounded),
+                      icon: const Icon(Icons.play_arrow_rounded, size: 22),
                       label: const Text(
                         'INICIAR LOTE DE PRODUÇÃO',
                         style: TextStyle(
                           fontWeight: FontWeight.w900,
+                          fontSize: 13.5,
                           letterSpacing: 0.5,
                         ),
                       ),
@@ -307,58 +339,78 @@ final class EggCountCard extends StatelessWidget {
                 else
                   Row(
                     children: [
+                      // Ação operacional frequente (Tier 1/2): Grande e chamativa
                       Expanded(
+                        flex: 5,
                         child: PressableScale(
                           child: FilledButton.tonalIcon(
                             style: FilledButton.styleFrom(
-                              minimumSize: const Size.fromHeight(40),
+                              minimumSize: const Size.fromHeight(42),
                               backgroundColor: colorScheme.errorContainer
-                                  .withValues(alpha: 0.65),
+                                  .withValues(alpha: 0.78),
                               foregroundColor: colorScheme.onErrorContainer,
                               shape: RoundedRectangleBorder(
                                 borderRadius: AppSpacing.borderRadiusMd,
                                 side: BorderSide(
                                   color: colorScheme.error.withValues(
-                                    alpha: 0.5,
+                                    alpha: 0.65,
                                   ),
+                                  width: 1.2,
                                 ),
                               ),
                             ),
                             onPressed: () => _showDiscardSheet(context),
                             icon: const Icon(
                               Icons.broken_image_outlined,
-                              size: 17,
+                              size: 18,
                             ),
                             label: const Text(
                               'LANÇAR QUEBRA',
                               style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 13,
+                                letterSpacing: 0.4,
                               ),
                             ),
                           ),
                         ),
                       ),
                       const SizedBox(width: AppSpacing.xs),
+                      // Rotina pouco usada (Tier 3): Tímida e compacta para evitar toque acidental
                       Expanded(
+                        flex: 2,
                         child: PressableScale(
                           child: OutlinedButton.icon(
                             style: OutlinedButton.styleFrom(
-                              minimumSize: const Size.fromHeight(40),
+                              minimumSize: const Size.fromHeight(42),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                              ),
+                              foregroundColor: AppTheme.textMuted,
+                              side: BorderSide(
+                                color: colorScheme.outlineVariant.withValues(
+                                  alpha: 0.45,
+                                ),
+                              ),
                               shape: RoundedRectangleBorder(
                                 borderRadius: AppSpacing.borderRadiusMd,
                               ),
                             ),
                             onPressed: () => _showProductSelectorSheet(context),
-                            icon: const Icon(
+                            icon: Icon(
                               Icons.stop_circle_outlined,
-                              size: 17,
+                              size: 14,
+                              color: AppTheme.textMuted.withValues(alpha: 0.8),
                             ),
-                            label: const Text(
-                              'ENCERRAR LOTE',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 12,
+                            label: const FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                'ENCERRAR LOTE',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 10.5,
+                                  color: AppTheme.textMuted,
+                                ),
                               ),
                             ),
                           ),
@@ -369,28 +421,12 @@ final class EggCountCard extends StatelessWidget {
 
                 const SizedBox(height: AppSpacing.xs),
 
-                // --- Painel Consolidado de Contabilidade do Dia (Tonal Cards M3) ---
+                // --- Painel de Contabilidade do Dia: Hierarquia entre Métricas Principais e Secundárias ---
                 Row(
                   children: [
+                    // Principais para o operador (Líquido e Caixas Fechadas): Maior destaque (flex 6)
                     Expanded(
-                      child: _StatItem(
-                        label: 'TOTAL BRUTO',
-                        value: '${viewModel.dailyGrossCount.value}',
-                        icon: Icons.precision_manufacturing_rounded,
-                        color: colorScheme.onSurface,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: _StatItem(
-                        label: 'QUEBRAS/DESC.',
-                        value: '${viewModel.dailyDiscardsCount.value}',
-                        icon: Icons.heart_broken_rounded,
-                        color: colorScheme.error,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
+                      flex: 6,
                       child: _StatItem(
                         label: 'LÍQUIDO DO DIA',
                         value: '${viewModel.dailyNetCount.value}',
@@ -401,11 +437,38 @@ final class EggCountCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                     Expanded(
+                      flex: 6,
                       child: _StatItem(
                         label: 'CAIXAS FECHADAS',
                         value: '${viewModel.dailyCompletedBoxes.value}',
                         icon: Icons.inventory_2_rounded,
                         color: colorScheme.secondary,
+                        isHighlight: true,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    // Secundárias / conferência (Bruto e Quebras): Mais tímidas (flex 4)
+                    Expanded(
+                      flex: 4,
+                      child: _StatItem(
+                        label: 'TOTAL BRUTO',
+                        value: '${viewModel.dailyGrossCount.value}',
+                        icon: Icons.precision_manufacturing_rounded,
+                        color: AppTheme.textSecondary,
+                        isSubtle: true,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      flex: 4,
+                      child: _StatItem(
+                        label: 'QUEBRAS/DESC.',
+                        value: '${viewModel.dailyDiscardsCount.value}',
+                        icon: Icons.heart_broken_rounded,
+                        color: viewModel.dailyDiscardsCount.value > 0
+                            ? colorScheme.error.withValues(alpha: 0.85)
+                            : AppTheme.textMuted,
+                        isSubtle: true,
                       ),
                     ),
                   ],
@@ -873,6 +936,7 @@ final class _StatItem extends StatelessWidget {
   final IconData icon;
   final Color color;
   final bool isHighlight;
+  final bool isSubtle;
 
   const _StatItem({
     required this.label,
@@ -880,6 +944,7 @@ final class _StatItem extends StatelessWidget {
     required this.icon,
     required this.color,
     this.isHighlight = false,
+    this.isSubtle = false,
   });
 
   @override
@@ -889,20 +954,25 @@ final class _StatItem extends StatelessWidget {
 
     return Card.filled(
       color: isHighlight
-          ? colorScheme.primaryContainer.withValues(alpha: 0.38)
-          : colorScheme.surfaceContainerLow,
+          ? colorScheme.surfaceContainerHigh
+          : isSubtle
+              ? colorScheme.surfaceContainerLowest.withValues(alpha: 0.45)
+              : colorScheme.surfaceContainerLow,
       shape: RoundedRectangleBorder(
         borderRadius: AppSpacing.borderRadiusSm,
         side: BorderSide(
           color: isHighlight
-              ? colorScheme.primary.withValues(alpha: 0.6)
-              : colorScheme.outlineVariant,
+              ? color.withValues(alpha: 0.55)
+              : isSubtle
+                  ? colorScheme.outlineVariant.withValues(alpha: 0.30)
+                  : colorScheme.outlineVariant,
+          width: isHighlight ? 1.2 : 1.0,
         ),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(
+        padding: EdgeInsets.symmetric(
           horizontal: AppSpacing.xs,
-          vertical: 6,
+          vertical: isHighlight ? 6 : 4,
         ),
         child: FittedBox(
           fit: BoxFit.scaleDown,
@@ -912,17 +982,21 @@ final class _StatItem extends StatelessWidget {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(icon, size: 11, color: color),
+                  Icon(
+                    icon,
+                    size: isSubtle ? 9.5 : 11,
+                    color: isSubtle ? color.withValues(alpha: 0.7) : color,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     label,
                     style: theme.textTheme.labelSmall?.copyWith(
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.4,
+                      fontSize: isSubtle ? 8.5 : 9.5,
+                      fontWeight: isHighlight ? FontWeight.w800 : FontWeight.w600,
+                      letterSpacing: 0.35,
                       color: isHighlight
-                          ? colorScheme.onPrimaryContainer
-                          : colorScheme.onSurfaceVariant,
+                          ? AppTheme.textSecondary
+                          : AppTheme.textMuted,
                     ),
                   ),
                 ],
@@ -931,8 +1005,8 @@ final class _StatItem extends StatelessWidget {
               Text(
                 value,
                 style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 17,
+                  fontWeight: isSubtle ? FontWeight.w700 : FontWeight.w900,
+                  fontSize: isHighlight ? 19 : 13.5,
                   color: color,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),

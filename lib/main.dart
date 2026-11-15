@@ -27,8 +27,20 @@ void main() async {
     DeviceOrientation.landscapeRight,
   ]);
 
-  // Immersive sticky mode hides system bars to maximize display real estate
-  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  // Immersive sticky fullscreen mode hides status and navigation bars permanently
+  await SystemChrome.setEnabledSystemUIMode(
+    SystemUiMode.immersiveSticky,
+    overlays: [],
+  );
+  await SystemChrome.setSystemUIChangeCallback((systemOverlaysAreVisible) async {
+    if (systemOverlaysAreVisible) {
+      await Future<void>.delayed(const Duration(seconds: 1));
+      await SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.immersiveSticky,
+        overlays: [],
+      );
+    }
+  });
 
   // Transparent system overlays for edge-to-edge layout
   SystemChrome.setSystemUIOverlayStyle(

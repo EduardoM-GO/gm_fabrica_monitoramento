@@ -466,14 +466,18 @@ final class FreezerRepository {
           }
         }
 
-        // Ticker de resfriamento ativo
-        if (s.status == FreezerStatusEnum.cooling) {
-          final rem = max(0, s.remainingSeconds - 1);
-          _executedSecondsInCycle[id] =
-              (_executedSecondsInCycle[id] ?? 0) + 1;
+        // Ticker contínuo (sem pausa na porta e continua contando o tempo extra após atingir o alvo)
+        if (s.status == FreezerStatusEnum.cooling ||
+            s.status == FreezerStatusEnum.doorOpen ||
+            s.status == FreezerStatusEnum.ready) {
+          final newElapsed =
+              (_executedSecondsInCycle[id] ?? s.elapsedSeconds) + 1;
+          _executedSecondsInCycle[id] = newElapsed;
+          final rem = max(0, s.expectedDurationSeconds - newElapsed);
 
-          if (rem == 0) {
+          if (s.status == FreezerStatusEnum.cooling && rem == 0) {
             s = s.copyWith(
+              elapsedSeconds: newElapsed,
               remainingSeconds: 0,
               status: FreezerStatusEnum.ready,
             );
@@ -481,7 +485,10 @@ final class FreezerRepository {
               _cycleReadyController.add(id);
             }
           } else {
-            s = s.copyWith(remainingSeconds: rem);
+            s = s.copyWith(
+              elapsedSeconds: newElapsed,
+              remainingSeconds: rem,
+            );
           }
           _freezers[id] = s;
           changed = true;
@@ -530,6 +537,7 @@ final class FreezerRepository {
       status: FreezerStatusEnum.cooling,
       expectedDurationSeconds: baseSeconds,
       remainingSeconds: baseSeconds,
+      elapsedSeconds: 0,
       baselineTemp: baselineTemp,
       peakTemp: peakTemp,
       activeCycleId: cycleId,
@@ -555,6 +563,15 @@ final class FreezerRepository {
     );
   }
 
+  /// Marca manualmente que os ovos já estão prontos ("Pronto"), encerrando o ciclo
+  /// e usando o tempo real corrido (seja antes ou depois do planejado) para calibrar o próximo ciclo.
+  Future<void> markBatchReadyAndCalibrate(String freezerId) async {
+    final current = _freezers[freezerId];
+    if (current == null || current.status == FreezerStatusEnum.idle) return;
+
+    await recordFeedback(freezerId, FreezerFeedbackEnum.onPoint);
+  }
+
   /// Registra o feedback do operador ('No Ponto', 'Ainda Mole', 'Muito Gelado')
   Future<void> recordFeedback(
     String freezerId,
@@ -565,8 +582,10 @@ final class FreezerRepository {
 
     final activeBatch = _productionRepo.currentActiveBatch;
     final productId = activeBatch?.product.id;
-    final executedSeconds = _executedSecondsInCycle[freezerId] ??
-        current.expectedDurationSeconds;
+    final executedSeconds =
+        (_executedSecondsInCycle[freezerId] ?? current.elapsedSeconds) > 0
+            ? (_executedSecondsInCycle[freezerId] ?? current.elapsedSeconds)
+            : current.expectedDurationSeconds;
 
     // 1. Caso 'Ainda Mole': Extensão Imediata de segurança (+3 min)
     if (feedback == FreezerFeedbackEnum.soft) {
@@ -591,6 +610,7 @@ final class FreezerRepository {
         status: FreezerStatusEnum.cooling,
         expectedDurationSeconds: current.expectedDurationSeconds + extensionSec,
         remainingSeconds: extensionSec,
+        elapsedSeconds: executedSeconds,
         clearFeedbackCountdown: true,
         lastFeedback: feedback,
         calibratedBaseSeconds: newCalibrated,
@@ -613,7 +633,7 @@ final class FreezerRepository {
       );
     }
 
-    // 3. Atualiza calibração em malha fechada para os próximos lotes
+    // 3. Atualiza calibração em malha fechada para os próximos lotes (usando o tempo real corrido)
     final newCalibrated = _engine.adaptCalibration(
       currentCalibratedSeconds: current.calibratedBaseSeconds,
       executedEffectiveSeconds: executedSeconds,
@@ -627,12 +647,18 @@ final class FreezerRepository {
       lastFeedback: feedback.code,
     );
 
-    // 4. Retorna freezer ao estado IDLE
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('freezer_${freezerId}_target_sec', newCalibrated);
+    } catch (_) {}
+
+    // 4. Retorna freezer ao estado IDLE com o novo tempo calibrado pronto para o próximo ciclo
     _executedSecondsInCycle.remove(freezerId);
     _freezers[freezerId] = current.copyWith(
       status: FreezerStatusEnum.idle,
       remainingSeconds: newCalibrated,
       expectedDurationSeconds: newCalibrated,
+      elapsedSeconds: 0,
       clearFeedbackCountdown: true,
       clearActiveCycleId: true,
       lastFeedback: feedback,

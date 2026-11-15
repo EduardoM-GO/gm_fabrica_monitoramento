@@ -90,6 +90,11 @@ final class FreezerMonitoringViewModel {
     await _repository.restartCycle(freezerId);
   }
 
+  /// Marca que os ovos já estão prontos, encerrando o ciclo atual e calibrando o próximo ciclo com o tempo real corrido
+  Future<void> markBatchReadyAndCalibrate(String freezerId) async {
+    await _repository.markBatchReadyAndCalibrate(freezerId);
+  }
+
   /// Atualiza os tempos de porta (retirada vs. retirada+abastecimento) e tempo alvo base
   Future<void> updateDoorTimingConfig(
     String freezerId, {

@@ -142,149 +142,133 @@ final class _TopKioskStatusStrip extends StatelessWidget {
           ),
         };
 
-        return Card.filled(
-          color: colorScheme.surfaceContainerLow,
-          shape: RoundedRectangleBorder(
-            borderRadius: AppSpacing.borderRadiusMd,
-            side: BorderSide(
-              color: hasDoorAlarm
-                  ? colorScheme.error.withValues(alpha: 0.7)
-                  : colorScheme.outlineVariant,
-            ),
+        final isHealthy =
+            connState == WsConnectionStateEnum.connected && !hasDoorAlarm;
+
+        return Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.xs,
+            vertical: 2,
           ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.sm,
-              vertical: AppSpacing.xxs,
-            ),
-            child: Row(
-              children: [
-                // Identificação da Linha de Produção (Paleta Cacau & Ouro)
-                Flexible(
+          decoration: BoxDecoration(
+            color: hasDoorAlarm
+                ? colorScheme.errorContainer.withValues(alpha: 0.35)
+                : Colors.transparent,
+            borderRadius: AppSpacing.borderRadiusSm,
+            border: hasDoorAlarm
+                ? Border.all(color: colorScheme.error.withValues(alpha: 0.7))
+                : null,
+          ),
+          child: Row(
+            children: [
+              // Identificação discreta da linha (Tier 3 — não compete com o produto ativo)
+              Flexible(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.factory_rounded,
+                      size: 12,
+                      color: AppTheme.textMuted.withValues(alpha: 0.75),
+                    ),
+                    const SizedBox(width: 5),
+                    Flexible(
+                      child: Text(
+                        'G&M CHOCOLATES',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontFamily: AppTheme.fontHeading,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.6,
+                          color: AppTheme.textMuted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const Spacer(),
+
+              if (hasDoorAlarm) ...[
+                const StatusBadge(
+                  label: 'ALARME TÉRMICO',
+                  color: AppTheme.dangerRed,
+                  icon: Icons.warning_amber_rounded,
+                  compact: true,
+                ),
+                const SizedBox(width: AppSpacing.xs),
+              ],
+
+              // Clima da Sala (Tier 3 — informação ambiental tímida)
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(5),
-                        decoration: BoxDecoration(
-                          color: colorScheme.primaryContainer,
-                          borderRadius: AppSpacing.borderRadiusXs,
-                        ),
-                        child: Icon(
-                          Icons.factory_rounded,
-                          size: 14,
-                          color: colorScheme.onPrimaryContainer,
-                        ),
+                      Icon(
+                        Icons.thermostat_rounded,
+                        size: 12,
+                        color: AppTheme.textMuted.withValues(alpha: 0.8),
                       ),
-                      const SizedBox(width: AppSpacing.xs),
-                      Flexible(
-                        child: Text(
-                          'G&M CHOCOLATES',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.labelMedium?.copyWith(
-                            fontFamily: AppTheme.fontHeading,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.6,
-                            color: colorScheme.onSurface,
-                          ),
+                      const SizedBox(width: 3),
+                      Text(
+                        room != null
+                            ? 'Sala: ${room.temp.toStringAsFixed(1)} °C • ${room.humidity.toStringAsFixed(0)}% UR'
+                            : 'Sala: --.- °C • --% UR',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                          color: AppTheme.textMuted,
                         ),
                       ),
                     ],
                   ),
                 ),
+              ),
 
-                const Spacer(),
+              const SizedBox(width: AppSpacing.sm),
 
-                if (hasDoorAlarm) ...[
-                  const StatusBadge(
-                    label: 'ALARME TÉRMICO',
-                    color: AppTheme.dangerRed,
-                    icon: Icons.warning_amber_rounded,
-                    compact: true,
-                  ),
-                  const SizedBox(width: AppSpacing.xs),
-                ],
-
-                // Pill Tonal de Clima da Sala 4x4m
-                Flexible(
-                  child: Card.filled(
-                    color: colorScheme.surfaceContainerHigh,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: AppSpacing.borderRadiusSm,
-                      side: BorderSide(color: colorScheme.outlineVariant),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.xs,
-                        vertical: 4,
-                      ),
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.thermostat_rounded,
-                              size: 14,
-                              color: colorScheme.primary,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              room != null
-                                  ? 'Sala: ${room.temp.toStringAsFixed(1)} °C • ${room.humidity.toStringAsFixed(0)}% UR'
-                                  : 'Sala: --.- °C • --% UR',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                fontWeight: FontWeight.w700,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
+              // Semáforo WebSocket + Ação Tímida de Configurações
+              Flexible(
+                child: InkWell(
+                  borderRadius: AppSpacing.borderRadiusXs,
+                  onTap: () => _openSettings(context),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Flexible(
+                        child: StatusBadge(
+                          label: statusText,
+                          color: statusColor,
+                          showDot: true,
+                          compact: true,
+                          subtle: isHealthy,
                         ),
                       ),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(width: AppSpacing.xs),
-
-                // Semáforo WebSocket + Ação Tonal de Configurações
-                Flexible(
-                  child: InkWell(
-                    borderRadius: AppSpacing.borderRadiusSm,
-                    onTap: () => _openSettings(context),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Flexible(
-                          child: StatusBadge(
-                            label: statusText,
-                            color: statusColor,
-                            showDot: true,
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.xxs),
-                        IconButton.filledTonal(
+                      const SizedBox(width: 4),
+                      SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: IconButton(
                           visualDensity: VisualDensity.compact,
-                          constraints: const BoxConstraints(
-                            minWidth: 28,
-                            minHeight: 28,
-                          ),
                           padding: EdgeInsets.zero,
-                          iconSize: 15,
+                          iconSize: 14,
+                          color: AppTheme.textMuted.withValues(alpha: 0.7),
                           tooltip: 'Configurações do Kiosk & ESP32',
                           onPressed: () => _openSettings(context),
                           icon: const Icon(Icons.settings_rounded),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         );
       },
