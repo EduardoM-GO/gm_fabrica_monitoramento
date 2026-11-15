@@ -222,5 +222,42 @@ void main() {
         findsNothing,
       );
     });
+
+    testWidgets(
+      'AnimatedValueText subtly slides and pulses only when value changes',
+      (WidgetTester tester) async {
+        String value = '10';
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: StatefulBuilder(
+              builder: (context, setState) {
+                return Scaffold(
+                  body: AnimatedValueText(
+                    value: value,
+                    style: const TextStyle(fontSize: 22),
+                  ),
+                  floatingActionButton: FloatingActionButton(
+                    onPressed: () => setState(() => value = '11'),
+                  ),
+                );
+              },
+            ),
+          ),
+        );
+
+        expect(find.text('10'), findsOneWidget);
+
+        await tester.tap(find.byType(FloatingActionButton));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 90));
+
+        expect(find.text('11'), findsOneWidget);
+
+        await tester.pumpAndSettle();
+        expect(find.text('11'), findsOneWidget);
+        expect(find.text('10'), findsNothing);
+      },
+    );
   });
 }

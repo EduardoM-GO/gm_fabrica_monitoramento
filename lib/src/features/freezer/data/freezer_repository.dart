@@ -253,6 +253,7 @@ final class FreezerRepository {
       if (state.status == FreezerStatusEnum.cooling) {
         return state.copyWith(
           isDoorOpen: true,
+          currentDoorOpenSeconds: 0,
           status: FreezerStatusEnum.doorOpen,
           baselineTemp: state.baselineTemp ?? temp,
           lastDoorOpenTemp: temp,
@@ -263,6 +264,7 @@ final class FreezerRepository {
 
       return state.copyWith(
         isDoorOpen: true,
+        currentDoorOpenSeconds: 0,
         baselineTemp: state.baselineTemp ?? temp,
         lastDoorOpenTemp: temp,
         peakTemp: temp,
@@ -458,9 +460,14 @@ final class FreezerRepository {
         final id = entry.key;
         var s = entry.value;
 
-        // Alerta sonoro de porta aberta há tempo crítico
-        if (s.isDoorOpen && _doorOpenSince[id] != null) {
-          final openSec = now.difference(_doorOpenSince[id]!).inSeconds;
+        // Cronômetro ao vivo e alerta sonoro de porta aberta há tempo crítico
+        if (s.isDoorOpen) {
+          final openSec = _doorOpenSince[id] != null
+              ? max(1, now.difference(_doorOpenSince[id]!).inSeconds)
+              : s.currentDoorOpenSeconds + 1;
+          s = s.copyWith(currentDoorOpenSeconds: openSec);
+          _freezers[id] = s;
+          changed = true;
           if (openSec >= doorCriticalSeconds && !_doorAlarmController.isClosed) {
             _doorAlarmController.add(id);
           }

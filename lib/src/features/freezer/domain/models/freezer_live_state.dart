@@ -21,6 +21,7 @@ final class FreezerLiveState {
   final int elapsedSeconds;
   final int accumulatedPenaltySeconds;
   final int accumulatedDoorOpenSeconds;
+  final int currentDoorOpenSeconds;
   final int doorOpenCount;
 
   final int? feedbackCountdownSeconds;
@@ -51,6 +52,7 @@ final class FreezerLiveState {
     int? elapsedSeconds,
     this.accumulatedPenaltySeconds = 0,
     this.accumulatedDoorOpenSeconds = 0,
+    this.currentDoorOpenSeconds = 0,
     this.doorOpenCount = 0,
     this.feedbackCountdownSeconds,
     this.lastFeedback,
@@ -98,6 +100,14 @@ final class FreezerLiveState {
   String get remainingFormatted {
     final m = remainingSeconds ~/ 60;
     final s = remainingSeconds % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  /// Tempo da abertura atual da porta formatado (MM:SS), ex.: "00:18".
+  String get currentDoorOpenFormatted {
+    final total = isDoorOpen ? max(0, currentDoorOpenSeconds) : 0;
+    final m = total ~/ 60;
+    final s = total % 60;
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
@@ -163,6 +173,7 @@ final class FreezerLiveState {
     int? elapsedSeconds,
     int? accumulatedPenaltySeconds,
     int? accumulatedDoorOpenSeconds,
+    int? currentDoorOpenSeconds,
     int? doorOpenCount,
     int? feedbackCountdownSeconds,
     bool clearFeedbackCountdown = false,
@@ -207,6 +218,9 @@ final class FreezerLiveState {
           accumulatedPenaltySeconds ?? this.accumulatedPenaltySeconds,
       accumulatedDoorOpenSeconds:
           accumulatedDoorOpenSeconds ?? this.accumulatedDoorOpenSeconds,
+      currentDoorOpenSeconds:
+          currentDoorOpenSeconds ??
+          ((isDoorOpen ?? this.isDoorOpen) ? this.currentDoorOpenSeconds : 0),
       doorOpenCount: doorOpenCount ?? this.doorOpenCount,
       feedbackCountdownSeconds: clearFeedbackCountdown
           ? null

@@ -222,51 +222,69 @@ class _SingleDigitRoll extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: digitWidth,
-      child: ClipRect(
-        child: AnimatedSwitcher(
-          duration: duration,
-          switchInCurve: curve,
-          switchOutCurve: curve,
-          layoutBuilder: (Widget? currentChild, List<Widget> previousChildren) {
-            return Stack(
-              alignment: Alignment.center,
-              children: <Widget>[...previousChildren, ?currentChild],
-            );
-          },
-          transitionBuilder: (Widget child, Animation<double> animation) {
-            if (reduced) {
-              return FadeTransition(opacity: animation, child: child);
-            }
+      child: ShaderMask(
+        shaderCallback: (Rect bounds) {
+          return const LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0x00FFFFFF),
+              Color(0xFFFFFFFF),
+              Color(0xFFFFFFFF),
+              Color(0x00FFFFFF),
+            ],
+            stops: [0.0, 0.12, 0.88, 1.0],
+          ).createShader(bounds);
+        },
+        blendMode: BlendMode.dstIn,
+        child: ClipRect(
+          child: AnimatedSwitcher(
+            duration: duration,
+            switchInCurve: curve,
+            switchOutCurve: curve,
+            layoutBuilder:
+                (Widget? currentChild, List<Widget> previousChildren) {
+              return Stack(
+                alignment: Alignment.center,
+                children: <Widget>[...previousChildren, ?currentChild],
+              );
+            },
+            transitionBuilder: (Widget child, Animation<double> animation) {
+              if (reduced) {
+                return FadeTransition(opacity: animation, child: child);
+              }
 
-            final isIncoming = (child.key as ValueKey<String>?)?.value == char;
+              final isIncoming =
+                  (child.key as ValueKey<String>?)?.value == char;
 
-            // Incoming slides from below (increment) or above (decrement) to center (0.0).
-            // Outgoing slides from center (0.0) to above (increment) or below (decrement).
-            // In AnimatedSwitcher, exiting child's animation runs from 1.0 down to 0.0.
-            final offsetTween = isIncoming
-                ? Tween<Offset>(
-                    begin: isIncrement
-                        ? const Offset(0.0, 0.75)
-                        : const Offset(0.0, -0.75),
-                    end: Offset.zero,
-                  )
-                : Tween<Offset>(
-                    begin: isIncrement
-                        ? const Offset(0.0, -0.75)
-                        : const Offset(0.0, 0.75),
-                    end: Offset.zero,
-                  );
+              // True cash-register / odometer drum roll (Number ticker + Direction-aware):
+              // Incrementing: outgoing rolls up (0.0 -> -1.0) while incoming rolls in right behind from bottom (1.0 -> 0.0).
+              // Decrementing: outgoing rolls down (0.0 -> 1.0) while incoming rolls in from top (-1.0 -> 0.0).
+              final offsetTween = isIncoming
+                  ? Tween<Offset>(
+                      begin: isIncrement
+                          ? const Offset(0.0, 1.0)
+                          : const Offset(0.0, -1.0),
+                      end: Offset.zero,
+                    )
+                  : Tween<Offset>(
+                      begin: isIncrement
+                          ? const Offset(0.0, -1.0)
+                          : const Offset(0.0, 1.0),
+                      end: Offset.zero,
+                    );
 
-            return SlideTransition(
-              position: offsetTween.animate(animation),
-              child: FadeTransition(opacity: animation, child: child),
-            );
-          },
-          child: Text(
-            char,
-            key: ValueKey<String>(char),
-            style: style,
-            textAlign: TextAlign.center,
+              return SlideTransition(
+                position: offsetTween.animate(animation),
+                child: FadeTransition(opacity: animation, child: child),
+              );
+            },
+            child: Text(
+              char,
+              key: ValueKey<String>(char),
+              style: style,
+              textAlign: TextAlign.center,
+            ),
           ),
         ),
       ),
@@ -401,5 +419,150 @@ class _BreathingGlowState extends State<BreathingGlow>
     }
 
     return FadeTransition(opacity: _animation, child: widget.child);
+  }
+}
+
+/// Subtle value-change indicator that guides the operator's eye to whichever
+/// metric just updated (e.g. Total Líquido, Caixas Fechadas, Quebras, or Temperature),
+/// without running any continuous animation when idle.
+///
+/// Uses only GPU-friendly [ScaleTransition], [SlideTransition], and [FadeTransition]
+/// with [AppMotion.easeOut] under 240ms, and respects reduced motion.
+class AnimatedValueText extends StatefulWidget {
+  final String value;
+  final TextStyle? style;
+  final Duration duration;
+  final Curve curve;
+  final double pulseScale;
+
+  const AnimatedValueText({
+    super.key,
+    required this.value,
+    this.style,
+    this.duration = AppMotion.durationFast,
+    this.curve = AppMotion.easeOut,
+    this.pulseScale = 1.05,
+  });
+
+  @override
+  State<AnimatedValueText> createState() => _AnimatedValueTextState();
+}
+
+class _AnimatedValueTextState extends State<AnimatedValueText>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController;
+  late Animation<double> _scaleAnimation;
+  bool _isIncrement = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: AppMotion.durationStandard,
+    );
+    _configureScaleAnimation();
+  }
+
+  void _configureScaleAnimation() {
+    _scaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.0, end: widget.pulseScale)
+            .chain(CurveTween(curve: AppMotion.easeOut)),
+        weight: 40,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: widget.pulseScale, end: 1.0)
+            .chain(CurveTween(curve: AppMotion.easeOut)),
+        weight: 60,
+      ),
+    ]).animate(_pulseController);
+  }
+
+  @override
+  void didUpdateWidget(covariant AnimatedValueText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pulseScale != widget.pulseScale) {
+      _configureScaleAnimation();
+    }
+    if (oldWidget.value != widget.value) {
+      final oldNum = double.tryParse(
+        oldWidget.value.replaceAll(RegExp(r'[^0-9.-]'), ''),
+      );
+      final newNum = double.tryParse(
+        widget.value.replaceAll(RegExp(r'[^0-9.-]'), ''),
+      );
+      if (oldNum != null && newNum != null) {
+        _isIncrement = newNum >= oldNum;
+      } else {
+        _isIncrement = true;
+      }
+      _pulseController.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduced = AppMotion.isReducedMotion(context);
+
+    final switcher = ClipRect(
+      child: AnimatedSwitcher(
+        duration: widget.duration,
+        switchInCurve: widget.curve,
+        switchOutCurve: widget.curve,
+        layoutBuilder: (currentChild, previousChildren) {
+          return Stack(
+            alignment: Alignment.center,
+            children: <Widget>[...previousChildren, ?currentChild],
+          );
+        },
+        transitionBuilder: (child, animation) {
+          if (reduced) {
+            return FadeTransition(opacity: animation, child: child);
+          }
+
+          final isIncoming =
+              (child.key as ValueKey<String>?)?.value == widget.value;
+          final offsetTween = isIncoming
+              ? Tween<Offset>(
+                  begin: _isIncrement
+                      ? const Offset(0.0, 0.95)
+                      : const Offset(0.0, -0.95),
+                  end: Offset.zero,
+                )
+              : Tween<Offset>(
+                  begin: _isIncrement
+                      ? const Offset(0.0, -0.95)
+                      : const Offset(0.0, 0.95),
+                  end: Offset.zero,
+                );
+
+          return SlideTransition(
+            position: offsetTween.animate(animation),
+            child: FadeTransition(opacity: animation, child: child),
+          );
+        },
+        child: Text(
+          widget.value,
+          key: ValueKey<String>(widget.value),
+          style: widget.style,
+        ),
+      ),
+    );
+
+    if (reduced) {
+      return switcher;
+    }
+
+    return ScaleTransition(
+      scale: _scaleAnimation,
+      child: switcher,
+    );
   }
 }

@@ -152,10 +152,10 @@ void main() {
       expect(find.text('LOTE ATIVO'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
-      // 2. Abre o modal de Quebra/Descarte e valida o Dropdown M3, os 2 botões rápidos e o campo de digitação
-      await tester.tap(find.text('LANÇAR QUEBRA'));
+      // 2. Abre o modal de Ajuste/Descarte e valida o Dropdown M3, os 2 botões rápidos e o campo de digitação
+      await tester.tap(find.text('AJUSTAR CONTAGEM / QUEBRA'));
       await tester.pumpAndSettle();
-      expect(find.text('LANÇAR QUEBRA / DESCARTE'), findsOneWidget);
+      expect(find.text('AJUSTAR CONTAGEM / DESCARTE'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('adjustment_reason_dropdown')),
         findsOneWidget,
@@ -179,7 +179,7 @@ void main() {
       expect(tester.takeException(), isNull);
 
       // 2.a Seleciona 'Correção manual' no Dropdown e verifica mudança para modo de Adição (+1 Ovo / +2 Ovos)
-      await tester.tap(find.text('LANÇAR QUEBRA'));
+      await tester.tap(find.text('AJUSTAR CONTAGEM / QUEBRA'));
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('adjustment_reason_dropdown')));
       await tester.pumpAndSettle();
@@ -235,8 +235,10 @@ void main() {
           'room': {'temp': 20.5, 'h': 52.0},
         }),
       );
-      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(seconds: 1));
       expect(find.text('PORTA ABERTA'), findsWidgets);
+      expect(find.textContaining('ABERTA HÁ 00:0'), findsOneWidget);
+      expect(find.textContaining('Perda: +0.0 °C ▲'), findsOneWidget);
 
       // Porta fecha no pico de 7.8 °C (+2.0 °C acima dos 5.8 °C de quando abriu)
       fakeWs.rawDataController.add(

@@ -44,99 +44,221 @@ final class EggCountCard extends StatelessWidget {
               width: (isAnimating || isConveyorAlert) ? 2.0 : 1.0,
             ),
           ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: AppSpacing.md,
-              vertical: AppSpacing.sm,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // --- Alerta de Esteira Rodando Sem Lote Ativo ---
-                if (isConveyorAlert) ...[
-                  BreathingGlow(
-                    isPulsing: true,
-                    child: Card.filled(
-                      color: colorScheme.errorContainer,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: AppSpacing.borderRadiusMd,
-                        side: BorderSide(color: colorScheme.error),
-                      ),
-                      child: InkWell(
-                        borderRadius: AppSpacing.borderRadiusMd,
-                        onTap: () => _showProductSelectorSheet(context),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.sm,
-                            vertical: AppSpacing.xs,
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.warning_amber_rounded,
-                                color: colorScheme.onErrorContainer,
-                                size: 20,
-                              ),
-                              const SizedBox(width: AppSpacing.xs),
-                              Expanded(
-                                child: Text(
-                                  'Esteira em movimento sem lote aberto! Toque para selecionar o produto.',
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: colorScheme.onErrorContainer,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.xs),
-                ],
+          child: LayoutBuilder(
+            builder: (context, cardConstraints) {
+              final hasBoundedHeight = cardConstraints.maxHeight.isFinite;
 
-                // --- Header: Produto atual & Cadência da Esteira ---
-                Row(
-                  children: [
-                    AnimatedScale(
-                      scale: isAnimating ? 1.14 : 1.0,
-                      duration: AppMotion.durationFast,
-                      curve: AppMotion.easeOut,
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: hasBatch
-                              ? colorScheme.primaryContainer
-                              : colorScheme.surfaceContainerHighest.withValues(
-                                  alpha: 0.45,
-                                ),
-                          borderRadius: AppSpacing.borderRadiusSm,
-                          border: Border.all(
-                            color: hasBatch
-                                ? colorScheme.primary.withValues(alpha: 0.5)
-                                : colorScheme.outlineVariant.withValues(
-                                    alpha: 0.4,
+              final heroCurrentBoxCard = Card.filled(
+                color: colorScheme.surfaceContainerLowest,
+                shape: RoundedRectangleBorder(
+                  borderRadius: AppSpacing.borderRadiusLg,
+                  side: BorderSide(
+                    color: isAnimating
+                        ? colorScheme.primary
+                        : hasBatch
+                            ? colorScheme.primary.withValues(alpha: 0.45)
+                            : colorScheme.outlineVariant.withValues(alpha: 0.5),
+                    width: 1.5,
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.md,
+                    vertical: 8,
+                  ),
+                  child: Column(
+                    mainAxisSize:
+                        hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              hasBatch
+                                  ? 'CONTAGEM ATUAL • CAIXA #${completedBoxes + 1}'
+                                  : 'CONTAGEM ATUAL DA CAIXA',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.5,
+                                color: hasBatch
+                                    ? colorScheme.primary
+                                    : AppTheme.textMuted,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
+                          ),
+                          Text(
+                            '${(progress * 100).toStringAsFixed(0)}%',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.textSecondary,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Flexible(
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.baseline,
+                              textBaseline: TextBaseline.alphabetic,
+                              children: [
+                                SlidingCounterText(
+                                  value: currentBox,
+                                  style:
+                                      theme.textTheme.displayLarge?.copyWith(
+                                    fontFamily: AppTheme.fontHeading,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 88,
+                                    height: 1.0,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                    color: hasBatch
+                                        ? colorScheme.primary
+                                        : AppTheme.textMuted,
                                   ),
+                                ),
+                                const SizedBox(width: AppSpacing.xs),
+                                Text(
+                                  '/ $boxCap ovos',
+                                  style:
+                                      theme.textTheme.headlineSmall?.copyWith(
+                                    color: AppTheme.textSecondary,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 22,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        child: Icon(
-                          Icons.egg_rounded,
-                          color: hasBatch
-                              ? colorScheme.onPrimaryContainer
-                              : AppTheme.textMuted,
-                          size: 18,
+                      ),
+                      const SizedBox(height: 6),
+                      SmoothProgressBar(
+                        value: progress,
+                        minHeight: 10,
+                        progressColor: progress >= 1.0
+                            ? AppTheme.successGreen
+                            : colorScheme.primary,
+                        backgroundColor: colorScheme.surfaceContainerHighest,
+                        borderRadius: AppSpacing.borderRadiusXs,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+
+              return Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.sm,
+                  vertical: 8,
+                ),
+                child: Column(
+                  mainAxisSize:
+                      hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // --- Alerta de Esteira Rodando Sem Lote Ativo ---
+                    if (isConveyorAlert) ...[
+                      BreathingGlow(
+                        isPulsing: true,
+                        child: Card.filled(
+                          color: colorScheme.errorContainer,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: AppSpacing.borderRadiusMd,
+                            side: BorderSide(color: colorScheme.error),
+                          ),
+                          child: InkWell(
+                            borderRadius: AppSpacing.borderRadiusMd,
+                            onTap: () => _showProductSelectorSheet(context),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: AppSpacing.sm,
+                                vertical: 4,
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.warning_amber_rounded,
+                                    color: colorScheme.onErrorContainer,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: AppSpacing.xs),
+                                  Expanded(
+                                    child: Text(
+                                      'Esteira em movimento sem lote aberto! Toque para selecionar o produto.',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: colorScheme.onErrorContainer,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                      const SizedBox(height: 4),
+                    ],
+
+                    // --- Header Compacto: Produto atual & Cadência da Esteira ---
+                    Row(
+                      children: [
+                        AnimatedScale(
+                          scale: isAnimating ? 1.14 : 1.0,
+                          duration: AppMotion.durationFast,
+                          curve: AppMotion.easeOut,
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: hasBatch
+                                  ? colorScheme.primaryContainer
+                                  : colorScheme.surfaceContainerHighest
+                                        .withValues(alpha: 0.45),
+                              borderRadius: AppSpacing.borderRadiusSm,
+                              border: Border.all(
+                                color: hasBatch
+                                    ? colorScheme.primary.withValues(alpha: 0.5)
+                                    : colorScheme.outlineVariant.withValues(
+                                        alpha: 0.4,
+                                      ),
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.egg_rounded,
+                              color: hasBatch
+                                  ? colorScheme.onPrimaryContainer
+                                  : AppTheme.textMuted,
+                              size: 16,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: AppSpacing.xs),
+                        Expanded(
+                          child: Row(
                             children: [
                               Flexible(
                                 child: Text(
@@ -144,8 +266,8 @@ final class EggCountCard extends StatelessWidget {
                                   style: theme.textTheme.titleMedium?.copyWith(
                                     fontFamily: AppTheme.fontHeading,
                                     fontWeight: FontWeight.w900,
-                                    fontSize: hasBatch ? 16 : 14,
-                                    letterSpacing: 0.5,
+                                    fontSize: hasBatch ? 15 : 13.5,
+                                    letterSpacing: 0.4,
                                     color: hasBatch
                                         ? colorScheme.onSurface
                                         : AppTheme.textSecondary,
@@ -154,7 +276,7 @@ final class EggCountCard extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              const SizedBox(width: AppSpacing.xs),
+                              const SizedBox(width: 6),
                               StatusBadge(
                                 label: hasBatch ? 'LOTE ATIVO' : 'EM REPOUSO',
                                 color: hasBatch
@@ -165,316 +287,236 @@ final class EggCountCard extends StatelessWidget {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 2),
-                          Text(
-                            hasBatch
-                                ? 'Caixa #${completedBoxes + 1} em enchimento • Capacidade: $boxCap ovos ($completedBoxes cx no lote)'
-                                : 'Selecione um produto para iniciar a contagem na esteira',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              fontSize: 10.5,
-                              color: AppTheme.textMuted,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures(),
-                              ],
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                    // Cadência da esteira (Tier 3 quando parada, Tier 2 em movimento)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.xs,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: speed > 0
-                            ? colorScheme.surfaceContainerHigh
-                            : colorScheme.surfaceContainerLowest.withValues(
-                                alpha: 0.5,
-                              ),
-                        borderRadius: AppSpacing.borderRadiusXs,
-                        border: Border.all(
-                          color: speed > 0
-                              ? colorScheme.primary.withValues(alpha: 0.4)
-                              : colorScheme.outlineVariant.withValues(
-                                  alpha: 0.35,
-                                ),
                         ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.speed_rounded,
-                            size: 13,
-                            color: speed > 0
-                                ? colorScheme.primary
-                                : AppTheme.textMuted,
+                        const SizedBox(width: 6),
+                        // Cadência da esteira
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 3,
                           ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${speed.toStringAsFixed(0)} ovos/min',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              fontSize: 11,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures(),
-                              ],
-                              fontWeight: speed > 0
-                                  ? FontWeight.w800
-                                  : FontWeight.w600,
+                          decoration: BoxDecoration(
+                            color: speed > 0
+                                ? colorScheme.surfaceContainerHigh
+                                : colorScheme.surfaceContainerLowest.withValues(
+                                    alpha: 0.5,
+                                  ),
+                            borderRadius: AppSpacing.borderRadiusXs,
+                            border: Border.all(
                               color: speed > 0
-                                  ? colorScheme.onSurface
-                                  : AppTheme.textMuted,
+                                  ? colorScheme.primary.withValues(alpha: 0.4)
+                                  : colorScheme.outlineVariant.withValues(
+                                      alpha: 0.35,
+                                    ),
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: AppSpacing.xs),
-
-                // --- Display Central Hero (Tier 1): Contador da Caixa em Enchimento ---
-                Card.filled(
-                  color: colorScheme.surfaceContainerLowest,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: AppSpacing.borderRadiusLg,
-                    side: BorderSide(
-                      color: isAnimating
-                          ? colorScheme.primary
-                          : hasBatch
-                              ? colorScheme.primary.withValues(alpha: 0.35)
-                              : colorScheme.outlineVariant.withValues(
-                                  alpha: 0.5,
-                                ),
-                      width: isAnimating ? 2.0 : 1.2,
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.md,
-                      vertical: 8,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
-                          children: [
-                            SlidingCounterText(
-                              value: currentBox,
-                              style: theme.textTheme.displayLarge?.copyWith(
-                                fontFamily: AppTheme.fontHeading,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 64,
-                                height: 1.0,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                                color: hasBatch
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.speed_rounded,
+                                size: 12,
+                                color: speed > 0
                                     ? colorScheme.primary
                                     : AppTheme.textMuted,
                               ),
-                            ),
-                            const SizedBox(width: AppSpacing.xs),
-                            Text(
-                              '/ $boxCap ovos',
-                              style: theme.textTheme.headlineSmall?.copyWith(
-                                color: AppTheme.textSecondary,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 18,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
+                              const SizedBox(width: 3),
+                              Text(
+                                '${speed.toStringAsFixed(0)} ovos/min',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  fontSize: 10.5,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                  fontWeight: speed > 0
+                                      ? FontWeight.w800
+                                      : FontWeight.w600,
+                                  color: speed > 0
+                                      ? colorScheme.onSurface
+                                      : AppTheme.textMuted,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        SmoothProgressBar(
-                          value: progress,
-                          minHeight: 10,
-                          progressColor: progress >= 1.0
-                              ? AppTheme.successGreen
-                              : colorScheme.primary,
-                          backgroundColor: colorScheme.surfaceContainerHighest,
-                          borderRadius: AppSpacing.borderRadiusXs,
+                            ],
+                          ),
                         ),
                       ],
                     ),
-                  ),
-                ),
 
-                const SizedBox(height: AppSpacing.xs),
+                    const SizedBox(height: 6),
 
-                // --- Barra de Ações: Ação Frequente em Destaque vs. Rotina Rara Tímida ---
-                if (!hasBatch)
-                  PressableScale(
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(44),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: AppSpacing.borderRadiusMd,
+                    // --- 1º MAIS IMPORTANTE: Contagem Atual centralizada e maior ---
+                    if (hasBoundedHeight)
+                      Expanded(child: heroCurrentBoxCard)
+                    else
+                      heroCurrentBoxCard,
+
+                    const SizedBox(height: 6),
+
+                    // --- 2º MAIS IMPORTANTE: Total e Caixas Feitas na parte de baixo (um pouco menor), seguidos de Bruto/Quebras ---
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 6,
+                          child: _StatItem(
+                            label: 'TOTAL (LÍQUIDO)',
+                            value: '${viewModel.dailyNetCount.value}',
+                            icon: Icons.verified_rounded,
+                            color: colorScheme.primary,
+                            isHighlight: true,
+                          ),
                         ),
-                      ),
-                      onPressed: () => _showProductSelectorSheet(context),
-                      icon: const Icon(Icons.play_arrow_rounded, size: 22),
-                      label: const Text(
-                        'INICIAR LOTE DE PRODUÇÃO',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 13.5,
-                          letterSpacing: 0.5,
+                        const SizedBox(width: 6),
+                        Expanded(
+                          flex: 6,
+                          child: _StatItem(
+                            label: 'CAIXAS FECHADAS',
+                            value: '${viewModel.dailyCompletedBoxes.value}',
+                            icon: Icons.inventory_2_rounded,
+                            color: colorScheme.secondary,
+                            isHighlight: true,
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          flex: 4,
+                          child: _StatItem(
+                            label: 'BRUTO',
+                            value: '${viewModel.dailyGrossCount.value}',
+                            icon: Icons.precision_manufacturing_rounded,
+                            color: AppTheme.textSecondary,
+                            isSubtle: true,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          flex: 4,
+                          child: _StatItem(
+                            label: 'QUEBRAS',
+                            value: '${viewModel.dailyDiscardsCount.value}',
+                            icon: Icons.heart_broken_rounded,
+                            color: viewModel.dailyDiscardsCount.value > 0
+                                ? colorScheme.error.withValues(alpha: 0.85)
+                                : AppTheme.textMuted,
+                            isSubtle: true,
+                          ),
+                        ),
+                      ],
                     ),
-                  )
-                else
-                  Row(
-                    children: [
-                      // Ação operacional frequente (Tier 1/2): Grande e chamativa
-                      Expanded(
-                        flex: 5,
-                        child: PressableScale(
-                          child: FilledButton.tonalIcon(
-                            style: FilledButton.styleFrom(
-                              minimumSize: const Size.fromHeight(42),
-                              backgroundColor: colorScheme.errorContainer
-                                  .withValues(alpha: 0.78),
-                              foregroundColor: colorScheme.onErrorContainer,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: AppSpacing.borderRadiusMd,
-                                side: BorderSide(
-                                  color: colorScheme.error.withValues(
-                                    alpha: 0.65,
+
+                    const SizedBox(height: 6),
+
+                    if (!hasBatch)
+                      PressableScale(
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(40),
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: AppSpacing.borderRadiusMd,
+                            ),
+                          ),
+                          onPressed: () => _showProductSelectorSheet(context),
+                          icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                          label: const Text(
+                            'INICIAR LOTE DE PRODUÇÃO',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      Row(
+                        children: [
+                          Expanded(
+                            flex: 5,
+                            child: PressableScale(
+                              child: FilledButton.tonalIcon(
+                                style: FilledButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(38),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 6,
                                   ),
-                                  width: 1.2,
+                                  backgroundColor: colorScheme.errorContainer
+                                      .withValues(alpha: 0.78),
+                                  foregroundColor: colorScheme.onErrorContainer,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: AppSpacing.borderRadiusMd,
+                                    side: BorderSide(
+                                      color: colorScheme.error.withValues(
+                                        alpha: 0.65,
+                                      ),
+                                      width: 1.2,
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
-                            onPressed: () => _showDiscardSheet(context),
-                            icon: const Icon(
-                              Icons.broken_image_outlined,
-                              size: 18,
-                            ),
-                            label: const Text(
-                              'LANÇAR QUEBRA',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 13,
-                                letterSpacing: 0.4,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: AppSpacing.xs),
-                      // Rotina pouco usada (Tier 3): Tímida e compacta para evitar toque acidental
-                      Expanded(
-                        flex: 2,
-                        child: PressableScale(
-                          child: OutlinedButton.icon(
-                            style: OutlinedButton.styleFrom(
-                              minimumSize: const Size.fromHeight(42),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              foregroundColor: AppTheme.textMuted,
-                              side: BorderSide(
-                                color: colorScheme.outlineVariant.withValues(
-                                  alpha: 0.45,
+                                onPressed: () => _showDiscardSheet(context),
+                                icon: const Icon(
+                                  Icons.exposure_rounded,
+                                  size: 18,
                                 ),
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: AppSpacing.borderRadiusMd,
-                              ),
-                            ),
-                            onPressed: () => _showProductSelectorSheet(context),
-                            icon: Icon(
-                              Icons.stop_circle_outlined,
-                              size: 14,
-                              color: AppTheme.textMuted.withValues(alpha: 0.8),
-                            ),
-                            label: const FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: Text(
-                                'ENCERRAR LOTE',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 10.5,
-                                  color: AppTheme.textMuted,
+                                label: const Text(
+                                  'AJUSTAR CONTAGEM / QUEBRA',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 12.5,
+                                    letterSpacing: 0.4,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
+                          const SizedBox(width: AppSpacing.xs),
+                          Expanded(
+                            flex: 2,
+                            child: PressableScale(
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(38),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 6,
+                                  ),
+                                  foregroundColor: AppTheme.textMuted,
+                                  side: BorderSide(
+                                    color: colorScheme.outlineVariant
+                                        .withValues(alpha: 0.45),
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: AppSpacing.borderRadiusMd,
+                                  ),
+                                ),
+                                onPressed: () =>
+                                    _showProductSelectorSheet(context),
+                                icon: Icon(
+                                  Icons.stop_circle_outlined,
+                                  size: 13,
+                                  color: AppTheme.textMuted.withValues(
+                                    alpha: 0.8,
+                                  ),
+                                ),
+                                label: const FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    'ENCERRAR LOTE',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 10,
+                                      color: AppTheme.textMuted,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-
-                const SizedBox(height: AppSpacing.xs),
-
-                // --- Painel de Contabilidade do Dia: Hierarquia entre Métricas Principais e Secundárias ---
-                Row(
-                  children: [
-                    // Principais para o operador (Líquido e Caixas Fechadas): Maior destaque (flex 6)
-                    Expanded(
-                      flex: 6,
-                      child: _StatItem(
-                        label: 'LÍQUIDO DO DIA',
-                        value: '${viewModel.dailyNetCount.value}',
-                        icon: Icons.verified_rounded,
-                        color: colorScheme.primary,
-                        isHighlight: true,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      flex: 6,
-                      child: _StatItem(
-                        label: 'CAIXAS FECHADAS',
-                        value: '${viewModel.dailyCompletedBoxes.value}',
-                        icon: Icons.inventory_2_rounded,
-                        color: colorScheme.secondary,
-                        isHighlight: true,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    // Secundárias / conferência (Bruto e Quebras): Mais tímidas (flex 4)
-                    Expanded(
-                      flex: 4,
-                      child: _StatItem(
-                        label: 'TOTAL BRUTO',
-                        value: '${viewModel.dailyGrossCount.value}',
-                        icon: Icons.precision_manufacturing_rounded,
-                        color: AppTheme.textSecondary,
-                        isSubtle: true,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      flex: 4,
-                      child: _StatItem(
-                        label: 'QUEBRAS/DESC.',
-                        value: '${viewModel.dailyDiscardsCount.value}',
-                        icon: Icons.heart_broken_rounded,
-                        color: viewModel.dailyDiscardsCount.value > 0
-                            ? colorScheme.error.withValues(alpha: 0.85)
-                            : AppTheme.textMuted,
-                        isSubtle: true,
-                      ),
-                    ),
                   ],
                 ),
-              ],
-            ),
+              );
+            },
           ),
         );
       },
@@ -763,7 +805,7 @@ class _DiscardBottomSheetState extends State<_DiscardBottomSheet> {
               children: [
                 Expanded(
                   child: Text(
-                    'LANÇAR QUEBRA / DESCARTE',
+                    'AJUSTAR CONTAGEM / DESCARTE',
                     style: theme.textTheme.titleMedium?.copyWith(
                       fontFamily: AppTheme.fontHeading,
                       fontWeight: FontWeight.w900,
@@ -972,12 +1014,13 @@ final class _StatItem extends StatelessWidget {
       child: Padding(
         padding: EdgeInsets.symmetric(
           horizontal: AppSpacing.xs,
-          vertical: isHighlight ? 6 : 4,
+          vertical: isHighlight ? 5 : 4,
         ),
         child: FittedBox(
           fit: BoxFit.scaleDown,
           child: Column(
             mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -992,7 +1035,8 @@ final class _StatItem extends StatelessWidget {
                     label,
                     style: theme.textTheme.labelSmall?.copyWith(
                       fontSize: isSubtle ? 8.5 : 9.5,
-                      fontWeight: isHighlight ? FontWeight.w800 : FontWeight.w600,
+                      fontWeight:
+                          isHighlight ? FontWeight.w800 : FontWeight.w600,
                       letterSpacing: 0.35,
                       color: isHighlight
                           ? AppTheme.textSecondary
@@ -1002,11 +1046,14 @@ final class _StatItem extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 2),
-              Text(
-                value,
+              AnimatedValueText(
+                value: value,
+                pulseScale: isHighlight ? 1.06 : 1.04,
                 style: theme.textTheme.titleMedium?.copyWith(
+                  fontFamily: AppTheme.fontHeading,
                   fontWeight: isSubtle ? FontWeight.w700 : FontWeight.w900,
-                  fontSize: isHighlight ? 19 : 13.5,
+                  fontSize: isHighlight ? 22 : 13.5,
+                  height: 1.05,
                   color: color,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),

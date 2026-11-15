@@ -33,11 +33,48 @@ final class DashboardView extends StatelessWidget {
             final isLandscape = AppBreakpoints.isLandscape(context);
             final isWideEnough =
                 constraints.maxWidth >= AppBreakpoints.compactMax;
-            final minViewportHeight =
-                (constraints.maxHeight - (AppSpacing.xs * 2)).clamp(
-                  0.0,
-                  double.infinity,
-                );
+
+            // Modo Kiosk Horizontal (ex: Samsung Galaxy A05 SM-A055M/DS ~800x360 dp):
+            // 100% fixo na tela sem scroll, proporção 52% Contagem / 48% Freezers.
+            if (isLandscape && isWideEnough) {
+              return Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.xs,
+                  vertical: 4,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _TopKioskStatusStrip(
+                      eggViewModel: eggViewModel,
+                      freezerViewModel: freezerViewModel,
+                      settingsViewModel: settingsViewModel,
+                    ),
+                    const SizedBox(height: 4),
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Zona Esquerda (52%): Embalagem e Contagem de Ovos (0ms)
+                          Expanded(
+                            flex: 52,
+                            child: EggCountCard(viewModel: eggViewModel),
+                          ),
+                          const SizedBox(width: AppSpacing.xs),
+                          // Zona Direita (48%): Monitoramento Adaptativo dos 2 Freezers
+                          Expanded(
+                            flex: 48,
+                            child: FreezerMonitoringZone(
+                              viewModel: freezerViewModel,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
 
             return SingleChildScrollView(
               physics: const ClampingScrollPhysics(),
@@ -45,51 +82,19 @@ final class DashboardView extends StatelessWidget {
                 horizontal: AppSpacing.sm,
                 vertical: AppSpacing.xs,
               ),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: isLandscape && isWideEnough
-                      ? minViewportHeight
-                      : 0.0,
-                ),
-                child: IntrinsicHeight(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _TopKioskStatusStrip(
-                        eggViewModel: eggViewModel,
-                        freezerViewModel: freezerViewModel,
-                        settingsViewModel: settingsViewModel,
-                      ),
-                      const SizedBox(height: AppSpacing.xs),
-                      if (isLandscape && isWideEnough)
-                        Expanded(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // Zona Esquerda (60%): Embalagem e Contagem de Ovos (0ms)
-                              Expanded(
-                                flex: 6,
-                                child: EggCountCard(viewModel: eggViewModel),
-                              ),
-                              const SizedBox(width: AppSpacing.xs),
-                              // Zona Direita (40%): Monitoramento Adaptativo dos 2 Freezers
-                              Expanded(
-                                flex: 4,
-                                child: FreezerMonitoringZone(
-                                  viewModel: freezerViewModel,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )
-                      else ...[
-                        EggCountCard(viewModel: eggViewModel),
-                        const SizedBox(height: AppSpacing.xs),
-                        FreezerMonitoringZone(viewModel: freezerViewModel),
-                      ],
-                    ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _TopKioskStatusStrip(
+                    eggViewModel: eggViewModel,
+                    freezerViewModel: freezerViewModel,
+                    settingsViewModel: settingsViewModel,
                   ),
-                ),
+                  const SizedBox(height: AppSpacing.xs),
+                  EggCountCard(viewModel: eggViewModel),
+                  const SizedBox(height: AppSpacing.xs),
+                  FreezerMonitoringZone(viewModel: freezerViewModel),
+                ],
               ),
             );
           },

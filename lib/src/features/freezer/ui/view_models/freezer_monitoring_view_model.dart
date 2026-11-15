@@ -47,8 +47,9 @@ final class FreezerMonitoringViewModel {
         (f) =>
             !f.isSensorOk ||
             (f.isDoorOpen &&
-                f.accumulatedDoorOpenSeconds >=
-                    _repository.doorCriticalSeconds),
+                (f.currentDoorOpenSeconds >= _repository.doorCriticalSeconds ||
+                    f.accumulatedDoorOpenSeconds >=
+                        _repository.doorCriticalSeconds)),
       );
     });
   }
