@@ -1,72 +1,69 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gm_fabrica_monitoramento/data/model/telemetry_model.dart';
+import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/base_raw_data.dart';
+import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/door_raw_data.dart';
+import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/hit_raw_data.dart';
+import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/telemetry_raw_data.dart';
 
 void main() {
-  group('Telemetry Model Parsing', () {
-    test('Parses periodic telemetry frame correctly', () {
+  group('BaseRawData WebSocket JSON Parsing', () {
+    test('Parses periodic telemetry frame with multiple freezers and room', () {
       final json = {
         't': 'telem',
-        'up': 14205,
-        'c': 84,
+        'boot': 1,
+        'rssi': -62,
+        'freeHeap': 180000,
+        'totalCount': 84,
         'f1': {'temp': 9.25, 'd': 0, 'ok': 1},
         'f2': {'temp': -14.10, 'd': 1, 'ok': 0},
+        'room': {'temp': 21.5, 'h': 55.0},
       };
 
-      final frame = IncomingFrame.fromJson(json);
-      expect(frame, isA<TelemetryFrame>());
+      final frame = BaseRawData.fromJson(json);
+      expect(frame, isA<TelemetryRawData>());
 
-      final telem = frame as TelemetryFrame;
-      expect(telem.uptimeMs, 14205);
-      expect(telem.eggCount, 84);
+      final telem = frame as TelemetryRawData;
+      expect(telem.bootId, 1);
+      expect(telem.totalCount, 84);
+      expect(telem.freezers.length, 2);
 
       // Freezer 1
-      expect(telem.freezer1, isNotNull);
-      expect(telem.freezer1!.temp, 9.25);
-      expect(telem.freezer1!.door, 0);
-      expect(telem.freezer1!.ok, 1);
-      expect(telem.freezer1!.isDoorOpen, false);
-      expect(telem.freezer1!.isProbeOk, true);
+      expect(telem.freezers[0].id, 'f1');
+      expect(telem.freezers[0].temp, 9.25);
+      expect(telem.freezers[0].isDoorOpen, isFalse);
+      expect(telem.freezers[0].isSensorOk, isTrue);
 
       // Freezer 2
-      expect(telem.freezer2, isNotNull);
-      expect(telem.freezer2!.temp, -14.10);
-      expect(telem.freezer2!.door, 1);
-      expect(telem.freezer2!.ok, 0);
-      expect(telem.freezer2!.isDoorOpen, true);
-      expect(telem.freezer2!.isProbeOk, false);
+      expect(telem.freezers[1].id, 'f2');
+      expect(telem.freezers[1].temp, -14.10);
+      expect(telem.freezers[1].isDoorOpen, isTrue);
+      expect(telem.freezers[1].isSensorOk, isFalse);
+
+      // Room
+      expect(telem.room, isNotNull);
+      expect(telem.room!.temp, 21.5);
+      expect(telem.room!.humidity, 55.0);
     });
 
-    test(
-      'Parses frame with only 1 freezer correctly and keeps freezer2 null',
-      () {
-        final json = {
-          't': 'telem',
-          'up': 14205,
-          'c': 84,
-          'f1': {'temp': 9.25, 'd': 0, 'ok': 1},
-        };
+    test('Parses instant hit frame correctly (both c and totalCount)', () {
+      final hit1 = BaseRawData.fromJson({'t': 'hit', 'c': 85}) as HitRawData;
+      expect(hit1.totalCount, 85);
 
-        final frame = IncomingFrame.fromJson(json) as TelemetryFrame;
-        expect(frame.freezer1, isNotNull);
-        expect(frame.freezer1!.temp, 9.25);
-        expect(frame.freezer2, isNull);
-      },
-    );
-
-    test('Parses instant hit frame correctly', () {
-      final json = {'t': 'hit', 'c': 85};
-
-      final frame = IncomingFrame.fromJson(json);
-      expect(frame, isA<HitFrame>());
-
-      final hit = frame as HitFrame;
-      expect(hit.eggCount, 85);
+      final hit2 =
+          BaseRawData.fromJson({'t': 'hit', 'totalCount': 86}) as HitRawData;
+      expect(hit2.totalCount, 86);
     });
 
-    test('Throws on unknown frame type', () {
+    test('Parses door event frame correctly', () {
+      final door =
+          BaseRawData.fromJson({'t': 'door', 'f': 1, 'd': 1}) as DoorRawData;
+      expect(door.freezerId, 1);
+      expect(door.isOpen, isTrue);
+    });
+
+    test('Throws Exception on unknown frame type', () {
       expect(
-        () => IncomingFrame.fromJson({'t': 'invalid'}),
-        throwsA(isA<FormatException>()),
+        () => BaseRawData.fromJson({'t': 'invalid'}),
+        throwsException,
       );
     });
   });

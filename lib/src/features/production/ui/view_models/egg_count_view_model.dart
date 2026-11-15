@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:gm_fabrica_monitoramento/src/core/exceptions/base_exception.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/enum/adjustment_reason_enum.dart';
+import 'package:gm_fabrica_monitoramento/src/data/services/audio_service.dart';
+import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/room_raw_data.dart';
 import 'package:gm_fabrica_monitoramento/src/domain/models/daily_production_accounting_model.dart';
 import 'package:gm_fabrica_monitoramento/src/domain/models/product_model.dart';
 import 'package:gm_fabrica_monitoramento/src/domain/models/production_batch_model.dart';
@@ -11,9 +13,11 @@ import 'package:signals/signals.dart';
 
 final class EggCountViewModel {
   final ProductionRepository _repository;
+  final AudioService? _audioService;
 
-  // --- Signals de Estado do Lote Ativo ---
+  // --- Signals de Estado do Lote Ativo & Produtos ---
   late final Signal<ProductionBatchModel?> activeBatch;
+  late final Signal<List<ProductModel>> availableProducts;
   late final Computed<bool> hasActiveBatch;
   late final Computed<String> productName;
   late final Signal<int> defaultBoxCapacity;
@@ -30,23 +34,27 @@ final class EggCountViewModel {
   late final Computed<int> dailyNetCount;
   late final Signal<int> dailyCompletedBoxes;
 
-  // --- Signals de Telemetria e Alertas em Tempo Real ---
+  // --- Signals de Telemetria, Sala e Alertas em Tempo Real ---
   late final Signal<bool> isConveyorRunningWithoutBatch;
   late final Signal<bool> isHitAnimating;
   late final Signal<double> eggsPerMinute;
+  late final Signal<RoomRawData?> roomTelemetry;
 
   // Inscrições e Timers internos
   StreamSubscription? _activeBatchSub;
   StreamSubscription? _hitEventSub;
   StreamSubscription? _conveyorAlertSub;
   StreamSubscription? _dailyAccountingSub;
+  StreamSubscription? _productsSub;
+  StreamSubscription? _roomSub;
   Timer? _hitAnimationTimer;
   Timer? _speedTickerTimer;
 
   final List<DateTime> _recentHitTimestamps = [];
+  int _lastCompletedBoxes = 0;
   bool _isDisposed = false;
 
-  EggCountViewModel(this._repository) {
+  EggCountViewModel(this._repository, {this._audioService}) {
     _initSignals();
     _bindRepositoryStreams();
     _startSpeedTicker();
@@ -54,6 +62,7 @@ final class EggCountViewModel {
 
   void _initSignals() {
     activeBatch = signal<ProductionBatchModel?>(_repository.currentActiveBatch);
+    availableProducts = signal<List<ProductModel>>(_repository.currentProducts);
     hasActiveBatch = computed<bool>(() => activeBatch.value != null);
     productName = computed<String>(
       () => activeBatch.value?.product.name ?? 'Sem Lote Aberto',
@@ -88,22 +97,25 @@ final class EggCountViewModel {
       if (capacity <= 0) return 0;
       return batchGrossCount.value ~/ capacity;
     });
+    _lastCompletedBoxes = batchCompletedBoxes.value;
 
-    // Contabilidade do dia consolidada
-    dailyGrossCount = signal<int>(0);
-    dailyDiscardsCount = signal<int>(0);
+    // Contabilidade do dia consolidada (inicializada com o cache do repositório)
+    final initialAccounting = _repository.currentDailyAccounting;
+    dailyGrossCount = signal<int>(initialAccounting.grossCount);
+    dailyDiscardsCount = signal<int>(initialAccounting.discardsCount);
     dailyNetCount = computed<int>(
       () => (dailyGrossCount.value - dailyDiscardsCount.value).clamp(
         0,
         99999999,
       ),
     );
-    dailyCompletedBoxes = signal<int>(0);
+    dailyCompletedBoxes = signal<int>(initialAccounting.completedBoxes);
 
     // Alertas e telemetria
     isConveyorRunningWithoutBatch = signal<bool>(false);
     isHitAnimating = signal<bool>(false);
     eggsPerMinute = signal<double>(0.0);
+    roomTelemetry = signal<RoomRawData?>(_repository.currentRoom);
   }
 
   void _bindRepositoryStreams() {
@@ -112,6 +124,13 @@ final class EggCountViewModel {
       activeBatch.value = batch;
       if (batch != null) {
         defaultBoxCapacity.value = batch.product.defaultBoxCapacity;
+        final currentBoxes = batchCompletedBoxes.value;
+        if (currentBoxes > _lastCompletedBoxes) {
+          _audioService?.playBoxCompleted();
+        }
+        _lastCompletedBoxes = currentBoxes;
+      } else {
+        _lastCompletedBoxes = 0;
       }
     });
 
@@ -121,6 +140,8 @@ final class EggCountViewModel {
       _recentHitTimestamps.add(now);
       _cleanupOldHits(now);
       eggsPerMinute.value = _calculateSpeed(now);
+
+      _audioService?.playEggHit();
 
       // Trigger de animação de hit
       isHitAnimating.value = true;
@@ -137,10 +158,19 @@ final class EggCountViewModel {
       isConveyorRunningWithoutBatch.value = alert;
     });
 
-    // 4. Contabilidade diária consolidada
+    // 4. Contabilidade diária consolidada (0ms Hot Path + Warm Reconcile)
     _dailyAccountingSub = _repository.dailyAccountingStream.listen(
       _updateDailyAccounting,
     );
+
+    // 5. Catálogo de produtos e telemetria da sala
+    _productsSub = _repository.availableProductsStream.listen((products) {
+      availableProducts.value = products;
+    });
+
+    _roomSub = _repository.roomStream.listen((room) {
+      roomTelemetry.value = room;
+    });
   }
 
   void _updateDailyAccounting(DailyProductionAccountingModel accounting) {
@@ -177,6 +207,7 @@ final class EggCountViewModel {
     final result = await _repository.startProductionBatch(product: product);
     if (result.isOk) {
       defaultBoxCapacity.value = product.defaultBoxCapacity;
+      _lastCompletedBoxes = 0;
     }
     return result;
   }
@@ -184,7 +215,7 @@ final class EggCountViewModel {
   /// Finaliza o lote ativo atual
   Future<Result<Unit>> finishActiveBatch() async {
     final current = activeBatch.value;
-    if (current == null) return Result.ok(unit);
+    if (current == null) return const Result.ok(unit);
     return _repository.closeActiveBatch(batch: current);
   }
 
@@ -205,6 +236,8 @@ final class EggCountViewModel {
       );
     }
 
+    _audioService?.playEggUndo();
+
     return _repository.registerAdjustment(
       batchId: current.id,
       deltaQty: -quantity.abs(),
@@ -224,6 +257,8 @@ final class EggCountViewModel {
     _hitEventSub?.cancel();
     _conveyorAlertSub?.cancel();
     _dailyAccountingSub?.cancel();
+    _productsSub?.cancel();
+    _roomSub?.cancel();
     _hitAnimationTimer?.cancel();
     _speedTickerTimer?.cancel();
   }

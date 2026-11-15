@@ -27,12 +27,77 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
     with _$ProductionDaoMixin {
   ProductionDao(super.db);
 
+  /// Catálogo inicial padrão da fábrica G&M Chocolates
+  static final List<ProductModel> defaultProducts = [
+    ProductModel(
+      id: 'prod_ovo_250',
+      name: 'Ovo de Páscoa 250g',
+      unitWeightGrams: 250,
+      defaultBoxCapacity: 50,
+    ),
+    ProductModel(
+      id: 'prod_casca_500',
+      name: 'Casca de Ovo 500g',
+      unitWeightGrams: 500,
+      defaultBoxCapacity: 40,
+    ),
+    ProductModel(
+      id: 'prod_mini_100',
+      name: 'Mini Ovo 100g',
+      unitWeightGrams: 100,
+      defaultBoxCapacity: 50,
+    ),
+  ];
+
+  /// Garante que o catálogo básico exista no SQLite local no primeiro boot
+  Future<Result<List<ProductModel>>> ensureDefaultProducts() =>
+      Result.catchInAsync(
+        fn: () async {
+          final existing = await select(productsTable).get();
+          if (existing.isEmpty) {
+            await batch((b) {
+              b.insertAllOnConflictUpdate(
+                productsTable,
+                defaultProducts.map(
+                  (p) => ProductsTableCompanion.insert(
+                    id: p.id,
+                    name: p.name,
+                    unitWeightGrams: p.unitWeightGrams.toDouble(),
+                  ),
+                ),
+              );
+            });
+          }
+          final rows = await select(productsTable).get();
+          return rows
+              .map(
+                (r) => ProductModel(
+                  id: r.id,
+                  name: r.name,
+                  unitWeightGrams: r.unitWeightGrams.round(),
+                  defaultBoxCapacity: r.unitWeightGrams >= 500 ? 40 : 50,
+                ),
+              )
+              .toList();
+        },
+        tag: 'ProductionDao.ensureDefaultProducts',
+      );
+
   /// Inicia um novo lote de produção com a contagem atual do hardware
   Future<Result<ProductionBatchModel>> startBatch({
     required ProductModel product,
     int? currentHardwareCount,
   }) => Result.catchInAsync(
     fn: () async {
+      // Garante que o produto exista na tabela para respeitar a Foreign Key
+      await into(productsTable).insertOnConflictUpdate(
+        ProductsTableCompanion.insert(
+          id: product.id,
+          name: product.name,
+          unitWeightGrams: product.unitWeightGrams.toDouble(),
+        ),
+      );
+
       // Finaliza automaticamente qualquer lote pendente anterior antes de iniciar novo
       await autoCloseExpiredBatches();
 

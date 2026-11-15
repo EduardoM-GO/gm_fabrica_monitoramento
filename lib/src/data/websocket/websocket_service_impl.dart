@@ -3,11 +3,15 @@ import 'dart:convert';
 import 'dart:developer';
 
 import 'package:gm_fabrica_monitoramento/src/data/websocket/enum/ws_connection_state_enum.dart';
+import 'package:gm_fabrica_monitoramento/src/data/websocket/esp32_discovery_service.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/base_raw_data.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/websocket_service.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 final class WebsocketServiceImpl implements WebsocketService {
+  final Esp32DiscoveryService _discoveryService;
+  final void Function(String discoveredHost, int port)? onHostDiscovered;
+
   final _connectionStateController =
       StreamController<WsConnectionStateEnum>.broadcast();
   final _rawDataController = StreamController<BaseRawData>.broadcast();
@@ -19,14 +23,28 @@ final class WebsocketServiceImpl implements WebsocketService {
 
   WsConnectionStateEnum _currentState = WsConnectionStateEnum.disconnected;
   bool _isDisposed = false;
+  String _host = '192.168.0.58';
+  int _port = 81;
   String _url = '';
   int _reconnectAttempts = 0;
+  bool _isDiscovering = false;
+
+  WebsocketServiceImpl({
+    this._discoveryService = const Esp32DiscoveryService(),
+    this.onHostDiscovered,
+  });
+
+  WsConnectionStateEnum get currentState => _currentState;
+  String get currentHost => _host;
+  int get currentPort => _port;
 
   @override
   Future<void> connect(String host, int port) async {
-    _url = 'ws://$host:$port';
+    _host = host.trim();
+    _port = port;
+    _url = 'ws://$_host:$_port';
     _reconnectAttempts = 0;
-    _internalConnect();
+    await _internalConnect();
   }
 
   Future<void> _internalConnect() async {
@@ -63,10 +81,7 @@ final class WebsocketServiceImpl implements WebsocketService {
 
       await _channel?.ready.timeout(
         const Duration(seconds: 4),
-        onTimeout: () => _setError(
-          error: 'Timeout',
-          tag: 'WebsocketServiceImpl._internalConnect.ready',
-        ),
+        onTimeout: () => throw TimeoutException('WebSocket connection timeout'),
       );
 
       _updateStatus(WsConnectionStateEnum.connected);
@@ -104,9 +119,32 @@ final class WebsocketServiceImpl implements WebsocketService {
 
     _reconnectTimer?.cancel();
     _reconnectAttempts++;
-    final delaySeconds = (_reconnectAttempts > 5) ? 5 : _reconnectAttempts * 1;
 
+    // A cada 3 falhas consecutivas, tenta descobrir automaticamente o IP do ESP32 na sub-rede
+    if (_reconnectAttempts % 3 == 0 && !_isDiscovering) {
+      _tryAutoDiscovery();
+    }
+
+    final delaySeconds = (_reconnectAttempts > 5) ? 5 : _reconnectAttempts * 1;
     _reconnectTimer = Timer(Duration(seconds: delaySeconds), _internalConnect);
+  }
+
+  Future<void> _tryAutoDiscovery() async {
+    if (_isDisposed || _isDiscovering) return;
+    _isDiscovering = true;
+    try {
+      final foundHost = await _discoveryService.discoverHost(
+        port: _port,
+        lastKnownHost: _host,
+      );
+      if (foundHost != null && foundHost != _host && !_isDisposed) {
+        _host = foundHost;
+        _url = 'ws://$_host:$_port';
+        onHostDiscovered?.call(_host, _port);
+      }
+    } finally {
+      _isDiscovering = false;
+    }
   }
 
   void _onData(dynamic data) {
@@ -125,6 +163,7 @@ final class WebsocketServiceImpl implements WebsocketService {
 
   @override
   Future<void> disconnect() async {
+    _reconnectTimer?.cancel();
     _clearError();
     await _cleanupChannel();
     _updateStatus(WsConnectionStateEnum.disconnected);
@@ -171,6 +210,7 @@ final class WebsocketServiceImpl implements WebsocketService {
   @override
   Future<void> dispose() async {
     _isDisposed = true;
+    _reconnectTimer?.cancel();
     await Future.wait([
       _connectionStateController.close(),
       _rawDataController.close(),

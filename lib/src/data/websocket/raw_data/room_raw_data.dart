@@ -14,5 +14,9 @@ final class RoomRawData extends BaseRawData {
   factory RoomRawData.fromJson({
     required TypeRawDataEnum type,
     required Map<String, dynamic> map,
-  }) => RoomRawData(type: type, temp: map['temp'], humidity: map['h']);
+  }) => RoomRawData(
+    type: type,
+    temp: (map['temp'] as num).toDouble(),
+    humidity: ((map['h'] ?? map['humidity']) as num).toDouble(),
+  );
 }

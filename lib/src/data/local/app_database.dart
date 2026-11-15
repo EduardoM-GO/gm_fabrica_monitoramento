@@ -9,6 +9,7 @@ import 'package:gm_fabrica_monitoramento/src/data/local/enum/sync_status_enum.da
 import 'package:gm_fabrica_monitoramento/src/data/local/enum/trigger_freezer_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/tables/batch_adjustments_table.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/tables/cooling_cycles_table.dart';
+import 'package:gm_fabrica_monitoramento/src/data/local/tables/freezer_calibrations_table.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/tables/freezer_events_table.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/tables/freezers_table.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/tables/production_batches_table.dart';
@@ -28,6 +29,7 @@ part 'app_database.g.dart';
     ProductionTimeLinesTable,
     ProductsTable,
     CoolingCyclesTable,
+    FreezerCalibrationsTable,
     FreezersTable,
     RoomEventsTable,
   ],

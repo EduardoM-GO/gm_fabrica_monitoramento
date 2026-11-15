@@ -10,6 +10,7 @@ final class HitRawData extends BaseRawData {
     required TypeRawDataEnum type,
     required Map<String, dynamic> map,
   }) {
-    return HitRawData(type: type, totalCount: map['totalCount'] as int);
+    final count = (map['totalCount'] ?? map['c']) as num;
+    return HitRawData(type: type, totalCount: count.toInt());
   }
 }

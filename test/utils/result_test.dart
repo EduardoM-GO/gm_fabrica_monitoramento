@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gm_fabrica_monitoramento/src/core/exceptions/base_exception.dart';
 import 'package:gm_fabrica_monitoramento/src/utils/result.dart';
 
 void main() {
@@ -14,8 +15,12 @@ void main() {
       expect(value, equals('factory_success'));
     });
 
-    test('Result.error returns exception and matches Error case', () {
-      final exception = Exception('connection_refused');
+    test('Result.error returns BaseException and matches Error case', () {
+      final exception = BaseException(
+        error: Exception('connection_refused'),
+        stackTrace: StackTrace.current,
+        tag: 'ResultTest',
+      );
       final Result<int> result = Result.error(exception);
 
       expect(result, isA<Error<int>>());

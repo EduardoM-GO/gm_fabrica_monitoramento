@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:gm_fabrica_monitoramento/src/data/local/daos/production_dao.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/enum/adjustment_reason_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/hit_raw_data.dart';
+import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/room_raw_data.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/telemetry_raw_data.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/websocket_service.dart';
 import 'package:gm_fabrica_monitoramento/src/domain/models/daily_production_accounting_model.dart';
@@ -19,10 +20,14 @@ final class ProductionRepository {
   Timer? _bufferFlushTimer;
 
   ProductionBatchModel? _activeBatch;
+  DailyProductionAccountingModel _currentAccounting =
+      DailyProductionAccountingModel.zero(DateTime.now());
+  List<ProductModel> _availableProducts = ProductionDao.defaultProducts;
+  RoomRawData? _currentRoom;
   int? _lastHardwareCount;
   int? _lastBootId;
 
-  // Streams reativos para a UI (latência zero)
+  // Streams reativos para a UI (latência zero - Hot Path)
   final _activeBatchController =
       StreamController<ProductionBatchModel?>.broadcast();
   final _hitEventController =
@@ -33,8 +38,11 @@ final class ProductionRepository {
       StreamController<bool>.broadcast();
   final _dailyAccountingController =
       StreamController<DailyProductionAccountingModel>.broadcast();
+  final _productsController =
+      StreamController<List<ProductModel>>.broadcast();
+  final _roomController = StreamController<RoomRawData?>.broadcast();
 
-  // Buffer em segundo plano para persistência no Drift SQLite
+  // Buffer em segundo plano para persistência no Drift SQLite (Warm Path)
   final List<({String batchId, int hardwareCount, DateTime timestamp})>
   _hitBuffer = [];
 
@@ -51,10 +59,26 @@ final class ProductionRepository {
       _conveyorWithoutBatchController.stream;
   Stream<DailyProductionAccountingModel> get dailyAccountingStream =>
       _dailyAccountingController.stream;
+  Stream<List<ProductModel>> get availableProductsStream =>
+      _productsController.stream;
+  Stream<RoomRawData?> get roomStream => _roomController.stream;
 
   ProductionBatchModel? get currentActiveBatch => _activeBatch;
+  DailyProductionAccountingModel get currentDailyAccounting =>
+      _currentAccounting;
+  List<ProductModel> get currentProducts => _availableProducts;
+  RoomRawData? get currentRoom => _currentRoom;
 
   Future<void> _init() async {
+    // 0. Garante que o catálogo de produtos padrão exista no SQLite
+    final productsResult = await _dao.ensureDefaultProducts();
+    if (productsResult.isOk) {
+      _availableProducts = productsResult.valueOrThrow;
+      if (!_productsController.isClosed) {
+        _productsController.add(_availableProducts);
+      }
+    }
+
     // 1. Verifica e encerra qualquer lote deixado aberto em dias anteriores
     await checkAndCloseExpiredBatches();
 
@@ -65,7 +89,9 @@ final class ProductionRepository {
       if (_activeBatch != null) {
         _lastHardwareCount = _activeBatch!.actualQuantity;
       }
-      _activeBatchController.add(_activeBatch);
+      if (!_activeBatchController.isClosed) {
+        _activeBatchController.add(_activeBatch);
+      }
     }
 
     // 3. Emite a contabilidade inicial do dia
@@ -98,7 +124,9 @@ final class ProductionRepository {
       // Se o lote ativo que tínhamos em memória pertencia ao dia anterior, desativa-o
       if (_activeBatch != null && !_isToday(_activeBatch!.startedAt)) {
         _activeBatch = null;
-        _activeBatchController.add(null);
+        if (!_activeBatchController.isClosed) {
+          _activeBatchController.add(null);
+        }
       }
     }
     return result;
@@ -110,6 +138,12 @@ final class ProductionRepository {
       if (data is HitRawData) {
         _handleHardwarePulse(data.totalCount, isDirectHit: true);
       } else if (data is TelemetryRawData) {
+        if (data.room != null) {
+          _currentRoom = data.room;
+          if (!_roomController.isClosed) {
+            _roomController.add(_currentRoom);
+          }
+        }
         if (_lastBootId != null && data.bootId != _lastBootId) {
           // ESP32 reiniciou! Ajusta o contador base para evitar saltos negativos
           _lastHardwareCount = null;
@@ -120,13 +154,12 @@ final class ProductionRepository {
     });
   }
 
-  /// Processa pulso de contagem recebido do hardware com máxima segurança e velocidade
+  /// Processa pulso de contagem recebido do hardware com máxima segurança e velocidade (0ms Hot Path)
   void _handleHardwarePulse(int rawHardwareCount, {required bool isDirectHit}) {
     final now = DateTime.now();
 
     // Verificação contínua de virada de dia ao receber pulso
     if (_activeBatch != null && !_isToday(_activeBatch!.startedAt)) {
-      // Virou o dia! Encerra o lote anterior imediatamente e aguarda operador
       checkAndCloseExpiredBatches();
       refreshDailyAccounting();
       return;
@@ -151,30 +184,55 @@ final class ProductionRepository {
 
     // Se a esteira rodou (houve pulso), mas NÃO existe lote ativo:
     if (_activeBatch == null) {
-      if (delta > 0) {
-        // Dispara alerta imediato para a UI: esteira rodando sem lote aberto!
+      if (delta > 0 && !_conveyorWithoutBatchController.isClosed) {
         _conveyorWithoutBatchController.add(true);
       }
       return;
     }
 
     // Se temos lote ativo, desativa alerta de sem lote
-    _conveyorWithoutBatchController.add(false);
+    if (!_conveyorWithoutBatchController.isClosed) {
+      _conveyorWithoutBatchController.add(false);
+    }
 
     if (delta > 0) {
-      // 1. Atualização instantânea em memória para latência zero na UI
+      final prevProduced = _activeBatch!.producedQuantity;
+      final boxCap = _activeBatch!.product.defaultBoxCapacity > 0
+          ? _activeBatch!.product.defaultBoxCapacity
+          : 50;
+
+      // 1. Atualização instantânea em memória para latência zero na UI (Hot Path)
       final updatedActual = _activeBatch!.actualQuantity + delta;
       _activeBatch = _activeBatch!.copyWith(actualQuantity: updatedActual);
-      _activeBatchController.add(_activeBatch);
+      if (!_activeBatchController.isClosed) {
+        _activeBatchController.add(_activeBatch);
+      }
+
+      // Atualização instantânea (0ms) da contabilidade diária em memória
+      final newProduced = _activeBatch!.producedQuantity;
+      final addedBoxes = (newProduced ~/ boxCap) - (prevProduced ~/ boxCap);
+      final newDailyGross = _currentAccounting.grossCount + delta;
+      final newDailyNet =
+          (newDailyGross - _currentAccounting.discardsCount).clamp(0, 99999999);
+      _currentAccounting = _currentAccounting.copyWith(
+        grossCount: newDailyGross,
+        netCount: newDailyNet,
+        completedBoxes: _currentAccounting.completedBoxes + addedBoxes,
+      );
+      if (!_dailyAccountingController.isClosed) {
+        _dailyAccountingController.add(_currentAccounting);
+      }
 
       // Emite evento de hit para animação/som na UI
-      _hitEventController.add((
-        rawHardwareCount: rawHardwareCount,
-        delta: delta,
-        isDirectHit: isDirectHit,
-      ));
+      if (!_hitEventController.isClosed) {
+        _hitEventController.add((
+          rawHardwareCount: rawHardwareCount,
+          delta: delta,
+          isDirectHit: isDirectHit,
+        ));
+      }
 
-      // 2. Enfileira no buffer para gravação assíncrona no SQLite em segundo plano
+      // 2. Enfileira no buffer para gravação assíncrona no SQLite em segundo plano (Warm Path)
       _queueHitForPersistence(_activeBatch!.id, updatedActual, now);
     }
   }
@@ -219,7 +277,7 @@ final class ProductionRepository {
       actualHardwareCount: lastHit.hardwareCount,
     );
 
-    // Atualiza estatísticas do dia após salvar no banco
+    // Reconcilia estatísticas do dia após salvar no banco
     await refreshDailyAccounting();
   }
 
@@ -232,7 +290,6 @@ final class ProductionRepository {
 
       final activeResult = await _dao.getActiveBatch();
       if (activeResult.isOk && activeResult.valueOrThrow != null) {
-        // Já existe um lote aberto para hoje, encerra-o primeiro antes de iniciar outro produto
         await closeActiveBatch(batch: activeResult.valueOrThrow!);
       }
 
@@ -247,8 +304,12 @@ final class ProductionRepository {
 
       _activeBatch = result.valueOrThrow;
       _lastHardwareCount = _activeBatch!.actualQuantity;
-      _activeBatchController.add(_activeBatch);
-      _conveyorWithoutBatchController.add(false);
+      if (!_activeBatchController.isClosed) {
+        _activeBatchController.add(_activeBatch);
+      }
+      if (!_conveyorWithoutBatchController.isClosed) {
+        _conveyorWithoutBatchController.add(false);
+      }
 
       await refreshDailyAccounting();
       return _activeBatch!;
@@ -263,7 +324,6 @@ final class ProductionRepository {
           final targetBatch = batch ?? _activeBatch;
           if (targetBatch == null) return unit;
 
-          // Despeja qualquer contagem pendente no buffer
           await _flushBuffer();
 
           final result = await _dao.closeBatch(batch: targetBatch);
@@ -273,7 +333,9 @@ final class ProductionRepository {
 
           if (_activeBatch?.id == targetBatch.id) {
             _activeBatch = null;
-            _activeBatchController.add(null);
+            if (!_activeBatchController.isClosed) {
+              _activeBatchController.add(null);
+            }
           }
 
           await refreshDailyAccounting();
@@ -282,13 +344,29 @@ final class ProductionRepository {
         tag: 'ProductionRepository.closeActiveBatch',
       );
 
-  /// Registra descarte / quebra
+  /// Registra descarte / quebra com atualização imediata em memória
   Future<Result<Unit>> registerAdjustment({
     required String batchId,
     required int deltaQty,
     required AdjustmentReasonEnum reason,
     String? observation,
   }) async {
+    // Atualiza projeção em memória imediatamente para feedback 0ms
+    final addedDiscards = deltaQty.abs();
+    final updatedDiscards = _currentAccounting.discardsCount + addedDiscards;
+    final updatedNet =
+        (_currentAccounting.grossCount - updatedDiscards).clamp(0, 99999999);
+    _currentAccounting = _currentAccounting.copyWith(
+      discardsCount: updatedDiscards,
+      netCount: updatedNet,
+    );
+    if (!_dailyAccountingController.isClosed) {
+      _dailyAccountingController.add(_currentAccounting);
+    }
+
+    // Despeja qualquer pulso no buffer antes de reconciliar com o banco
+    await _flushBuffer();
+
     final result = await _dao.addAdjustment(
       batchId: batchId,
       deltaQty: deltaQty,
@@ -302,13 +380,28 @@ final class ProductionRepository {
     return result;
   }
 
-  /// Busca e atualiza a contabilidade diária de ovos
+  /// Busca e atualiza a contabilidade diária de ovos (considerando hits ainda no buffer em memória)
   Future<Result<DailyProductionAccountingModel>> refreshDailyAccounting({
     DateTime? date,
   }) async {
     final result = await _dao.getDailyAccounting(date: date);
     if (result.isOk) {
-      _dailyAccountingController.add(result.valueOrThrow);
+      var accounting = result.valueOrThrow;
+      // Se houver pulsos ainda no buffer aguardando flush, preserva a contagem mais recente em memória
+      if (_hitBuffer.isNotEmpty &&
+          _currentAccounting.grossCount > accounting.grossCount) {
+        final gross = _currentAccounting.grossCount;
+        final net = (gross - accounting.discardsCount).clamp(0, 99999999);
+        accounting = accounting.copyWith(
+          grossCount: gross,
+          netCount: net,
+          completedBoxes: _currentAccounting.completedBoxes,
+        );
+      }
+      _currentAccounting = accounting;
+      if (!_dailyAccountingController.isClosed) {
+        _dailyAccountingController.add(_currentAccounting);
+      }
     }
     return result;
   }
@@ -329,5 +422,7 @@ final class ProductionRepository {
     _hitEventController.close();
     _conveyorWithoutBatchController.close();
     _dailyAccountingController.close();
+    _productsController.close();
+    _roomController.close();
   }
 }

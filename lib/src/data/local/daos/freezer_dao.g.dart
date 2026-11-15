@@ -9,6 +9,8 @@ mixin _$FreezerDaoMixin on DatabaseAccessor<AppDatabase> {
   $CoolingCyclesTableTable get coolingCyclesTable =>
       attachedDatabase.coolingCyclesTable;
   $FreezersTableTable get freezersTable => attachedDatabase.freezersTable;
+  $FreezerCalibrationsTableTable get freezerCalibrationsTable =>
+      attachedDatabase.freezerCalibrationsTable;
   FreezerDaoManager get managers => FreezerDaoManager(this);
 }
 
@@ -27,4 +29,9 @@ class FreezerDaoManager {
       );
   $$FreezersTableTableTableManager get freezersTable =>
       $$FreezersTableTableTableManager(_db.attachedDatabase, _db.freezersTable);
+  $$FreezerCalibrationsTableTableTableManager get freezerCalibrationsTable =>
+      $$FreezerCalibrationsTableTableTableManager(
+        _db.attachedDatabase,
+        _db.freezerCalibrationsTable,
+      );
 }

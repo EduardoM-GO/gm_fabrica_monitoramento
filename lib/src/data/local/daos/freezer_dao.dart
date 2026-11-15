@@ -7,11 +7,17 @@ import '../app_database.dart';
 import '../tables/freezer_events_table.dart';
 import '../tables/cooling_cycles_table.dart';
 import '../tables/freezers_table.dart';
+import '../tables/freezer_calibrations_table.dart';
 import '../enum/sync_status_enum.dart';
 
 part 'freezer_dao.g.dart';
 
-@DriftAccessor(tables: [FreezerEventsTable, CoolingCyclesTable, FreezersTable])
+@DriftAccessor(tables: [
+  FreezerEventsTable,
+  CoolingCyclesTable,
+  FreezersTable,
+  FreezerCalibrationsTable,
+])
 final class FreezerDao extends DatabaseAccessor<AppDatabase>
     with _$FreezerDaoMixin {
   FreezerDao(super.db);
@@ -40,23 +46,183 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
       );
 
   // ==========================================
-  // CICLOS DE RESFRIAMENTO (Gargalo de Produtividade)
+  // CALIBRAÇÃO ADAPTATIVA
   // ==========================================
 
-  Future<Result<String>> startCoolingCycle(
-    String batchId,
+  /// Busca calibração específica para [freezerId] e [productId].
+  /// Se não encontrar para o produto, busca o padrão genérico (productId == null).
+  Future<Result<FreezerCalibration?>> getCalibration(
+    String freezerId, {
+    String? productId,
+  }) => Result.catchInAsync(
+    fn: () async {
+      if (productId != null) {
+        final specific = await (select(freezerCalibrationsTable)
+              ..where(
+                (tbl) =>
+                    tbl.freezerId.equals(freezerId) &
+                    tbl.productId.equals(productId),
+              ))
+            .getSingleOrNull();
+
+        if (specific != null) return specific;
+      }
+
+      // Fallback para calibração genérica (sem produto específico)
+      final generic = await (select(freezerCalibrationsTable)
+            ..where(
+              (tbl) =>
+                  tbl.freezerId.equals(freezerId) & tbl.productId.isNull(),
+            ))
+          .getSingleOrNull();
+
+      return generic;
+    },
+    tag: 'FreezerDao.getCalibration',
+  );
+
+  /// Retorna todas as calibrações de um freezer (para tela de configurações)
+  Future<Result<List<FreezerCalibration>>> getAllCalibrationsForFreezer(
     String freezerId,
-    int expectedSeconds,
   ) => Result.catchInAsync(
+    fn: () async {
+      return (select(freezerCalibrationsTable)
+            ..where((tbl) => tbl.freezerId.equals(freezerId))
+            ..orderBy([(tbl) => OrderingTerm.desc(tbl.updatedAt)]))
+          .get();
+    },
+    tag: 'FreezerDao.getAllCalibrationsForFreezer',
+  );
+
+  /// Insere ou atualiza a calibração com novo tempo aprendido e feedback
+  Future<Result<FreezerCalibration>> upsertCalibration({
+    required String freezerId,
+    String? productId,
+    required int calibratedDurationSeconds,
+    required String lastFeedback,
+  }) => Result.catchInAsync(
+    fn: () async {
+      final existing = await (select(freezerCalibrationsTable)
+            ..where(
+              (tbl) =>
+                  tbl.freezerId.equals(freezerId) &
+                  (productId != null
+                      ? tbl.productId.equals(productId)
+                      : tbl.productId.isNull()),
+            ))
+          .getSingleOrNull();
+
+      final now = DateTime.now();
+
+      if (existing != null) {
+        await (update(freezerCalibrationsTable)
+              ..where((tbl) => tbl.id.equals(existing.id)))
+            .write(
+              FreezerCalibrationsTableCompanion(
+                calibratedDurationSeconds: Value(calibratedDurationSeconds),
+                sampleCount: Value(existing.sampleCount + 1),
+                lastFeedback: Value(lastFeedback),
+                updatedAt: Value(now),
+                syncStatus: const Value(SyncStatusEnum.updating),
+              ),
+            );
+
+        return (select(freezerCalibrationsTable)
+              ..where((tbl) => tbl.id.equals(existing.id)))
+            .getSingle();
+      } else {
+        final newId = GeneratorId.getid();
+        final companion = FreezerCalibrationsTableCompanion.insert(
+          id: newId,
+          freezerId: freezerId,
+          productId: Value(productId),
+          calibratedDurationSeconds: calibratedDurationSeconds,
+          sampleCount: const Value(1),
+          lastFeedback: Value(lastFeedback),
+          updatedAt: Value(now),
+        );
+
+        await into(freezerCalibrationsTable).insert(companion);
+
+        return (select(freezerCalibrationsTable)
+              ..where((tbl) => tbl.id.equals(newId)))
+            .getSingle();
+      }
+    },
+    tag: 'FreezerDao.upsertCalibration',
+  );
+
+  /// Reseta a calibração de um freezer/produto para o valor padrão de fábrica
+  Future<Result<Unit>> resetCalibration({
+    required String freezerId,
+    String? productId,
+    required int defaultSeconds,
+  }) => Result.catchInAsync(
+    fn: () async {
+      final existing = await (select(freezerCalibrationsTable)
+            ..where(
+              (tbl) =>
+                  tbl.freezerId.equals(freezerId) &
+                  (productId != null
+                      ? tbl.productId.equals(productId)
+                      : tbl.productId.isNull()),
+            ))
+          .getSingleOrNull();
+
+      final now = DateTime.now();
+
+      if (existing != null) {
+        await (update(freezerCalibrationsTable)
+              ..where((tbl) => tbl.id.equals(existing.id)))
+            .write(
+              FreezerCalibrationsTableCompanion(
+                calibratedDurationSeconds: Value(defaultSeconds),
+                sampleCount: const Value(0),
+                lastFeedback: const Value(null),
+                updatedAt: Value(now),
+                syncStatus: const Value(SyncStatusEnum.updating),
+              ),
+            );
+      } else {
+        await into(freezerCalibrationsTable).insert(
+          FreezerCalibrationsTableCompanion.insert(
+            id: GeneratorId.getid(),
+            freezerId: freezerId,
+            productId: Value(productId),
+            calibratedDurationSeconds: defaultSeconds,
+            sampleCount: const Value(0),
+            updatedAt: Value(now),
+          ),
+        );
+      }
+
+      return unit;
+    },
+    tag: 'FreezerDao.resetCalibration',
+  );
+
+  // ==========================================
+  // CICLOS DE RESFRIAMENTO
+  // ==========================================
+
+  Future<Result<String>> startCoolingCycle({
+    String? batchId,
+    required String freezerId,
+    required int expectedSeconds,
+    double? baselineTemp,
+    double? initialPeakTemp,
+  }) => Result.catchInAsync(
     fn: () async {
       final cycleId = GeneratorId.getid();
 
       await into(coolingCyclesTable).insert(
         CoolingCyclesTableCompanion.insert(
           id: cycleId,
-          batchId: batchId,
+          batchId: Value(batchId),
           freezerId: freezerId,
           expectedDurationSeconds: expectedSeconds,
+          baselineTemp: Value(baselineTemp),
+          initialPeakTemp: Value(initialPeakTemp),
         ),
       );
       return cycleId;
@@ -64,18 +230,47 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
     tag: 'FreezerDao.startCoolingCycle',
   );
 
-  Future<Result<Unit>> finishCoolingCycle(
-    String cycleId,
-    int actualSeconds,
-    int doorOpenSeconds,
-  ) => Result.catchInAsync(
+  Future<Result<Unit>> updateCoolingCycleMetrics({
+    required String cycleId,
+    required int accumulatedDoorOpenSeconds,
+    required int accumulatedPenaltySeconds,
+    required int doorOpenCount,
+  }) => Result.catchInAsync(
+    fn: () async {
+      await (update(
+        coolingCyclesTable,
+      )..where((c) => c.id.equals(cycleId))).write(
+        CoolingCyclesTableCompanion(
+          accumulatedDoorOpenSeconds: Value(accumulatedDoorOpenSeconds),
+          accumulatedPenaltySeconds: Value(accumulatedPenaltySeconds),
+          doorOpenCount: Value(doorOpenCount),
+          syncStatus: const Value(SyncStatusEnum.updating),
+        ),
+      );
+
+      return unit;
+    },
+    tag: 'FreezerDao.updateCoolingCycleMetrics',
+  );
+
+  Future<Result<Unit>> finishCoolingCycle({
+    required String cycleId,
+    required int actualSeconds,
+    required int accumulatedDoorOpenSeconds,
+    required int accumulatedPenaltySeconds,
+    required int doorOpenCount,
+    String? feedback,
+  }) => Result.catchInAsync(
     fn: () async {
       await (update(
         coolingCyclesTable,
       )..where((c) => c.id.equals(cycleId))).write(
         CoolingCyclesTableCompanion(
           actualDurationSeconds: Value(actualSeconds),
-          accumulatedDoorOpenSeconds: Value(doorOpenSeconds),
+          accumulatedDoorOpenSeconds: Value(accumulatedDoorOpenSeconds),
+          accumulatedPenaltySeconds: Value(accumulatedPenaltySeconds),
+          doorOpenCount: Value(doorOpenCount),
+          feedback: Value(feedback),
           finishedAt: Value(DateTime.now()),
           syncStatus: const Value(SyncStatusEnum.updating),
         ),
@@ -84,5 +279,33 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
       return unit;
     },
     tag: 'FreezerDao.finishCoolingCycle',
+  );
+
+  Future<Result<CoolingCycle?>> getActiveCoolingCycle(String freezerId) =>
+      Result.catchInAsync(
+        fn: () async {
+          return (select(coolingCyclesTable)
+                ..where(
+                  (c) => c.freezerId.equals(freezerId) & c.finishedAt.isNull(),
+                )
+                ..orderBy([(c) => OrderingTerm.desc(c.startedAt)])
+                ..limit(1))
+              .getSingleOrNull();
+        },
+        tag: 'FreezerDao.getActiveCoolingCycle',
+      );
+
+  Future<Result<List<CoolingCycle>>> getRecentCycles(
+    String freezerId, {
+    int limit = 10,
+  }) => Result.catchInAsync(
+    fn: () async {
+      return (select(coolingCyclesTable)
+            ..where((c) => c.freezerId.equals(freezerId))
+            ..orderBy([(c) => OrderingTerm.desc(c.startedAt)])
+            ..limit(limit))
+          .get();
+    },
+    tag: 'FreezerDao.getRecentCycles',
   );
 }

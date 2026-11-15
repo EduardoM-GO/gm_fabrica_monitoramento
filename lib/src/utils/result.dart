@@ -66,6 +66,9 @@ sealed class Result<T> {
   bool get isOk => this is Ok<T>;
   bool get isError => this is Error<T>;
 
+  T? get valueOrNull => isOk ? (this as Ok<T>).value : null;
+  BaseException? get errorOrNull => isError ? (this as Error<T>).error : null;
+
   BaseException get errorOrThrow {
     if (isError) {
       return (this as Error<T>).error;

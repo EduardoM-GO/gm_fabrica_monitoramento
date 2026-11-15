@@ -2270,9 +2270,9 @@ class $CoolingCyclesTableTable extends CoolingCyclesTable
   late final GeneratedColumn<String> batchId = GeneratedColumn<String>(
     'batch_id',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.string,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
   );
   static const VerificationMeta _freezerIdMeta = const VerificationMeta(
     'freezerId',
@@ -2308,6 +2308,28 @@ class $CoolingCyclesTableTable extends CoolingCyclesTable
     type: DriftSqlType.dateTime,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _baselineTempMeta = const VerificationMeta(
+    'baselineTemp',
+  );
+  @override
+  late final GeneratedColumn<double> baselineTemp = GeneratedColumn<double>(
+    'baseline_temp',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _initialPeakTempMeta = const VerificationMeta(
+    'initialPeakTemp',
+  );
+  @override
+  late final GeneratedColumn<double> initialPeakTemp = GeneratedColumn<double>(
+    'initial_peak_temp',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _expectedDurationSecondsMeta =
       const VerificationMeta('expectedDurationSeconds');
   @override
@@ -2341,6 +2363,41 @@ class $CoolingCyclesTableTable extends CoolingCyclesTable
         requiredDuringInsert: false,
         defaultValue: const Constant(0),
       );
+  static const VerificationMeta _accumulatedPenaltySecondsMeta =
+      const VerificationMeta('accumulatedPenaltySeconds');
+  @override
+  late final GeneratedColumn<int> accumulatedPenaltySeconds =
+      GeneratedColumn<int>(
+        'accumulated_penalty_seconds',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(0),
+      );
+  static const VerificationMeta _doorOpenCountMeta = const VerificationMeta(
+    'doorOpenCount',
+  );
+  @override
+  late final GeneratedColumn<int> doorOpenCount = GeneratedColumn<int>(
+    'door_open_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _feedbackMeta = const VerificationMeta(
+    'feedback',
+  );
+  @override
+  late final GeneratedColumn<String> feedback = GeneratedColumn<String>(
+    'feedback',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2349,9 +2406,14 @@ class $CoolingCyclesTableTable extends CoolingCyclesTable
     freezerId,
     startedAt,
     finishedAt,
+    baselineTemp,
+    initialPeakTemp,
     expectedDurationSeconds,
     actualDurationSeconds,
     accumulatedDoorOpenSeconds,
+    accumulatedPenaltySeconds,
+    doorOpenCount,
+    feedback,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2375,8 +2437,6 @@ class $CoolingCyclesTableTable extends CoolingCyclesTable
         _batchIdMeta,
         batchId.isAcceptableOrUnknown(data['batch_id']!, _batchIdMeta),
       );
-    } else if (isInserting) {
-      context.missing(_batchIdMeta);
     }
     if (data.containsKey('freezer_id')) {
       context.handle(
@@ -2396,6 +2456,24 @@ class $CoolingCyclesTableTable extends CoolingCyclesTable
       context.handle(
         _finishedAtMeta,
         finishedAt.isAcceptableOrUnknown(data['finished_at']!, _finishedAtMeta),
+      );
+    }
+    if (data.containsKey('baseline_temp')) {
+      context.handle(
+        _baselineTempMeta,
+        baselineTemp.isAcceptableOrUnknown(
+          data['baseline_temp']!,
+          _baselineTempMeta,
+        ),
+      );
+    }
+    if (data.containsKey('initial_peak_temp')) {
+      context.handle(
+        _initialPeakTempMeta,
+        initialPeakTemp.isAcceptableOrUnknown(
+          data['initial_peak_temp']!,
+          _initialPeakTempMeta,
+        ),
       );
     }
     if (data.containsKey('expected_duration_seconds')) {
@@ -2427,6 +2505,30 @@ class $CoolingCyclesTableTable extends CoolingCyclesTable
         ),
       );
     }
+    if (data.containsKey('accumulated_penalty_seconds')) {
+      context.handle(
+        _accumulatedPenaltySecondsMeta,
+        accumulatedPenaltySeconds.isAcceptableOrUnknown(
+          data['accumulated_penalty_seconds']!,
+          _accumulatedPenaltySecondsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('door_open_count')) {
+      context.handle(
+        _doorOpenCountMeta,
+        doorOpenCount.isAcceptableOrUnknown(
+          data['door_open_count']!,
+          _doorOpenCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('feedback')) {
+      context.handle(
+        _feedbackMeta,
+        feedback.isAcceptableOrUnknown(data['feedback']!, _feedbackMeta),
+      );
+    }
     return context;
   }
 
@@ -2449,7 +2551,7 @@ class $CoolingCyclesTableTable extends CoolingCyclesTable
       batchId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}batch_id'],
-      )!,
+      ),
       freezerId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}freezer_id'],
@@ -2461,6 +2563,14 @@ class $CoolingCyclesTableTable extends CoolingCyclesTable
       finishedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}finished_at'],
+      ),
+      baselineTemp: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}baseline_temp'],
+      ),
+      initialPeakTemp: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}initial_peak_temp'],
       ),
       expectedDurationSeconds: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
@@ -2474,6 +2584,18 @@ class $CoolingCyclesTableTable extends CoolingCyclesTable
         DriftSqlType.int,
         data['${effectivePrefix}accumulated_door_open_seconds'],
       )!,
+      accumulatedPenaltySeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}accumulated_penalty_seconds'],
+      )!,
+      doorOpenCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}door_open_count'],
+      )!,
+      feedback: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}feedback'],
+      ),
     );
   }
 
@@ -2489,23 +2611,33 @@ class $CoolingCyclesTableTable extends CoolingCyclesTable
 class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
   final String id;
   final SyncStatusEnum syncStatus;
-  final String batchId;
+  final String? batchId;
   final String freezerId;
   final DateTime startedAt;
   final DateTime? finishedAt;
+  final double? baselineTemp;
+  final double? initialPeakTemp;
   final int expectedDurationSeconds;
   final int? actualDurationSeconds;
   final int accumulatedDoorOpenSeconds;
+  final int accumulatedPenaltySeconds;
+  final int doorOpenCount;
+  final String? feedback;
   const CoolingCycle({
     required this.id,
     required this.syncStatus,
-    required this.batchId,
+    this.batchId,
     required this.freezerId,
     required this.startedAt,
     this.finishedAt,
+    this.baselineTemp,
+    this.initialPeakTemp,
     required this.expectedDurationSeconds,
     this.actualDurationSeconds,
     required this.accumulatedDoorOpenSeconds,
+    required this.accumulatedPenaltySeconds,
+    required this.doorOpenCount,
+    this.feedback,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2516,11 +2648,19 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
         $CoolingCyclesTableTable.$convertersyncStatus.toSql(syncStatus),
       );
     }
-    map['batch_id'] = Variable<String>(batchId);
+    if (!nullToAbsent || batchId != null) {
+      map['batch_id'] = Variable<String>(batchId);
+    }
     map['freezer_id'] = Variable<String>(freezerId);
     map['started_at'] = Variable<DateTime>(startedAt);
     if (!nullToAbsent || finishedAt != null) {
       map['finished_at'] = Variable<DateTime>(finishedAt);
+    }
+    if (!nullToAbsent || baselineTemp != null) {
+      map['baseline_temp'] = Variable<double>(baselineTemp);
+    }
+    if (!nullToAbsent || initialPeakTemp != null) {
+      map['initial_peak_temp'] = Variable<double>(initialPeakTemp);
     }
     map['expected_duration_seconds'] = Variable<int>(expectedDurationSeconds);
     if (!nullToAbsent || actualDurationSeconds != null) {
@@ -2529,6 +2669,13 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
     map['accumulated_door_open_seconds'] = Variable<int>(
       accumulatedDoorOpenSeconds,
     );
+    map['accumulated_penalty_seconds'] = Variable<int>(
+      accumulatedPenaltySeconds,
+    );
+    map['door_open_count'] = Variable<int>(doorOpenCount);
+    if (!nullToAbsent || feedback != null) {
+      map['feedback'] = Variable<String>(feedback);
+    }
     return map;
   }
 
@@ -2536,17 +2683,30 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
     return CoolingCyclesTableCompanion(
       id: Value(id),
       syncStatus: Value(syncStatus),
-      batchId: Value(batchId),
+      batchId: batchId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(batchId),
       freezerId: Value(freezerId),
       startedAt: Value(startedAt),
       finishedAt: finishedAt == null && nullToAbsent
           ? const Value.absent()
           : Value(finishedAt),
+      baselineTemp: baselineTemp == null && nullToAbsent
+          ? const Value.absent()
+          : Value(baselineTemp),
+      initialPeakTemp: initialPeakTemp == null && nullToAbsent
+          ? const Value.absent()
+          : Value(initialPeakTemp),
       expectedDurationSeconds: Value(expectedDurationSeconds),
       actualDurationSeconds: actualDurationSeconds == null && nullToAbsent
           ? const Value.absent()
           : Value(actualDurationSeconds),
       accumulatedDoorOpenSeconds: Value(accumulatedDoorOpenSeconds),
+      accumulatedPenaltySeconds: Value(accumulatedPenaltySeconds),
+      doorOpenCount: Value(doorOpenCount),
+      feedback: feedback == null && nullToAbsent
+          ? const Value.absent()
+          : Value(feedback),
     );
   }
 
@@ -2560,10 +2720,12 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
       syncStatus: $CoolingCyclesTableTable.$convertersyncStatus.fromJson(
         serializer.fromJson<int>(json['syncStatus']),
       ),
-      batchId: serializer.fromJson<String>(json['batchId']),
+      batchId: serializer.fromJson<String?>(json['batchId']),
       freezerId: serializer.fromJson<String>(json['freezerId']),
       startedAt: serializer.fromJson<DateTime>(json['startedAt']),
       finishedAt: serializer.fromJson<DateTime?>(json['finishedAt']),
+      baselineTemp: serializer.fromJson<double?>(json['baselineTemp']),
+      initialPeakTemp: serializer.fromJson<double?>(json['initialPeakTemp']),
       expectedDurationSeconds: serializer.fromJson<int>(
         json['expectedDurationSeconds'],
       ),
@@ -2573,6 +2735,11 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
       accumulatedDoorOpenSeconds: serializer.fromJson<int>(
         json['accumulatedDoorOpenSeconds'],
       ),
+      accumulatedPenaltySeconds: serializer.fromJson<int>(
+        json['accumulatedPenaltySeconds'],
+      ),
+      doorOpenCount: serializer.fromJson<int>(json['doorOpenCount']),
+      feedback: serializer.fromJson<String?>(json['feedback']),
     );
   }
   @override
@@ -2583,10 +2750,12 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
       'syncStatus': serializer.toJson<int>(
         $CoolingCyclesTableTable.$convertersyncStatus.toJson(syncStatus),
       ),
-      'batchId': serializer.toJson<String>(batchId),
+      'batchId': serializer.toJson<String?>(batchId),
       'freezerId': serializer.toJson<String>(freezerId),
       'startedAt': serializer.toJson<DateTime>(startedAt),
       'finishedAt': serializer.toJson<DateTime?>(finishedAt),
+      'baselineTemp': serializer.toJson<double?>(baselineTemp),
+      'initialPeakTemp': serializer.toJson<double?>(initialPeakTemp),
       'expectedDurationSeconds': serializer.toJson<int>(
         expectedDurationSeconds,
       ),
@@ -2594,26 +2763,40 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
       'accumulatedDoorOpenSeconds': serializer.toJson<int>(
         accumulatedDoorOpenSeconds,
       ),
+      'accumulatedPenaltySeconds': serializer.toJson<int>(
+        accumulatedPenaltySeconds,
+      ),
+      'doorOpenCount': serializer.toJson<int>(doorOpenCount),
+      'feedback': serializer.toJson<String?>(feedback),
     };
   }
 
   CoolingCycle copyWith({
     String? id,
     SyncStatusEnum? syncStatus,
-    String? batchId,
+    Value<String?> batchId = const Value.absent(),
     String? freezerId,
     DateTime? startedAt,
     Value<DateTime?> finishedAt = const Value.absent(),
+    Value<double?> baselineTemp = const Value.absent(),
+    Value<double?> initialPeakTemp = const Value.absent(),
     int? expectedDurationSeconds,
     Value<int?> actualDurationSeconds = const Value.absent(),
     int? accumulatedDoorOpenSeconds,
+    int? accumulatedPenaltySeconds,
+    int? doorOpenCount,
+    Value<String?> feedback = const Value.absent(),
   }) => CoolingCycle(
     id: id ?? this.id,
     syncStatus: syncStatus ?? this.syncStatus,
-    batchId: batchId ?? this.batchId,
+    batchId: batchId.present ? batchId.value : this.batchId,
     freezerId: freezerId ?? this.freezerId,
     startedAt: startedAt ?? this.startedAt,
     finishedAt: finishedAt.present ? finishedAt.value : this.finishedAt,
+    baselineTemp: baselineTemp.present ? baselineTemp.value : this.baselineTemp,
+    initialPeakTemp: initialPeakTemp.present
+        ? initialPeakTemp.value
+        : this.initialPeakTemp,
     expectedDurationSeconds:
         expectedDurationSeconds ?? this.expectedDurationSeconds,
     actualDurationSeconds: actualDurationSeconds.present
@@ -2621,6 +2804,10 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
         : this.actualDurationSeconds,
     accumulatedDoorOpenSeconds:
         accumulatedDoorOpenSeconds ?? this.accumulatedDoorOpenSeconds,
+    accumulatedPenaltySeconds:
+        accumulatedPenaltySeconds ?? this.accumulatedPenaltySeconds,
+    doorOpenCount: doorOpenCount ?? this.doorOpenCount,
+    feedback: feedback.present ? feedback.value : this.feedback,
   );
   CoolingCycle copyWithCompanion(CoolingCyclesTableCompanion data) {
     return CoolingCycle(
@@ -2634,6 +2821,12 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
       finishedAt: data.finishedAt.present
           ? data.finishedAt.value
           : this.finishedAt,
+      baselineTemp: data.baselineTemp.present
+          ? data.baselineTemp.value
+          : this.baselineTemp,
+      initialPeakTemp: data.initialPeakTemp.present
+          ? data.initialPeakTemp.value
+          : this.initialPeakTemp,
       expectedDurationSeconds: data.expectedDurationSeconds.present
           ? data.expectedDurationSeconds.value
           : this.expectedDurationSeconds,
@@ -2643,6 +2836,13 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
       accumulatedDoorOpenSeconds: data.accumulatedDoorOpenSeconds.present
           ? data.accumulatedDoorOpenSeconds.value
           : this.accumulatedDoorOpenSeconds,
+      accumulatedPenaltySeconds: data.accumulatedPenaltySeconds.present
+          ? data.accumulatedPenaltySeconds.value
+          : this.accumulatedPenaltySeconds,
+      doorOpenCount: data.doorOpenCount.present
+          ? data.doorOpenCount.value
+          : this.doorOpenCount,
+      feedback: data.feedback.present ? data.feedback.value : this.feedback,
     );
   }
 
@@ -2655,9 +2855,14 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
           ..write('freezerId: $freezerId, ')
           ..write('startedAt: $startedAt, ')
           ..write('finishedAt: $finishedAt, ')
+          ..write('baselineTemp: $baselineTemp, ')
+          ..write('initialPeakTemp: $initialPeakTemp, ')
           ..write('expectedDurationSeconds: $expectedDurationSeconds, ')
           ..write('actualDurationSeconds: $actualDurationSeconds, ')
-          ..write('accumulatedDoorOpenSeconds: $accumulatedDoorOpenSeconds')
+          ..write('accumulatedDoorOpenSeconds: $accumulatedDoorOpenSeconds, ')
+          ..write('accumulatedPenaltySeconds: $accumulatedPenaltySeconds, ')
+          ..write('doorOpenCount: $doorOpenCount, ')
+          ..write('feedback: $feedback')
           ..write(')'))
         .toString();
   }
@@ -2670,9 +2875,14 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
     freezerId,
     startedAt,
     finishedAt,
+    baselineTemp,
+    initialPeakTemp,
     expectedDurationSeconds,
     actualDurationSeconds,
     accumulatedDoorOpenSeconds,
+    accumulatedPenaltySeconds,
+    doorOpenCount,
+    feedback,
   );
   @override
   bool operator ==(Object other) =>
@@ -2684,21 +2894,31 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
           other.freezerId == this.freezerId &&
           other.startedAt == this.startedAt &&
           other.finishedAt == this.finishedAt &&
+          other.baselineTemp == this.baselineTemp &&
+          other.initialPeakTemp == this.initialPeakTemp &&
           other.expectedDurationSeconds == this.expectedDurationSeconds &&
           other.actualDurationSeconds == this.actualDurationSeconds &&
-          other.accumulatedDoorOpenSeconds == this.accumulatedDoorOpenSeconds);
+          other.accumulatedDoorOpenSeconds == this.accumulatedDoorOpenSeconds &&
+          other.accumulatedPenaltySeconds == this.accumulatedPenaltySeconds &&
+          other.doorOpenCount == this.doorOpenCount &&
+          other.feedback == this.feedback);
 }
 
 class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
   final Value<String> id;
   final Value<SyncStatusEnum> syncStatus;
-  final Value<String> batchId;
+  final Value<String?> batchId;
   final Value<String> freezerId;
   final Value<DateTime> startedAt;
   final Value<DateTime?> finishedAt;
+  final Value<double?> baselineTemp;
+  final Value<double?> initialPeakTemp;
   final Value<int> expectedDurationSeconds;
   final Value<int?> actualDurationSeconds;
   final Value<int> accumulatedDoorOpenSeconds;
+  final Value<int> accumulatedPenaltySeconds;
+  final Value<int> doorOpenCount;
+  final Value<String?> feedback;
   final Value<int> rowid;
   const CoolingCyclesTableCompanion({
     this.id = const Value.absent(),
@@ -2707,24 +2927,33 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
     this.freezerId = const Value.absent(),
     this.startedAt = const Value.absent(),
     this.finishedAt = const Value.absent(),
+    this.baselineTemp = const Value.absent(),
+    this.initialPeakTemp = const Value.absent(),
     this.expectedDurationSeconds = const Value.absent(),
     this.actualDurationSeconds = const Value.absent(),
     this.accumulatedDoorOpenSeconds = const Value.absent(),
+    this.accumulatedPenaltySeconds = const Value.absent(),
+    this.doorOpenCount = const Value.absent(),
+    this.feedback = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   CoolingCyclesTableCompanion.insert({
     required String id,
     this.syncStatus = const Value.absent(),
-    required String batchId,
+    this.batchId = const Value.absent(),
     required String freezerId,
     this.startedAt = const Value.absent(),
     this.finishedAt = const Value.absent(),
+    this.baselineTemp = const Value.absent(),
+    this.initialPeakTemp = const Value.absent(),
     required int expectedDurationSeconds,
     this.actualDurationSeconds = const Value.absent(),
     this.accumulatedDoorOpenSeconds = const Value.absent(),
+    this.accumulatedPenaltySeconds = const Value.absent(),
+    this.doorOpenCount = const Value.absent(),
+    this.feedback = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
-       batchId = Value(batchId),
        freezerId = Value(freezerId),
        expectedDurationSeconds = Value(expectedDurationSeconds);
   static Insertable<CoolingCycle> custom({
@@ -2734,9 +2963,14 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
     Expression<String>? freezerId,
     Expression<DateTime>? startedAt,
     Expression<DateTime>? finishedAt,
+    Expression<double>? baselineTemp,
+    Expression<double>? initialPeakTemp,
     Expression<int>? expectedDurationSeconds,
     Expression<int>? actualDurationSeconds,
     Expression<int>? accumulatedDoorOpenSeconds,
+    Expression<int>? accumulatedPenaltySeconds,
+    Expression<int>? doorOpenCount,
+    Expression<String>? feedback,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2746,12 +2980,18 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
       if (freezerId != null) 'freezer_id': freezerId,
       if (startedAt != null) 'started_at': startedAt,
       if (finishedAt != null) 'finished_at': finishedAt,
+      if (baselineTemp != null) 'baseline_temp': baselineTemp,
+      if (initialPeakTemp != null) 'initial_peak_temp': initialPeakTemp,
       if (expectedDurationSeconds != null)
         'expected_duration_seconds': expectedDurationSeconds,
       if (actualDurationSeconds != null)
         'actual_duration_seconds': actualDurationSeconds,
       if (accumulatedDoorOpenSeconds != null)
         'accumulated_door_open_seconds': accumulatedDoorOpenSeconds,
+      if (accumulatedPenaltySeconds != null)
+        'accumulated_penalty_seconds': accumulatedPenaltySeconds,
+      if (doorOpenCount != null) 'door_open_count': doorOpenCount,
+      if (feedback != null) 'feedback': feedback,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2759,13 +2999,18 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
   CoolingCyclesTableCompanion copyWith({
     Value<String>? id,
     Value<SyncStatusEnum>? syncStatus,
-    Value<String>? batchId,
+    Value<String?>? batchId,
     Value<String>? freezerId,
     Value<DateTime>? startedAt,
     Value<DateTime?>? finishedAt,
+    Value<double?>? baselineTemp,
+    Value<double?>? initialPeakTemp,
     Value<int>? expectedDurationSeconds,
     Value<int?>? actualDurationSeconds,
     Value<int>? accumulatedDoorOpenSeconds,
+    Value<int>? accumulatedPenaltySeconds,
+    Value<int>? doorOpenCount,
+    Value<String?>? feedback,
     Value<int>? rowid,
   }) {
     return CoolingCyclesTableCompanion(
@@ -2775,12 +3020,18 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
       freezerId: freezerId ?? this.freezerId,
       startedAt: startedAt ?? this.startedAt,
       finishedAt: finishedAt ?? this.finishedAt,
+      baselineTemp: baselineTemp ?? this.baselineTemp,
+      initialPeakTemp: initialPeakTemp ?? this.initialPeakTemp,
       expectedDurationSeconds:
           expectedDurationSeconds ?? this.expectedDurationSeconds,
       actualDurationSeconds:
           actualDurationSeconds ?? this.actualDurationSeconds,
       accumulatedDoorOpenSeconds:
           accumulatedDoorOpenSeconds ?? this.accumulatedDoorOpenSeconds,
+      accumulatedPenaltySeconds:
+          accumulatedPenaltySeconds ?? this.accumulatedPenaltySeconds,
+      doorOpenCount: doorOpenCount ?? this.doorOpenCount,
+      feedback: feedback ?? this.feedback,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2808,6 +3059,12 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
     if (finishedAt.present) {
       map['finished_at'] = Variable<DateTime>(finishedAt.value);
     }
+    if (baselineTemp.present) {
+      map['baseline_temp'] = Variable<double>(baselineTemp.value);
+    }
+    if (initialPeakTemp.present) {
+      map['initial_peak_temp'] = Variable<double>(initialPeakTemp.value);
+    }
     if (expectedDurationSeconds.present) {
       map['expected_duration_seconds'] = Variable<int>(
         expectedDurationSeconds.value,
@@ -2822,6 +3079,17 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
       map['accumulated_door_open_seconds'] = Variable<int>(
         accumulatedDoorOpenSeconds.value,
       );
+    }
+    if (accumulatedPenaltySeconds.present) {
+      map['accumulated_penalty_seconds'] = Variable<int>(
+        accumulatedPenaltySeconds.value,
+      );
+    }
+    if (doorOpenCount.present) {
+      map['door_open_count'] = Variable<int>(doorOpenCount.value);
+    }
+    if (feedback.present) {
+      map['feedback'] = Variable<String>(feedback.value);
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -2838,9 +3106,563 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
           ..write('freezerId: $freezerId, ')
           ..write('startedAt: $startedAt, ')
           ..write('finishedAt: $finishedAt, ')
+          ..write('baselineTemp: $baselineTemp, ')
+          ..write('initialPeakTemp: $initialPeakTemp, ')
           ..write('expectedDurationSeconds: $expectedDurationSeconds, ')
           ..write('actualDurationSeconds: $actualDurationSeconds, ')
           ..write('accumulatedDoorOpenSeconds: $accumulatedDoorOpenSeconds, ')
+          ..write('accumulatedPenaltySeconds: $accumulatedPenaltySeconds, ')
+          ..write('doorOpenCount: $doorOpenCount, ')
+          ..write('feedback: $feedback, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $FreezerCalibrationsTableTable extends FreezerCalibrationsTable
+    with TableInfo<$FreezerCalibrationsTableTable, FreezerCalibration> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $FreezerCalibrationsTableTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<SyncStatusEnum, int> syncStatus =
+      GeneratedColumn<int>(
+        'sync_status',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(0),
+      ).withConverter<SyncStatusEnum>(
+        $FreezerCalibrationsTableTable.$convertersyncStatus,
+      );
+  static const VerificationMeta _freezerIdMeta = const VerificationMeta(
+    'freezerId',
+  );
+  @override
+  late final GeneratedColumn<String> freezerId = GeneratedColumn<String>(
+    'freezer_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _productIdMeta = const VerificationMeta(
+    'productId',
+  );
+  @override
+  late final GeneratedColumn<String> productId = GeneratedColumn<String>(
+    'product_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _calibratedDurationSecondsMeta =
+      const VerificationMeta('calibratedDurationSeconds');
+  @override
+  late final GeneratedColumn<int> calibratedDurationSeconds =
+      GeneratedColumn<int>(
+        'calibrated_duration_seconds',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _sampleCountMeta = const VerificationMeta(
+    'sampleCount',
+  );
+  @override
+  late final GeneratedColumn<int> sampleCount = GeneratedColumn<int>(
+    'sample_count',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _lastFeedbackMeta = const VerificationMeta(
+    'lastFeedback',
+  );
+  @override
+  late final GeneratedColumn<String> lastFeedback = GeneratedColumn<String>(
+    'last_feedback',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: false,
+    defaultValue: currentDateAndTime,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    syncStatus,
+    freezerId,
+    productId,
+    calibratedDurationSeconds,
+    sampleCount,
+    lastFeedback,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'freezer_calibrations_table';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<FreezerCalibration> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('freezer_id')) {
+      context.handle(
+        _freezerIdMeta,
+        freezerId.isAcceptableOrUnknown(data['freezer_id']!, _freezerIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_freezerIdMeta);
+    }
+    if (data.containsKey('product_id')) {
+      context.handle(
+        _productIdMeta,
+        productId.isAcceptableOrUnknown(data['product_id']!, _productIdMeta),
+      );
+    }
+    if (data.containsKey('calibrated_duration_seconds')) {
+      context.handle(
+        _calibratedDurationSecondsMeta,
+        calibratedDurationSeconds.isAcceptableOrUnknown(
+          data['calibrated_duration_seconds']!,
+          _calibratedDurationSecondsMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_calibratedDurationSecondsMeta);
+    }
+    if (data.containsKey('sample_count')) {
+      context.handle(
+        _sampleCountMeta,
+        sampleCount.isAcceptableOrUnknown(
+          data['sample_count']!,
+          _sampleCountMeta,
+        ),
+      );
+    }
+    if (data.containsKey('last_feedback')) {
+      context.handle(
+        _lastFeedbackMeta,
+        lastFeedback.isAcceptableOrUnknown(
+          data['last_feedback']!,
+          _lastFeedbackMeta,
+        ),
+      );
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  FreezerCalibration map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return FreezerCalibration(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      syncStatus: $FreezerCalibrationsTableTable.$convertersyncStatus.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.int,
+          data['${effectivePrefix}sync_status'],
+        )!,
+      ),
+      freezerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}freezer_id'],
+      )!,
+      productId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}product_id'],
+      ),
+      calibratedDurationSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}calibrated_duration_seconds'],
+      )!,
+      sampleCount: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sample_count'],
+      )!,
+      lastFeedback: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}last_feedback'],
+      ),
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $FreezerCalibrationsTableTable createAlias(String alias) {
+    return $FreezerCalibrationsTableTable(attachedDatabase, alias);
+  }
+
+  static JsonTypeConverter2<SyncStatusEnum, int, int> $convertersyncStatus =
+      const EnumIndexConverter<SyncStatusEnum>(SyncStatusEnum.values);
+}
+
+class FreezerCalibration extends DataClass
+    implements Insertable<FreezerCalibration> {
+  final String id;
+  final SyncStatusEnum syncStatus;
+  final String freezerId;
+  final String? productId;
+  final int calibratedDurationSeconds;
+  final int sampleCount;
+  final String? lastFeedback;
+  final DateTime updatedAt;
+  const FreezerCalibration({
+    required this.id,
+    required this.syncStatus,
+    required this.freezerId,
+    this.productId,
+    required this.calibratedDurationSeconds,
+    required this.sampleCount,
+    this.lastFeedback,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    {
+      map['sync_status'] = Variable<int>(
+        $FreezerCalibrationsTableTable.$convertersyncStatus.toSql(syncStatus),
+      );
+    }
+    map['freezer_id'] = Variable<String>(freezerId);
+    if (!nullToAbsent || productId != null) {
+      map['product_id'] = Variable<String>(productId);
+    }
+    map['calibrated_duration_seconds'] = Variable<int>(
+      calibratedDurationSeconds,
+    );
+    map['sample_count'] = Variable<int>(sampleCount);
+    if (!nullToAbsent || lastFeedback != null) {
+      map['last_feedback'] = Variable<String>(lastFeedback);
+    }
+    map['updated_at'] = Variable<DateTime>(updatedAt);
+    return map;
+  }
+
+  FreezerCalibrationsTableCompanion toCompanion(bool nullToAbsent) {
+    return FreezerCalibrationsTableCompanion(
+      id: Value(id),
+      syncStatus: Value(syncStatus),
+      freezerId: Value(freezerId),
+      productId: productId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(productId),
+      calibratedDurationSeconds: Value(calibratedDurationSeconds),
+      sampleCount: Value(sampleCount),
+      lastFeedback: lastFeedback == null && nullToAbsent
+          ? const Value.absent()
+          : Value(lastFeedback),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory FreezerCalibration.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return FreezerCalibration(
+      id: serializer.fromJson<String>(json['id']),
+      syncStatus: $FreezerCalibrationsTableTable.$convertersyncStatus.fromJson(
+        serializer.fromJson<int>(json['syncStatus']),
+      ),
+      freezerId: serializer.fromJson<String>(json['freezerId']),
+      productId: serializer.fromJson<String?>(json['productId']),
+      calibratedDurationSeconds: serializer.fromJson<int>(
+        json['calibratedDurationSeconds'],
+      ),
+      sampleCount: serializer.fromJson<int>(json['sampleCount']),
+      lastFeedback: serializer.fromJson<String?>(json['lastFeedback']),
+      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'syncStatus': serializer.toJson<int>(
+        $FreezerCalibrationsTableTable.$convertersyncStatus.toJson(syncStatus),
+      ),
+      'freezerId': serializer.toJson<String>(freezerId),
+      'productId': serializer.toJson<String?>(productId),
+      'calibratedDurationSeconds': serializer.toJson<int>(
+        calibratedDurationSeconds,
+      ),
+      'sampleCount': serializer.toJson<int>(sampleCount),
+      'lastFeedback': serializer.toJson<String?>(lastFeedback),
+      'updatedAt': serializer.toJson<DateTime>(updatedAt),
+    };
+  }
+
+  FreezerCalibration copyWith({
+    String? id,
+    SyncStatusEnum? syncStatus,
+    String? freezerId,
+    Value<String?> productId = const Value.absent(),
+    int? calibratedDurationSeconds,
+    int? sampleCount,
+    Value<String?> lastFeedback = const Value.absent(),
+    DateTime? updatedAt,
+  }) => FreezerCalibration(
+    id: id ?? this.id,
+    syncStatus: syncStatus ?? this.syncStatus,
+    freezerId: freezerId ?? this.freezerId,
+    productId: productId.present ? productId.value : this.productId,
+    calibratedDurationSeconds:
+        calibratedDurationSeconds ?? this.calibratedDurationSeconds,
+    sampleCount: sampleCount ?? this.sampleCount,
+    lastFeedback: lastFeedback.present ? lastFeedback.value : this.lastFeedback,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  FreezerCalibration copyWithCompanion(FreezerCalibrationsTableCompanion data) {
+    return FreezerCalibration(
+      id: data.id.present ? data.id.value : this.id,
+      syncStatus: data.syncStatus.present
+          ? data.syncStatus.value
+          : this.syncStatus,
+      freezerId: data.freezerId.present ? data.freezerId.value : this.freezerId,
+      productId: data.productId.present ? data.productId.value : this.productId,
+      calibratedDurationSeconds: data.calibratedDurationSeconds.present
+          ? data.calibratedDurationSeconds.value
+          : this.calibratedDurationSeconds,
+      sampleCount: data.sampleCount.present
+          ? data.sampleCount.value
+          : this.sampleCount,
+      lastFeedback: data.lastFeedback.present
+          ? data.lastFeedback.value
+          : this.lastFeedback,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FreezerCalibration(')
+          ..write('id: $id, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('freezerId: $freezerId, ')
+          ..write('productId: $productId, ')
+          ..write('calibratedDurationSeconds: $calibratedDurationSeconds, ')
+          ..write('sampleCount: $sampleCount, ')
+          ..write('lastFeedback: $lastFeedback, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    syncStatus,
+    freezerId,
+    productId,
+    calibratedDurationSeconds,
+    sampleCount,
+    lastFeedback,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is FreezerCalibration &&
+          other.id == this.id &&
+          other.syncStatus == this.syncStatus &&
+          other.freezerId == this.freezerId &&
+          other.productId == this.productId &&
+          other.calibratedDurationSeconds == this.calibratedDurationSeconds &&
+          other.sampleCount == this.sampleCount &&
+          other.lastFeedback == this.lastFeedback &&
+          other.updatedAt == this.updatedAt);
+}
+
+class FreezerCalibrationsTableCompanion
+    extends UpdateCompanion<FreezerCalibration> {
+  final Value<String> id;
+  final Value<SyncStatusEnum> syncStatus;
+  final Value<String> freezerId;
+  final Value<String?> productId;
+  final Value<int> calibratedDurationSeconds;
+  final Value<int> sampleCount;
+  final Value<String?> lastFeedback;
+  final Value<DateTime> updatedAt;
+  final Value<int> rowid;
+  const FreezerCalibrationsTableCompanion({
+    this.id = const Value.absent(),
+    this.syncStatus = const Value.absent(),
+    this.freezerId = const Value.absent(),
+    this.productId = const Value.absent(),
+    this.calibratedDurationSeconds = const Value.absent(),
+    this.sampleCount = const Value.absent(),
+    this.lastFeedback = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  FreezerCalibrationsTableCompanion.insert({
+    required String id,
+    this.syncStatus = const Value.absent(),
+    required String freezerId,
+    this.productId = const Value.absent(),
+    required int calibratedDurationSeconds,
+    this.sampleCount = const Value.absent(),
+    this.lastFeedback = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       freezerId = Value(freezerId),
+       calibratedDurationSeconds = Value(calibratedDurationSeconds);
+  static Insertable<FreezerCalibration> custom({
+    Expression<String>? id,
+    Expression<int>? syncStatus,
+    Expression<String>? freezerId,
+    Expression<String>? productId,
+    Expression<int>? calibratedDurationSeconds,
+    Expression<int>? sampleCount,
+    Expression<String>? lastFeedback,
+    Expression<DateTime>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (syncStatus != null) 'sync_status': syncStatus,
+      if (freezerId != null) 'freezer_id': freezerId,
+      if (productId != null) 'product_id': productId,
+      if (calibratedDurationSeconds != null)
+        'calibrated_duration_seconds': calibratedDurationSeconds,
+      if (sampleCount != null) 'sample_count': sampleCount,
+      if (lastFeedback != null) 'last_feedback': lastFeedback,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  FreezerCalibrationsTableCompanion copyWith({
+    Value<String>? id,
+    Value<SyncStatusEnum>? syncStatus,
+    Value<String>? freezerId,
+    Value<String?>? productId,
+    Value<int>? calibratedDurationSeconds,
+    Value<int>? sampleCount,
+    Value<String?>? lastFeedback,
+    Value<DateTime>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return FreezerCalibrationsTableCompanion(
+      id: id ?? this.id,
+      syncStatus: syncStatus ?? this.syncStatus,
+      freezerId: freezerId ?? this.freezerId,
+      productId: productId ?? this.productId,
+      calibratedDurationSeconds:
+          calibratedDurationSeconds ?? this.calibratedDurationSeconds,
+      sampleCount: sampleCount ?? this.sampleCount,
+      lastFeedback: lastFeedback ?? this.lastFeedback,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (syncStatus.present) {
+      map['sync_status'] = Variable<int>(
+        $FreezerCalibrationsTableTable.$convertersyncStatus.toSql(
+          syncStatus.value,
+        ),
+      );
+    }
+    if (freezerId.present) {
+      map['freezer_id'] = Variable<String>(freezerId.value);
+    }
+    if (productId.present) {
+      map['product_id'] = Variable<String>(productId.value);
+    }
+    if (calibratedDurationSeconds.present) {
+      map['calibrated_duration_seconds'] = Variable<int>(
+        calibratedDurationSeconds.value,
+      );
+    }
+    if (sampleCount.present) {
+      map['sample_count'] = Variable<int>(sampleCount.value);
+    }
+    if (lastFeedback.present) {
+      map['last_feedback'] = Variable<String>(lastFeedback.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('FreezerCalibrationsTableCompanion(')
+          ..write('id: $id, ')
+          ..write('syncStatus: $syncStatus, ')
+          ..write('freezerId: $freezerId, ')
+          ..write('productId: $productId, ')
+          ..write('calibratedDurationSeconds: $calibratedDurationSeconds, ')
+          ..write('sampleCount: $sampleCount, ')
+          ..write('lastFeedback: $lastFeedback, ')
+          ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3662,6 +4484,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $ProductsTableTable productsTable = $ProductsTableTable(this);
   late final $CoolingCyclesTableTable coolingCyclesTable =
       $CoolingCyclesTableTable(this);
+  late final $FreezerCalibrationsTableTable freezerCalibrationsTable =
+      $FreezerCalibrationsTableTable(this);
   late final $FreezersTableTable freezersTable = $FreezersTableTable(this);
   late final $RoomEventsTableTable roomEventsTable = $RoomEventsTableTable(
     this,
@@ -3679,6 +4503,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     productionTimeLinesTable,
     productsTable,
     coolingCyclesTable,
+    freezerCalibrationsTable,
     freezersTable,
     roomEventsTable,
   ];
@@ -4914,26 +5739,36 @@ typedef $$CoolingCyclesTableTableCreateCompanionBuilder =
     CoolingCyclesTableCompanion Function({
       required String id,
       Value<SyncStatusEnum> syncStatus,
-      required String batchId,
+      Value<String?> batchId,
       required String freezerId,
       Value<DateTime> startedAt,
       Value<DateTime?> finishedAt,
+      Value<double?> baselineTemp,
+      Value<double?> initialPeakTemp,
       required int expectedDurationSeconds,
       Value<int?> actualDurationSeconds,
       Value<int> accumulatedDoorOpenSeconds,
+      Value<int> accumulatedPenaltySeconds,
+      Value<int> doorOpenCount,
+      Value<String?> feedback,
       Value<int> rowid,
     });
 typedef $$CoolingCyclesTableTableUpdateCompanionBuilder =
     CoolingCyclesTableCompanion Function({
       Value<String> id,
       Value<SyncStatusEnum> syncStatus,
-      Value<String> batchId,
+      Value<String?> batchId,
       Value<String> freezerId,
       Value<DateTime> startedAt,
       Value<DateTime?> finishedAt,
+      Value<double?> baselineTemp,
+      Value<double?> initialPeakTemp,
       Value<int> expectedDurationSeconds,
       Value<int?> actualDurationSeconds,
       Value<int> accumulatedDoorOpenSeconds,
+      Value<int> accumulatedPenaltySeconds,
+      Value<int> doorOpenCount,
+      Value<String?> feedback,
       Value<int> rowid,
     });
 
@@ -4977,6 +5812,16 @@ class $$CoolingCyclesTableTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
+  ColumnFilters<double> get baselineTemp => $composableBuilder(
+    column: $table.baselineTemp,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get initialPeakTemp => $composableBuilder(
+    column: $table.initialPeakTemp,
+    builder: (column) => ColumnFilters(column),
+  );
+
   ColumnFilters<int> get expectedDurationSeconds => $composableBuilder(
     column: $table.expectedDurationSeconds,
     builder: (column) => ColumnFilters(column),
@@ -4989,6 +5834,21 @@ class $$CoolingCyclesTableTableFilterComposer
 
   ColumnFilters<int> get accumulatedDoorOpenSeconds => $composableBuilder(
     column: $table.accumulatedDoorOpenSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get accumulatedPenaltySeconds => $composableBuilder(
+    column: $table.accumulatedPenaltySeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get doorOpenCount => $composableBuilder(
+    column: $table.doorOpenCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get feedback => $composableBuilder(
+    column: $table.feedback,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -5032,6 +5892,16 @@ class $$CoolingCyclesTableTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<double> get baselineTemp => $composableBuilder(
+    column: $table.baselineTemp,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get initialPeakTemp => $composableBuilder(
+    column: $table.initialPeakTemp,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get expectedDurationSeconds => $composableBuilder(
     column: $table.expectedDurationSeconds,
     builder: (column) => ColumnOrderings(column),
@@ -5044,6 +5914,21 @@ class $$CoolingCyclesTableTableOrderingComposer
 
   ColumnOrderings<int> get accumulatedDoorOpenSeconds => $composableBuilder(
     column: $table.accumulatedDoorOpenSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get accumulatedPenaltySeconds => $composableBuilder(
+    column: $table.accumulatedPenaltySeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get doorOpenCount => $composableBuilder(
+    column: $table.doorOpenCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get feedback => $composableBuilder(
+    column: $table.feedback,
     builder: (column) => ColumnOrderings(column),
   );
 }
@@ -5080,6 +5965,16 @@ class $$CoolingCyclesTableTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<double> get baselineTemp => $composableBuilder(
+    column: $table.baselineTemp,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get initialPeakTemp => $composableBuilder(
+    column: $table.initialPeakTemp,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<int> get expectedDurationSeconds => $composableBuilder(
     column: $table.expectedDurationSeconds,
     builder: (column) => column,
@@ -5094,6 +5989,19 @@ class $$CoolingCyclesTableTableAnnotationComposer
     column: $table.accumulatedDoorOpenSeconds,
     builder: (column) => column,
   );
+
+  GeneratedColumn<int> get accumulatedPenaltySeconds => $composableBuilder(
+    column: $table.accumulatedPenaltySeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get doorOpenCount => $composableBuilder(
+    column: $table.doorOpenCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get feedback =>
+      $composableBuilder(column: $table.feedback, builder: (column) => column);
 }
 
 class $$CoolingCyclesTableTableTableManager
@@ -5138,13 +6046,18 @@ class $$CoolingCyclesTableTableTableManager
               ({
                 Value<String> id = const Value.absent(),
                 Value<SyncStatusEnum> syncStatus = const Value.absent(),
-                Value<String> batchId = const Value.absent(),
+                Value<String?> batchId = const Value.absent(),
                 Value<String> freezerId = const Value.absent(),
                 Value<DateTime> startedAt = const Value.absent(),
                 Value<DateTime?> finishedAt = const Value.absent(),
+                Value<double?> baselineTemp = const Value.absent(),
+                Value<double?> initialPeakTemp = const Value.absent(),
                 Value<int> expectedDurationSeconds = const Value.absent(),
                 Value<int?> actualDurationSeconds = const Value.absent(),
                 Value<int> accumulatedDoorOpenSeconds = const Value.absent(),
+                Value<int> accumulatedPenaltySeconds = const Value.absent(),
+                Value<int> doorOpenCount = const Value.absent(),
+                Value<String?> feedback = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CoolingCyclesTableCompanion(
                 id: id,
@@ -5153,22 +6066,32 @@ class $$CoolingCyclesTableTableTableManager
                 freezerId: freezerId,
                 startedAt: startedAt,
                 finishedAt: finishedAt,
+                baselineTemp: baselineTemp,
+                initialPeakTemp: initialPeakTemp,
                 expectedDurationSeconds: expectedDurationSeconds,
                 actualDurationSeconds: actualDurationSeconds,
                 accumulatedDoorOpenSeconds: accumulatedDoorOpenSeconds,
+                accumulatedPenaltySeconds: accumulatedPenaltySeconds,
+                doorOpenCount: doorOpenCount,
+                feedback: feedback,
                 rowid: rowid,
               ),
           createCompanionCallback:
               ({
                 required String id,
                 Value<SyncStatusEnum> syncStatus = const Value.absent(),
-                required String batchId,
+                Value<String?> batchId = const Value.absent(),
                 required String freezerId,
                 Value<DateTime> startedAt = const Value.absent(),
                 Value<DateTime?> finishedAt = const Value.absent(),
+                Value<double?> baselineTemp = const Value.absent(),
+                Value<double?> initialPeakTemp = const Value.absent(),
                 required int expectedDurationSeconds,
                 Value<int?> actualDurationSeconds = const Value.absent(),
                 Value<int> accumulatedDoorOpenSeconds = const Value.absent(),
+                Value<int> accumulatedPenaltySeconds = const Value.absent(),
+                Value<int> doorOpenCount = const Value.absent(),
+                Value<String?> feedback = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CoolingCyclesTableCompanion.insert(
                 id: id,
@@ -5177,9 +6100,14 @@ class $$CoolingCyclesTableTableTableManager
                 freezerId: freezerId,
                 startedAt: startedAt,
                 finishedAt: finishedAt,
+                baselineTemp: baselineTemp,
+                initialPeakTemp: initialPeakTemp,
                 expectedDurationSeconds: expectedDurationSeconds,
                 actualDurationSeconds: actualDurationSeconds,
                 accumulatedDoorOpenSeconds: accumulatedDoorOpenSeconds,
+                accumulatedPenaltySeconds: accumulatedPenaltySeconds,
+                doorOpenCount: doorOpenCount,
+                feedback: feedback,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -5205,6 +6133,292 @@ typedef $$CoolingCyclesTableTableProcessedTableManager =
         BaseReferences<_$AppDatabase, $CoolingCyclesTableTable, CoolingCycle>,
       ),
       CoolingCycle,
+      PrefetchHooks Function()
+    >;
+typedef $$FreezerCalibrationsTableTableCreateCompanionBuilder =
+    FreezerCalibrationsTableCompanion Function({
+      required String id,
+      Value<SyncStatusEnum> syncStatus,
+      required String freezerId,
+      Value<String?> productId,
+      required int calibratedDurationSeconds,
+      Value<int> sampleCount,
+      Value<String?> lastFeedback,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+typedef $$FreezerCalibrationsTableTableUpdateCompanionBuilder =
+    FreezerCalibrationsTableCompanion Function({
+      Value<String> id,
+      Value<SyncStatusEnum> syncStatus,
+      Value<String> freezerId,
+      Value<String?> productId,
+      Value<int> calibratedDurationSeconds,
+      Value<int> sampleCount,
+      Value<String?> lastFeedback,
+      Value<DateTime> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$FreezerCalibrationsTableTableFilterComposer
+    extends Composer<_$AppDatabase, $FreezerCalibrationsTableTable> {
+  $$FreezerCalibrationsTableTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<SyncStatusEnum, SyncStatusEnum, int>
+  get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<String> get freezerId => $composableBuilder(
+    column: $table.freezerId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get productId => $composableBuilder(
+    column: $table.productId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get calibratedDurationSeconds => $composableBuilder(
+    column: $table.calibratedDurationSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sampleCount => $composableBuilder(
+    column: $table.sampleCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get lastFeedback => $composableBuilder(
+    column: $table.lastFeedback,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$FreezerCalibrationsTableTableOrderingComposer
+    extends Composer<_$AppDatabase, $FreezerCalibrationsTableTable> {
+  $$FreezerCalibrationsTableTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get syncStatus => $composableBuilder(
+    column: $table.syncStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get freezerId => $composableBuilder(
+    column: $table.freezerId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get productId => $composableBuilder(
+    column: $table.productId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get calibratedDurationSeconds => $composableBuilder(
+    column: $table.calibratedDurationSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sampleCount => $composableBuilder(
+    column: $table.sampleCount,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get lastFeedback => $composableBuilder(
+    column: $table.lastFeedback,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$FreezerCalibrationsTableTableAnnotationComposer
+    extends Composer<_$AppDatabase, $FreezerCalibrationsTableTable> {
+  $$FreezerCalibrationsTableTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<SyncStatusEnum, int> get syncStatus =>
+      $composableBuilder(
+        column: $table.syncStatus,
+        builder: (column) => column,
+      );
+
+  GeneratedColumn<String> get freezerId =>
+      $composableBuilder(column: $table.freezerId, builder: (column) => column);
+
+  GeneratedColumn<String> get productId =>
+      $composableBuilder(column: $table.productId, builder: (column) => column);
+
+  GeneratedColumn<int> get calibratedDurationSeconds => $composableBuilder(
+    column: $table.calibratedDurationSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get sampleCount => $composableBuilder(
+    column: $table.sampleCount,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get lastFeedback => $composableBuilder(
+    column: $table.lastFeedback,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$FreezerCalibrationsTableTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $FreezerCalibrationsTableTable,
+          FreezerCalibration,
+          $$FreezerCalibrationsTableTableFilterComposer,
+          $$FreezerCalibrationsTableTableOrderingComposer,
+          $$FreezerCalibrationsTableTableAnnotationComposer,
+          $$FreezerCalibrationsTableTableCreateCompanionBuilder,
+          $$FreezerCalibrationsTableTableUpdateCompanionBuilder,
+          (
+            FreezerCalibration,
+            BaseReferences<
+              _$AppDatabase,
+              $FreezerCalibrationsTableTable,
+              FreezerCalibration
+            >,
+          ),
+          FreezerCalibration,
+          PrefetchHooks Function()
+        > {
+  $$FreezerCalibrationsTableTableTableManager(
+    _$AppDatabase db,
+    $FreezerCalibrationsTableTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$FreezerCalibrationsTableTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$FreezerCalibrationsTableTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$FreezerCalibrationsTableTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<SyncStatusEnum> syncStatus = const Value.absent(),
+                Value<String> freezerId = const Value.absent(),
+                Value<String?> productId = const Value.absent(),
+                Value<int> calibratedDurationSeconds = const Value.absent(),
+                Value<int> sampleCount = const Value.absent(),
+                Value<String?> lastFeedback = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FreezerCalibrationsTableCompanion(
+                id: id,
+                syncStatus: syncStatus,
+                freezerId: freezerId,
+                productId: productId,
+                calibratedDurationSeconds: calibratedDurationSeconds,
+                sampleCount: sampleCount,
+                lastFeedback: lastFeedback,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                Value<SyncStatusEnum> syncStatus = const Value.absent(),
+                required String freezerId,
+                Value<String?> productId = const Value.absent(),
+                required int calibratedDurationSeconds,
+                Value<int> sampleCount = const Value.absent(),
+                Value<String?> lastFeedback = const Value.absent(),
+                Value<DateTime> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => FreezerCalibrationsTableCompanion.insert(
+                id: id,
+                syncStatus: syncStatus,
+                freezerId: freezerId,
+                productId: productId,
+                calibratedDurationSeconds: calibratedDurationSeconds,
+                sampleCount: sampleCount,
+                lastFeedback: lastFeedback,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$FreezerCalibrationsTableTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $FreezerCalibrationsTableTable,
+      FreezerCalibration,
+      $$FreezerCalibrationsTableTableFilterComposer,
+      $$FreezerCalibrationsTableTableOrderingComposer,
+      $$FreezerCalibrationsTableTableAnnotationComposer,
+      $$FreezerCalibrationsTableTableCreateCompanionBuilder,
+      $$FreezerCalibrationsTableTableUpdateCompanionBuilder,
+      (
+        FreezerCalibration,
+        BaseReferences<
+          _$AppDatabase,
+          $FreezerCalibrationsTableTable,
+          FreezerCalibration
+        >,
+      ),
+      FreezerCalibration,
       PrefetchHooks Function()
     >;
 typedef $$FreezersTableTableCreateCompanionBuilder =
@@ -5661,6 +6875,11 @@ class $AppDatabaseManager {
       $$ProductsTableTableTableManager(_db, _db.productsTable);
   $$CoolingCyclesTableTableTableManager get coolingCyclesTable =>
       $$CoolingCyclesTableTableTableManager(_db, _db.coolingCyclesTable);
+  $$FreezerCalibrationsTableTableTableManager get freezerCalibrationsTable =>
+      $$FreezerCalibrationsTableTableTableManager(
+        _db,
+        _db.freezerCalibrationsTable,
+      );
   $$FreezersTableTableTableManager get freezersTable =>
       $$FreezersTableTableTableManager(_db, _db.freezersTable);
   $$RoomEventsTableTableTableManager get roomEventsTable =>

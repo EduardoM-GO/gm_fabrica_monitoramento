@@ -1,27 +1,23 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import 'data/datasources/local/app_database.dart';
-import 'data/datasources/remote/supabase_sync_service.dart';
-import 'data/repositories/freezer_repository_impl.dart';
-import 'data/repositories/production_repository_impl.dart';
-import 'data/repositories/websocket_repository_impl.dart';
-import 'data/services/audio_service.dart';
-import 'data/services/mock_telemetry_generator.dart';
-import 'data/services/websocket_service.dart';
-import 'domain/repositories/i_freezer_repository.dart';
-import 'domain/repositories/i_production_repository.dart';
-import 'domain/repositories/i_sync_repository.dart';
 import 'src/core/themes/app_theme.dart';
-import 'src/ui/dashboard/views/dashboard_view.dart';
-import 'src/ui/freezer/view_models/freezer_viewmodel.dart';
-import 'src/ui/production/view_models/production_viewmodel.dart';
-import 'src/ui/settings/view_models/settings_viewmodel.dart';
+import 'src/data/local/app_database.dart';
+import 'src/data/services/audio_service.dart';
+import 'src/data/websocket/websocket_service.dart';
+import 'src/data/websocket/websocket_service_impl.dart';
+import 'src/features/dashboard/ui/views/dashboard_view.dart';
+import 'src/features/freezer/data/freezer_repository.dart';
+import 'src/features/freezer/domain/engine/freezer_adaptive_engine.dart';
+import 'src/features/freezer/ui/view_models/freezer_monitoring_view_model.dart';
+import 'src/features/production/data/production_repository.dart';
+import 'src/features/production/ui/view_models/egg_count_view_model.dart';
+import 'src/features/settings/ui/view_models/settings_view_model.dart';
 
 /// Entry point of the factory monitoring application.
 /// Configures dependency injection and sets up UI, Data, and Domain layers
-/// according to the official Flutter App Architecture (docs.flutter.dev/app-architecture).
+/// with Feature-First + Signals + Drift SQLite architecture.
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -31,7 +27,7 @@ void main() async {
     DeviceOrientation.landscapeRight,
   ]);
 
-  // Immersive sticky mode hides system bars to maximize display real estate (game mode)
+  // Immersive sticky mode hides system bars to maximize display real estate
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
   // Transparent system overlays for edge-to-edge layout
@@ -45,75 +41,73 @@ void main() async {
     ),
   );
 
-  // 1. Data Layer: Local Database (Drift with Background Isolate via drift_flutter)
+  // 1. Data Layer: Local Database (Drift SQLite)
   final database = AppDatabase();
 
-  // 2. Data Layer: Outbox Synchronization Service with Supabase
-  final syncService = SupabaseSyncService(syncDao: database.syncDao);
+  // 2. Audio Feedback Service (RAM WAV / Asset Pool)
+  final audioService = AudioService();
 
-  // 3. Data Layer: Repositories (Single source of truth)
-  final productionRepo = ProductionRepositoryImpl(
-    dao: database.productionDao,
-    syncRepo: syncService,
-  );
-  final freezerRepo = FreezerRepositoryImpl(
-    dao: database.freezerDao,
-    syncRepo: syncService,
+  // 3. Hardware Pipeline (ESP32 WebSocket + Auto-Discovery)
+  late final SettingsViewModel settingsViewModel;
+  final WebsocketService wsService = WebsocketServiceImpl(
+    onHostDiscovered: (host, port) {
+      settingsViewModel.onHostDiscovered(host, port);
+    },
   );
 
-  // 4. UI Layer: Settings ViewModel & Audio Service
-  final settingsViewModel = SettingsViewModel();
-  final audioService = AudioService(
-    eggSoundEnabled: settingsViewModel.eggSoundEnabled,
-    alarmSoundEnabled: settingsViewModel.alarmSoundEnabled,
+  settingsViewModel = SettingsViewModel(
+    wsService: wsService,
+    audioService: audioService,
+  );
+  // Inicia conexão assíncrona usando IP salvo ou padrão (192.168.0.58:81)
+  unawaited(settingsViewModel.initAndConnect());
+
+  // 4. Data Layer: Repositories (Hot Path 0ms + Warm Path Drift Buffer)
+  final productionRepo = ProductionRepository(
+    database.productionDao,
+    wsService,
   );
 
-  // 5. Data Layer: Hardware Pipeline (ESP32 WebSocket or Simulator)
-  final IWebSocketService wsService = settingsViewModel.isMockEnabled
-      ? MockWebSocketService()
-      : WebSocketServiceImpl();
-  final wsRepo = WebSocketRepositoryImpl(service: wsService);
-  wsRepo.connect(settingsViewModel.wsUrl);
-
-  // 6. UI Layer: Feature ViewModels (MVVM State Holders with Command pattern)
-  final productionViewModel = ProductionViewModel(
+  final freezerRepo = FreezerRepository(
+    freezerDao: database.freezerDao,
+    wsService: wsService,
     productionRepo: productionRepo,
-    webSocketRepo: wsRepo,
-    audioService: audioService,
-    settingsViewModel: settingsViewModel,
+    engine: const FreezerAdaptiveEngine(),
+    doorCriticalSeconds: settingsViewModel.doorCriticalSeconds,
+    inspectionThresholdSeconds:
+        settingsViewModel.doorInspectionThresholdSeconds,
   );
 
-  final freezerViewModel = FreezerViewModel(
-    freezerRepo: freezerRepo,
-    webSocketRepo: wsRepo,
+  // 5. UI Layer: Feature ViewModels (100% Signals-based)
+  final eggCountViewModel = EggCountViewModel(
+    productionRepo,
     audioService: audioService,
-    settingsViewModel: settingsViewModel,
+  );
+  final freezerMonitoringViewModel = FreezerMonitoringViewModel(
+    freezerRepo,
+    audioService: audioService,
   );
 
   runApp(
     MultiProvider(
       providers: [
-        // Data & Domain Layer Dependencies
         Provider<AppDatabase>.value(value: database),
-        Provider<ISyncRepository>.value(value: syncService),
-        Provider<IProductionRepository>.value(value: productionRepo),
-        Provider<IFreezerRepository>.value(value: freezerRepo),
-        Provider<IWebSocketRepository>.value(value: wsRepo),
+        Provider<WebsocketService>.value(value: wsService),
         Provider<AudioService>.value(value: audioService),
-
-        // UI Layer State Holders (ViewModels)
-        ChangeNotifierProvider<SettingsViewModel>.value(
-          value: settingsViewModel,
+        Provider<ProductionRepository>.value(value: productionRepo),
+        Provider<FreezerRepository>.value(value: freezerRepo),
+        Provider<SettingsViewModel>.value(value: settingsViewModel),
+        Provider<EggCountViewModel>.value(value: eggCountViewModel),
+        Provider<FreezerMonitoringViewModel>.value(
+          value: freezerMonitoringViewModel,
         ),
-        ChangeNotifierProvider<ProductionViewModel>.value(
-          value: productionViewModel,
-        ),
-        ChangeNotifierProvider<FreezerViewModel>.value(value: freezerViewModel),
       ],
       child: const FactoryMonitoringApp(),
     ),
   );
 }
+
+void unawaited(Future<void> future) {}
 
 class FactoryMonitoringApp extends StatelessWidget {
   const FactoryMonitoringApp({super.key});

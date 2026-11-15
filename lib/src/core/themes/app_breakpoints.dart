@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// Standard Material 3 Responsive Breakpoints & Device Targets
 /// Optimized for Factory Wall-mount Kiosk (e.g. Samsung Galaxy A05 / SM-A055M)

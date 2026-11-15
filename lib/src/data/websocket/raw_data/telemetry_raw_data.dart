@@ -26,10 +26,10 @@ final class TelemetryRawData extends BaseRawData {
     required Map<String, dynamic> map,
   }) => TelemetryRawData(
     type: type,
-    bootId: map['boot'] as int,
-    rssi: map['rssi'] as int,
-    freeHeap: map['freeHeap'] as int,
-    totalCount: map['totalCount'] as int,
+    bootId: (map['boot'] as num?)?.toInt() ?? 1,
+    rssi: (map['rssi'] as num?)?.toInt() ?? 0,
+    freeHeap: (map['freeHeap'] as num?)?.toInt() ?? 0,
+    totalCount: ((map['totalCount'] ?? map['c']) as num?)?.toInt() ?? 0,
     freezers: _parseFreezers(type: type, map: map),
     room: _parseRoom(type: type, map: map),
   );
@@ -38,18 +38,22 @@ final class TelemetryRawData extends BaseRawData {
     required TypeRawDataEnum type,
     required Map<String, dynamic> map,
   }) {
-    final int index = 1;
+    int index = 1;
     final List<FreezerRawData> freezers = [];
 
     while (map.containsKey('f$index')) {
       final id = 'f$index';
-      freezers.add(
-        FreezerRawData.fromMap(
-          type: type,
-          id: id,
-          map: map[id] as Map<String, dynamic>,
-        ),
-      );
+      final rawFreezer = map[id];
+      if (rawFreezer is Map<String, dynamic>) {
+        freezers.add(
+          FreezerRawData.fromMap(
+            type: type,
+            id: id,
+            map: rawFreezer,
+          ),
+        );
+      }
+      index++;
     }
 
     return freezers;
@@ -60,13 +64,13 @@ final class TelemetryRawData extends BaseRawData {
     required Map<String, dynamic> map,
   }) {
     final roomMap = map['room'];
-    if (roomMap is! Map) {
+    if (roomMap is! Map<String, dynamic>) {
       return null;
     }
 
     return RoomRawData.fromJson(
       type: type,
-      map: roomMap as Map<String, dynamic>,
+      map: roomMap,
     );
   }
 }
