@@ -12,6 +12,13 @@ final class SettingsViewModel {
   static const _keyPort = 'esp32_port';
   static const _keyEggSound = 'egg_sound_enabled';
   static const _keyAlarmSound = 'alarm_sound_enabled';
+  static const _keyEggHitSound = 'egg_hit_sound_enabled';
+  static const _keyBoxCompletedSound = 'box_completed_sound_enabled';
+  static const _keyConveyorAlertSound = 'conveyor_alert_sound_enabled';
+  static const _keyFreezerStartSound = 'freezer_start_sound_enabled';
+  static const _keyFreezerReadySound = 'freezer_ready_sound_enabled';
+  static const _keyDoorToggleSound = 'door_toggle_sound_enabled';
+  static const _keyDoorAlarmSound = 'door_alarm_sound_enabled';
 
   final WebsocketService _wsService;
   final AudioService? _audioService;
@@ -24,6 +31,15 @@ final class SettingsViewModel {
   late final Signal<bool> isDiscovering;
   late final Signal<bool> eggSoundEnabled;
   late final Signal<bool> alarmSoundEnabled;
+
+  // Chaves individuais de som para os 3 operadores na sala 4x4m
+  late final Signal<bool> eggHitSoundEnabled;
+  late final Signal<bool> boxCompletedSoundEnabled;
+  late final Signal<bool> conveyorAlertSoundEnabled;
+  late final Signal<bool> freezerStartSoundEnabled;
+  late final Signal<bool> freezerReadySoundEnabled;
+  late final Signal<bool> doorToggleSoundEnabled;
+  late final Signal<bool> doorAlarmSoundEnabled;
 
   final int doorCriticalSeconds;
   final int doorInspectionThresholdSeconds;
@@ -49,6 +65,26 @@ final class SettingsViewModel {
     isDiscovering = signal<bool>(false);
     eggSoundEnabled = signal<bool>(audioService?.eggSoundEnabled ?? true);
     alarmSoundEnabled = signal<bool>(audioService?.alarmSoundEnabled ?? true);
+
+    eggHitSoundEnabled = signal<bool>(audioService?.eggHitSoundEnabled ?? true);
+    boxCompletedSoundEnabled = signal<bool>(
+      audioService?.boxCompletedSoundEnabled ?? true,
+    );
+    conveyorAlertSoundEnabled = signal<bool>(
+      audioService?.conveyorAlertSoundEnabled ?? true,
+    );
+    freezerStartSoundEnabled = signal<bool>(
+      audioService?.freezerStartSoundEnabled ?? true,
+    );
+    freezerReadySoundEnabled = signal<bool>(
+      audioService?.freezerReadySoundEnabled ?? true,
+    );
+    doorToggleSoundEnabled = signal<bool>(
+      audioService?.doorToggleSoundEnabled ?? true,
+    );
+    doorAlarmSoundEnabled = signal<bool>(
+      audioService?.doorAlarmSoundEnabled ?? true,
+    );
 
     _connSub = _wsService.connectionStateStream.listen((state) {
       connectionState.value = state;
@@ -80,6 +116,42 @@ final class SettingsViewModel {
       if (savedAlarmSound != null) {
         alarmSoundEnabled.value = savedAlarmSound;
         _audioService?.alarmSoundEnabled = savedAlarmSound;
+      }
+
+      final sEggHit = prefs.getBool(_keyEggHitSound);
+      if (sEggHit != null) {
+        eggHitSoundEnabled.value = sEggHit;
+        _audioService?.eggHitSoundEnabled = sEggHit;
+      }
+      final sBox = prefs.getBool(_keyBoxCompletedSound);
+      if (sBox != null) {
+        boxCompletedSoundEnabled.value = sBox;
+        _audioService?.boxCompletedSoundEnabled = sBox;
+      }
+      final sConveyor = prefs.getBool(_keyConveyorAlertSound);
+      if (sConveyor != null) {
+        conveyorAlertSoundEnabled.value = sConveyor;
+        _audioService?.conveyorAlertSoundEnabled = sConveyor;
+      }
+      final sFStart = prefs.getBool(_keyFreezerStartSound);
+      if (sFStart != null) {
+        freezerStartSoundEnabled.value = sFStart;
+        _audioService?.freezerStartSoundEnabled = sFStart;
+      }
+      final sFReady = prefs.getBool(_keyFreezerReadySound);
+      if (sFReady != null) {
+        freezerReadySoundEnabled.value = sFReady;
+        _audioService?.freezerReadySoundEnabled = sFReady;
+      }
+      final sDoorToggle = prefs.getBool(_keyDoorToggleSound);
+      if (sDoorToggle != null) {
+        doorToggleSoundEnabled.value = sDoorToggle;
+        _audioService?.doorToggleSoundEnabled = sDoorToggle;
+      }
+      final sDoorAlarm = prefs.getBool(_keyDoorAlarmSound);
+      if (sDoorAlarm != null) {
+        doorAlarmSoundEnabled.value = sDoorAlarm;
+        _audioService?.doorAlarmSoundEnabled = sDoorAlarm;
       }
     } catch (_) {}
 
@@ -127,21 +199,111 @@ final class SettingsViewModel {
 
   Future<void> toggleEggSound(bool enabled) async {
     eggSoundEnabled.value = enabled;
+    eggHitSoundEnabled.value = enabled;
+    boxCompletedSoundEnabled.value = enabled;
+    conveyorAlertSoundEnabled.value = enabled;
     _audioService?.eggSoundEnabled = enabled;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_keyEggSound, enabled);
+      await prefs.setBool(_keyEggHitSound, enabled);
+      await prefs.setBool(_keyBoxCompletedSound, enabled);
+      await prefs.setBool(_keyConveyorAlertSound, enabled);
     } catch (_) {}
   }
 
   Future<void> toggleAlarmSound(bool enabled) async {
     alarmSoundEnabled.value = enabled;
+    freezerStartSoundEnabled.value = enabled;
+    freezerReadySoundEnabled.value = enabled;
+    doorToggleSoundEnabled.value = enabled;
+    doorAlarmSoundEnabled.value = enabled;
     _audioService?.alarmSoundEnabled = enabled;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(_keyAlarmSound, enabled);
+      await prefs.setBool(_keyFreezerStartSound, enabled);
+      await prefs.setBool(_keyFreezerReadySound, enabled);
+      await prefs.setBool(_keyDoorToggleSound, enabled);
+      await prefs.setBool(_keyDoorAlarmSound, enabled);
     } catch (_) {}
   }
+
+  Future<void> toggleEggHitSound(bool enabled) async {
+    eggHitSoundEnabled.value = enabled;
+    _audioService?.eggHitSoundEnabled = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyEggHitSound, enabled);
+    } catch (_) {}
+  }
+
+  Future<void> toggleBoxCompletedSound(bool enabled) async {
+    boxCompletedSoundEnabled.value = enabled;
+    _audioService?.boxCompletedSoundEnabled = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyBoxCompletedSound, enabled);
+    } catch (_) {}
+  }
+
+  Future<void> toggleConveyorAlertSound(bool enabled) async {
+    conveyorAlertSoundEnabled.value = enabled;
+    _audioService?.conveyorAlertSoundEnabled = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyConveyorAlertSound, enabled);
+    } catch (_) {}
+  }
+
+  Future<void> toggleFreezerStartSound(bool enabled) async {
+    freezerStartSoundEnabled.value = enabled;
+    _audioService?.freezerStartSoundEnabled = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyFreezerStartSound, enabled);
+    } catch (_) {}
+  }
+
+  Future<void> toggleFreezerReadySound(bool enabled) async {
+    freezerReadySoundEnabled.value = enabled;
+    _audioService?.freezerReadySoundEnabled = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyFreezerReadySound, enabled);
+    } catch (_) {}
+  }
+
+  Future<void> toggleDoorToggleSound(bool enabled) async {
+    doorToggleSoundEnabled.value = enabled;
+    _audioService?.doorToggleSoundEnabled = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyDoorToggleSound, enabled);
+    } catch (_) {}
+  }
+
+  Future<void> toggleDoorAlarmSound(bool enabled) async {
+    doorAlarmSoundEnabled.value = enabled;
+    _audioService?.doorAlarmSoundEnabled = enabled;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyDoorAlarmSound, enabled);
+    } catch (_) {}
+  }
+
+  // --- Métodos de Teste Sonoro ("Ouvir/Testar") nas Configurações ---
+  void testEggHitSound() => _audioService?.playEggHit(forceTest: true);
+  void testBoxCompletedSound() =>
+      _audioService?.playBoxCompleted(forceTest: true);
+  void testConveyorAlertSound() =>
+      _audioService?.playConveyorAlert(forceTest: true);
+  void testFreezerStartSound(String freezerId) =>
+      _audioService?.playFreezerStarted(freezerId: freezerId, forceTest: true);
+  void testFreezerReadySound(String freezerId) =>
+      _audioService?.playFreezerReady(freezerId: freezerId, forceTest: true);
+  void testDoorToggleSound() => _audioService?.playDoorOpened(forceTest: true);
+  void testDoorAlarmSound() => _audioService?.playDoorAlarm(forceTest: true);
 
   void dispose() {
     _connSub?.cancel();

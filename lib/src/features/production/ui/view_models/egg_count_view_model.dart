@@ -160,6 +160,9 @@ final class EggCountViewModel {
     // 3. Alerta de esteira rodando sem lote aberto
     _conveyorAlertSub = _repository.conveyorWithoutBatchStream.listen((alert) {
       isConveyorRunningWithoutBatch.value = alert;
+      if (alert) {
+        _audioService?.playConveyorAlert();
+      }
     });
 
     // 4. Contabilidade diária consolidada (0ms Hot Path + Warm Reconcile)

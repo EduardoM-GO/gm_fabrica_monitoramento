@@ -26,8 +26,6 @@ final class EggCountCard extends StatelessWidget {
         final currentBox = viewModel.currentBoxCount.value;
         final boxCap = viewModel.defaultBoxCapacity.value;
         final progress = viewModel.boxProgress.value;
-        final speed = viewModel.eggsPerMinute.value;
-        final completedBoxes = viewModel.batchCompletedBoxes.value;
 
         return Card.outlined(
           color: isConveyorAlert
@@ -41,136 +39,78 @@ final class EggCountCard extends StatelessWidget {
                   : isAnimating
                       ? colorScheme.primary
                       : colorScheme.outlineVariant,
-              width: (isAnimating || isConveyorAlert) ? 2.0 : 1.0,
+              width: 1.5,
             ),
           ),
           child: LayoutBuilder(
             builder: (context, cardConstraints) {
               final hasBoundedHeight = cardConstraints.maxHeight.isFinite;
 
-              final heroCurrentBoxCard = Card.filled(
-                color: colorScheme.surfaceContainerLowest,
-                shape: RoundedRectangleBorder(
-                  borderRadius: AppSpacing.borderRadiusLg,
-                  side: BorderSide(
-                    color: isAnimating
-                        ? colorScheme.primary
-                        : hasBatch
-                            ? colorScheme.primary.withValues(alpha: 0.45)
-                            : colorScheme.outlineVariant.withValues(alpha: 0.5),
-                    width: 1.5,
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.md,
-                    vertical: 8,
-                  ),
-                  child: Column(
-                    mainAxisSize:
-                        hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              hasBatch
-                                  ? 'CONTAGEM ATUAL • CAIXA #${completedBoxes + 1}'
-                                  : 'CONTAGEM ATUAL DA CAIXA',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 0.5,
+              // Centro Super Clean: apenas o número gigante da caixa atual + barra de progresso
+              final heroCurrentBoxSection = Column(
+                mainAxisSize:
+                    hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Flexible(
+                    child: Center(
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            SlidingCounterText(
+                              value: currentBox,
+                              style: theme.textTheme.displayLarge?.copyWith(
+                                fontFamily: AppTheme.fontHeading,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 96,
+                                height: 1.0,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
                                 color: hasBatch
                                     ? colorScheme.primary
                                     : AppTheme.textMuted,
+                              ),
+                            ),
+                            const SizedBox(width: AppSpacing.xs),
+                            Text(
+                              '/ $boxCap',
+                              style: theme.textTheme.headlineSmall?.copyWith(
+                                color: AppTheme.textSecondary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 26,
                                 fontFeatures: const [
                                   FontFeature.tabularFigures(),
                                 ],
                               ),
                             ),
-                          ),
-                          Text(
-                            '${(progress * 100).toStringAsFixed(0)}%',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w800,
-                              color: AppTheme.textSecondary,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures(),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Flexible(
-                        child: Center(
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              crossAxisAlignment: CrossAxisAlignment.baseline,
-                              textBaseline: TextBaseline.alphabetic,
-                              children: [
-                                SlidingCounterText(
-                                  value: currentBox,
-                                  style:
-                                      theme.textTheme.displayLarge?.copyWith(
-                                    fontFamily: AppTheme.fontHeading,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 88,
-                                    height: 1.0,
-                                    fontFeatures: const [
-                                      FontFeature.tabularFigures(),
-                                    ],
-                                    color: hasBatch
-                                        ? colorScheme.primary
-                                        : AppTheme.textMuted,
-                                  ),
-                                ),
-                                const SizedBox(width: AppSpacing.xs),
-                                Text(
-                                  '/ $boxCap ovos',
-                                  style:
-                                      theme.textTheme.headlineSmall?.copyWith(
-                                    color: AppTheme.textSecondary,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 22,
-                                    fontFeatures: const [
-                                      FontFeature.tabularFigures(),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      SmoothProgressBar(
-                        value: progress,
-                        minHeight: 10,
-                        progressColor: progress >= 1.0
-                            ? AppTheme.successGreen
-                            : colorScheme.primary,
-                        backgroundColor: colorScheme.surfaceContainerHighest,
-                        borderRadius: AppSpacing.borderRadiusXs,
-                      ),
-                    ],
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  SmoothProgressBar(
+                    value: progress,
+                    minHeight: 8,
+                    progressColor: progress >= 1.0
+                        ? AppTheme.successGreen
+                        : colorScheme.primary,
+                    backgroundColor: colorScheme.surfaceContainerHighest,
+                    borderRadius: AppSpacing.borderRadiusXs,
+                  ),
+                ],
               );
 
               return Padding(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.sm,
-                  vertical: 8,
+                  horizontal: AppSpacing.md,
+                  vertical: 10,
                 ),
                 child: Column(
                   mainAxisSize:
@@ -224,39 +164,9 @@ final class EggCountCard extends StatelessWidget {
                       const SizedBox(height: 4),
                     ],
 
-                    // --- Header Compacto: Produto atual & Cadência da Esteira ---
+                    // --- Topo Super Clean: Produto + Status + Botão Discreto Encerrar Lote ---
                     Row(
                       children: [
-                        AnimatedScale(
-                          scale: isAnimating ? 1.14 : 1.0,
-                          duration: AppMotion.durationFast,
-                          curve: AppMotion.easeOut,
-                          child: Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              color: hasBatch
-                                  ? colorScheme.primaryContainer
-                                  : colorScheme.surfaceContainerHighest
-                                        .withValues(alpha: 0.45),
-                              borderRadius: AppSpacing.borderRadiusSm,
-                              border: Border.all(
-                                color: hasBatch
-                                    ? colorScheme.primary.withValues(alpha: 0.5)
-                                    : colorScheme.outlineVariant.withValues(
-                                        alpha: 0.4,
-                                      ),
-                              ),
-                            ),
-                            child: Icon(
-                              Icons.egg_rounded,
-                              color: hasBatch
-                                  ? colorScheme.onPrimaryContainer
-                                  : AppTheme.textMuted,
-                              size: 16,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
                         Expanded(
                           child: Row(
                             children: [
@@ -266,7 +176,7 @@ final class EggCountCard extends StatelessWidget {
                                   style: theme.textTheme.titleMedium?.copyWith(
                                     fontFamily: AppTheme.fontHeading,
                                     fontWeight: FontWeight.w900,
-                                    fontSize: hasBatch ? 15 : 13.5,
+                                    fontSize: hasBatch ? 16 : 14,
                                     letterSpacing: 0.4,
                                     color: hasBatch
                                         ? colorScheme.onSurface
@@ -276,7 +186,7 @@ final class EggCountCard extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              const SizedBox(width: 6),
+                              const SizedBox(width: 8),
                               StatusBadge(
                                 label: hasBatch ? 'LOTE ATIVO' : 'EM REPOUSO',
                                 color: hasBatch
@@ -288,123 +198,81 @@ final class EggCountCard extends StatelessWidget {
                             ],
                           ),
                         ),
-                        const SizedBox(width: 6),
-                        // Cadência da esteira
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: speed > 0
-                                ? colorScheme.surfaceContainerHigh
-                                : colorScheme.surfaceContainerLowest.withValues(
-                                    alpha: 0.5,
-                                  ),
+                        if (hasBatch)
+                          InkWell(
                             borderRadius: AppSpacing.borderRadiusXs,
-                            border: Border.all(
-                              color: speed > 0
-                                  ? colorScheme.primary.withValues(alpha: 0.4)
-                                  : colorScheme.outlineVariant.withValues(
-                                      alpha: 0.35,
+                            onTap: () => _showProductSelectorSheet(context),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 4,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.stop_circle_outlined,
+                                    size: 13,
+                                    color: AppTheme.textMuted.withValues(
+                                      alpha: 0.8,
                                     ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Text(
+                                    'ENCERRAR LOTE',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 10,
+                                      color: AppTheme.textMuted,
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.speed_rounded,
-                                size: 12,
-                                color: speed > 0
-                                    ? colorScheme.primary
-                                    : AppTheme.textMuted,
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                '${speed.toStringAsFixed(0)} ovos/min',
-                                style: theme.textTheme.labelSmall?.copyWith(
-                                  fontSize: 10.5,
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
-                                  fontWeight: speed > 0
-                                      ? FontWeight.w800
-                                      : FontWeight.w600,
-                                  color: speed > 0
-                                      ? colorScheme.onSurface
-                                      : AppTheme.textMuted,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
                       ],
                     ),
 
                     const SizedBox(height: 6),
 
-                    // --- 1º MAIS IMPORTANTE: Contagem Atual centralizada e maior ---
+                    // --- 1º MAIS IMPORTANTE: Contagem Atual centralizada e limpa ---
                     if (hasBoundedHeight)
-                      Expanded(child: heroCurrentBoxCard)
+                      Expanded(child: heroCurrentBoxSection)
                     else
-                      heroCurrentBoxCard,
+                      heroCurrentBoxSection,
 
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
 
-                    // --- 2º MAIS IMPORTANTE: Total e Caixas Feitas na parte de baixo (um pouco menor), seguidos de Bruto/Quebras ---
+                    // --- 2º MAIS IMPORTANTE: Apenas Total e Caixas Fechadas limpos (sem caixinhas) ---
                     Row(
                       children: [
                         Expanded(
-                          flex: 6,
                           child: _StatItem(
-                            label: 'TOTAL (LÍQUIDO)',
+                            label: 'TOTAL',
                             value: '${viewModel.dailyNetCount.value}',
-                            icon: Icons.verified_rounded,
                             color: colorScheme.primary,
-                            isHighlight: true,
                           ),
                         ),
-                        const SizedBox(width: 6),
+                        Container(
+                          width: 1,
+                          height: 28,
+                          color: colorScheme.outlineVariant.withValues(
+                            alpha: 0.4,
+                          ),
+                        ),
                         Expanded(
-                          flex: 6,
                           child: _StatItem(
                             label: 'CAIXAS FECHADAS',
                             value: '${viewModel.dailyCompletedBoxes.value}',
-                            icon: Icons.inventory_2_rounded,
                             color: colorScheme.secondary,
-                            isHighlight: true,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          flex: 4,
-                          child: _StatItem(
-                            label: 'BRUTO',
-                            value: '${viewModel.dailyGrossCount.value}',
-                            icon: Icons.precision_manufacturing_rounded,
-                            color: AppTheme.textSecondary,
-                            isSubtle: true,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          flex: 4,
-                          child: _StatItem(
-                            label: 'QUEBRAS',
-                            value: '${viewModel.dailyDiscardsCount.value}',
-                            icon: Icons.heart_broken_rounded,
-                            color: viewModel.dailyDiscardsCount.value > 0
-                                ? colorScheme.error.withValues(alpha: 0.85)
-                                : AppTheme.textMuted,
-                            isSubtle: true,
                           ),
                         ),
                       ],
                     ),
 
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
 
+                    // --- Único Botão Operacional na Base ---
                     if (!hasBatch)
                       PressableScale(
                         child: FilledButton.icon(
@@ -428,90 +296,34 @@ final class EggCountCard extends StatelessWidget {
                         ),
                       )
                     else
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 5,
-                            child: PressableScale(
-                              child: FilledButton.tonalIcon(
-                                style: FilledButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(38),
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 6,
-                                  ),
-                                  backgroundColor: colorScheme.errorContainer
-                                      .withValues(alpha: 0.78),
-                                  foregroundColor: colorScheme.onErrorContainer,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: AppSpacing.borderRadiusMd,
-                                    side: BorderSide(
-                                      color: colorScheme.error.withValues(
-                                        alpha: 0.65,
-                                      ),
-                                      width: 1.2,
-                                    ),
-                                  ),
-                                ),
-                                onPressed: () => _showDiscardSheet(context),
-                                icon: const Icon(
-                                  Icons.exposure_rounded,
-                                  size: 18,
-                                ),
-                                label: const Text(
-                                  'AJUSTAR CONTAGEM / QUEBRA',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: 12.5,
-                                    letterSpacing: 0.4,
-                                  ),
-                                ),
+                      PressableScale(
+                        child: FilledButton.tonalIcon(
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(40),
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            backgroundColor: colorScheme.surfaceContainerHighest,
+                            foregroundColor: colorScheme.onSurface,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: AppSpacing.borderRadiusMd,
+                              side: BorderSide(
+                                color: colorScheme.outlineVariant,
                               ),
                             ),
                           ),
-                          const SizedBox(width: AppSpacing.xs),
-                          Expanded(
-                            flex: 2,
-                            child: PressableScale(
-                              child: OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  minimumSize: const Size.fromHeight(38),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 6,
-                                  ),
-                                  foregroundColor: AppTheme.textMuted,
-                                  side: BorderSide(
-                                    color: colorScheme.outlineVariant
-                                        .withValues(alpha: 0.45),
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: AppSpacing.borderRadiusMd,
-                                  ),
-                                ),
-                                onPressed: () =>
-                                    _showProductSelectorSheet(context),
-                                icon: Icon(
-                                  Icons.stop_circle_outlined,
-                                  size: 13,
-                                  color: AppTheme.textMuted.withValues(
-                                    alpha: 0.8,
-                                  ),
-                                ),
-                                label: const FittedBox(
-                                  fit: BoxFit.scaleDown,
-                                  child: Text(
-                                    'ENCERRAR LOTE',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 10,
-                                      color: AppTheme.textMuted,
-                                    ),
-                                  ),
-                                ),
-                              ),
+                          onPressed: () => _showDiscardSheet(context),
+                          icon: const Icon(
+                            Icons.exposure_rounded,
+                            size: 18,
+                          ),
+                          label: const Text(
+                            'AJUSTAR CONTAGEM / QUEBRA',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 12.5,
+                              letterSpacing: 0.4,
                             ),
                           ),
-                        ],
+                        ),
                       ),
                   ],
                 ),
@@ -826,6 +638,56 @@ class _DiscardBottomSheetState extends State<_DiscardBottomSheet> {
               ],
             ),
             const SizedBox(height: AppSpacing.xxs),
+            // Resumo de métricas secundárias (Bruto, Quebras e Velocidade) dentro do modal para não poluir a tela principal
+            SignalBuilder(
+              builder: (context) {
+                final gross = widget.viewModel.dailyGrossCount.value;
+                final discards = widget.viewModel.dailyDiscardsCount.value;
+                final speed = widget.viewModel.eggsPerMinute.value;
+                return Container(
+                  margin: const EdgeInsets.only(top: 4, bottom: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppSpacing.sm,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainer,
+                    borderRadius: AppSpacing.borderRadiusSm,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      Text(
+                        'Total Bruto: $gross',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textSecondary,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                      Text(
+                        'Quebras/Desc.: $discards',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: discards > 0
+                              ? colorScheme.error
+                              : AppTheme.textSecondary,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                      Text(
+                        'Cadência: ${speed.toStringAsFixed(0)} ovos/min',
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.textMuted,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
             Text(
               isAddition
                   ? 'Correção manual adiciona ovos não lidos pelo sensor da esteira:'
@@ -975,91 +837,53 @@ class _DiscardBottomSheetState extends State<_DiscardBottomSheet> {
 final class _StatItem extends StatelessWidget {
   final String label;
   final String value;
-  final IconData icon;
   final Color color;
-  final bool isHighlight;
-  final bool isSubtle;
 
   const _StatItem({
     required this.label,
     required this.value,
-    required this.icon,
     required this.color,
-    this.isHighlight = false,
-    this.isSubtle = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
 
-    return Card.filled(
-      color: isHighlight
-          ? colorScheme.surfaceContainerHigh
-          : isSubtle
-              ? colorScheme.surfaceContainerLowest.withValues(alpha: 0.45)
-              : colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: AppSpacing.borderRadiusSm,
-        side: BorderSide(
-          color: isHighlight
-              ? color.withValues(alpha: 0.55)
-              : isSubtle
-                  ? colorScheme.outlineVariant.withValues(alpha: 0.30)
-                  : colorScheme.outlineVariant,
-          width: isHighlight ? 1.2 : 1.0,
-        ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.xs,
+        vertical: 2,
       ),
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: AppSpacing.xs,
-          vertical: isHighlight ? 5 : 4,
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    icon,
-                    size: isSubtle ? 9.5 : 11,
-                    color: isSubtle ? color.withValues(alpha: 0.7) : color,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    label,
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      fontSize: isSubtle ? 8.5 : 9.5,
-                      fontWeight:
-                          isHighlight ? FontWeight.w800 : FontWeight.w600,
-                      letterSpacing: 0.35,
-                      color: isHighlight
-                          ? AppTheme.textSecondary
-                          : AppTheme.textMuted,
-                    ),
-                  ),
-                ],
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              label,
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.4,
+                color: AppTheme.textSecondary,
               ),
-              const SizedBox(height: 2),
-              AnimatedValueText(
-                value: value,
-                pulseScale: isHighlight ? 1.06 : 1.04,
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontFamily: AppTheme.fontHeading,
-                  fontWeight: isSubtle ? FontWeight.w700 : FontWeight.w900,
-                  fontSize: isHighlight ? 22 : 13.5,
-                  height: 1.05,
-                  color: color,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
+            ),
+            const SizedBox(width: 8),
+            AnimatedValueText(
+              value: value,
+              pulseScale: 1.06,
+              style: theme.textTheme.titleMedium?.copyWith(
+                fontFamily: AppTheme.fontHeading,
+                fontWeight: FontWeight.w900,
+                fontSize: 24,
+                height: 1.0,
+                color: color,
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

@@ -131,7 +131,7 @@ final class _TopKioskStatusStrip extends StatelessWidget {
         final (Color statusColor, String statusText) = switch (connState) {
           WsConnectionStateEnum.connected => (
             AppTheme.successGreen,
-            'ESP32 Online ($host)',
+            'Online',
           ),
           WsConnectionStateEnum.connecting => (
             AppTheme.warningAmber,
@@ -139,11 +139,11 @@ final class _TopKioskStatusStrip extends StatelessWidget {
           ),
           WsConnectionStateEnum.reconnecting => (
             AppTheme.warningAmber,
-            isDiscovering ? 'Auto-Discovery na Rede...' : 'Reconectando...',
+            isDiscovering ? 'Buscando ESP32...' : 'Reconectando...',
           ),
           WsConnectionStateEnum.disconnected => (
             AppTheme.dangerRed,
-            'ESP32 Offline ($host)',
+            'Offline ($host)',
           ),
         };
 

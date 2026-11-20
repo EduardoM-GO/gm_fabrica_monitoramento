@@ -19,7 +19,9 @@ final class FreezerMonitoringViewModel {
   late final Computed<bool> hasDoorAlarm;
 
   StreamSubscription? _freezersSub;
+  StreamSubscription? _startedSub;
   StreamSubscription? _readySub;
+  StreamSubscription? _doorToggleSub;
   StreamSubscription? _alarmSub;
 
   FreezerMonitoringViewModel(
@@ -59,8 +61,20 @@ final class FreezerMonitoringViewModel {
       freezers.value = data;
     });
 
+    _startedSub = _repository.cycleStartedStream.listen((freezerId) {
+      _audioService?.playFreezerStarted(freezerId: freezerId);
+    });
+
     _readySub = _repository.cycleReadyStream.listen((freezerId) {
-      _audioService?.playFreezerReady();
+      _audioService?.playFreezerReady(freezerId: freezerId);
+    });
+
+    _doorToggleSub = _repository.doorToggleStream.listen((event) {
+      if (event.isOpen) {
+        _audioService?.playDoorOpened();
+      } else {
+        _audioService?.playDoorClosed();
+      }
     });
 
     _alarmSub = _repository.doorAlarmStream.listen((freezerId) {
@@ -126,7 +140,9 @@ final class FreezerMonitoringViewModel {
 
   void dispose() {
     _freezersSub?.cancel();
+    _startedSub?.cancel();
     _readySub?.cancel();
+    _doorToggleSub?.cancel();
     _alarmSub?.cancel();
   }
 }

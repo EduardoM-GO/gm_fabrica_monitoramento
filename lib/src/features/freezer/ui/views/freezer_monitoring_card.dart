@@ -349,147 +349,104 @@ class FreezerMonitoringCard extends StatelessWidget {
       elapsedColor = colorScheme.onSurface;
     }
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: isReady
-            ? AppTheme.successGreen.withValues(alpha: 0.18)
-            : colorScheme.surfaceContainerLowest.withValues(alpha: 0.78),
-        borderRadius: AppSpacing.borderRadiusSm,
-        border: Border.all(
-          color: isReady
-              ? AppTheme.successGreen.withValues(alpha: 0.5)
-              : colorScheme.outlineVariant.withValues(alpha: 0.35),
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // 1º MAIS IMPORTANTE: Tempo Atual e Tempo Previsto em destaque máximo
-              Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Text.rich(
-                        TextSpan(
-                          text: freezer.elapsedFormatted,
-                          style: TextStyle(
-                            fontFamily: AppTheme.fontHeading,
-                            fontSize: 27,
-                            height: 1.0,
-                            fontWeight: FontWeight.w900,
-                            color: elapsedColor,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                          children: [
-                            TextSpan(
-                              text: ' / ${freezer.targetFormatted}',
-                              style: TextStyle(
-                                fontFamily: AppTheme.fontBody,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: AppTheme.textSecondary,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        key: ValueKey('freezer_time_${freezer.freezerId}'),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        statusLabel,
-                        style: TextStyle(
-                          fontSize: isIdle ? 9.5 : 10,
-                          fontWeight:
-                              isIdle ? FontWeight.w600 : FontWeight.w900,
-                          letterSpacing: 0.3,
-                          color: statusColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-
-              // 2º MAIS IMPORTANTE: Temperatura Atual logo depois do tempo
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: (!isProbeOk || isOpen)
-                      ? colorScheme.errorContainer.withValues(alpha: 0.55)
-                      : colorScheme.surfaceContainerHigh.withValues(alpha: 0.7),
-                  borderRadius: AppSpacing.borderRadiusXs,
-                  border: Border.all(
-                    color: (!isProbeOk || isOpen)
-                        ? colorScheme.error.withValues(alpha: 0.7)
-                        : colorScheme.outlineVariant.withValues(alpha: 0.4),
-                  ),
-                ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            // 1º MAIS IMPORTANTE: Tempo Atual e Tempo Previsto limpos (sem sub-caixa)
+            Expanded(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
                   children: [
-                    Icon(
-                      Icons.thermostat_rounded,
-                      size: 13,
-                      color: (!isProbeOk || isOpen)
-                          ? colorScheme.error
-                          : isReady
-                              ? AppTheme.successGreen
-                              : AppTheme.textSecondary,
+                    Text.rich(
+                      TextSpan(
+                        text: freezer.elapsedFormatted,
+                        style: TextStyle(
+                          fontFamily: AppTheme.fontHeading,
+                          fontSize: 30,
+                          height: 1.0,
+                          fontWeight: FontWeight.w900,
+                          color: elapsedColor,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                        children: [
+                          TextSpan(
+                            text: ' / ${freezer.targetFormatted}',
+                            style: TextStyle(
+                              fontFamily: AppTheme.fontBody,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.textSecondary,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      key: ValueKey('freezer_time_${freezer.freezerId}'),
                     ),
-                    const SizedBox(width: 3),
-                    AnimatedValueText(
-                      value: isProbeOk
-                          ? '${freezer.currentTemp.toStringAsFixed(1)} °C'
-                          : '--.- °C',
-                      pulseScale: 1.03,
+                    const SizedBox(width: 8),
+                    Text(
+                      statusLabel,
                       style: TextStyle(
-                        fontFamily: AppTheme.fontHeading,
-                        fontSize: 18,
-                        height: 1.0,
-                        fontWeight: FontWeight.w900,
-                        color: !isProbeOk || isOpen
-                            ? colorScheme.error
-                            : isReady
-                                ? AppTheme.successGreen
-                                : colorScheme.onSurface,
-                        fontFeatures: const [FontFeature.tabularFigures()],
+                        fontSize: isIdle ? 9.5 : 10,
+                        fontWeight: isIdle ? FontWeight.w600 : FontWeight.w900,
+                        letterSpacing: 0.3,
+                        color: statusColor,
                       ),
                     ),
                   ],
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          SmoothProgressBar(
-            value: freezer.progress,
-            minHeight: 5,
-            progressColor: isReady
-                ? AppTheme.successGreen
-                : (isOpen ? colorScheme.error : colorScheme.tertiary),
-            backgroundColor: colorScheme.surfaceContainerHighest.withValues(
-              alpha: 0.5,
             ),
-            borderRadius: BorderRadius.circular(4),
-            duration: AppMotion.durationStandard,
-            curve: AppMotion.easeOut,
+            const SizedBox(width: 8),
+
+            // 2º MAIS IMPORTANTE: Temperatura Atual limpa (sem borda extra em volta)
+            AnimatedValueText(
+              value: isProbeOk
+                  ? '${freezer.currentTemp.toStringAsFixed(1)} °C'
+                  : '--.- °C',
+              pulseScale: 1.03,
+              style: TextStyle(
+                fontFamily: AppTheme.fontHeading,
+                fontSize: 20,
+                height: 1.0,
+                fontWeight: FontWeight.w900,
+                color: !isProbeOk || isOpen
+                    ? colorScheme.error
+                    : isReady
+                        ? AppTheme.successGreen
+                        : colorScheme.onSurface,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        SmoothProgressBar(
+          value: freezer.progress,
+          minHeight: 5,
+          progressColor: isReady
+              ? AppTheme.successGreen
+              : (isOpen ? colorScheme.error : colorScheme.tertiary),
+          backgroundColor: colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.5,
           ),
-        ],
-      ),
+          borderRadius: BorderRadius.circular(4),
+          duration: AppMotion.durationStandard,
+          curve: AppMotion.easeOut,
+        ),
+      ],
     );
   }
 
@@ -772,11 +729,11 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
     }
 
     final sign = delta >= 0 ? '+' : '';
+    final showHeaderRow =
+        isOpen || hasDoorShift || freezer.accumulatedPenaltySeconds > 0;
     final doorShiftLabel = isOpen
         ? 'Perda: $sign${delta.toStringAsFixed(1)} °C ▲'
-        : hasDoorShift
-            ? '$sign${delta.toStringAsFixed(1)} °C pós-porta'
-            : '0.0 °C pós-porta';
+        : '$sign${delta.toStringAsFixed(1)} °C pós-porta';
 
     final graphWidget = CustomPaint(
       painter: _ThermalCurvePainter(
@@ -791,26 +748,11 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
       ),
     );
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: isOpen
-            ? colorScheme.errorContainer.withValues(alpha: 0.38)
-            : colorScheme.surfaceContainerLowest.withValues(
-                alpha: hasDoorShift ? 0.65 : 0.35,
-              ),
-        borderRadius: AppSpacing.borderRadiusSm,
-        border: isOpen
-            ? Border.all(
-                color: colorScheme.error.withValues(alpha: 0.65),
-                width: 1.0,
-              )
-            : null,
-      ),
-      child: Column(
-        mainAxisSize: expandGraph ? MainAxisSize.max : MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+    return Column(
+      mainAxisSize: expandGraph ? MainAxisSize.max : MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (showHeaderRow) ...[
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -822,66 +764,44 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (isOpen) ...[
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
-                            vertical: 1.5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: colorScheme.error.withValues(alpha: 0.2),
-                            borderRadius: AppSpacing.borderRadiusXs,
-                            border: Border.all(
-                              color: colorScheme.error.withValues(alpha: 0.6),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.timer_outlined,
-                                size: 11,
-                                color: colorScheme.error,
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                'ABERTA HÁ ${freezer.currentDoorOpenFormatted}',
-                                style: TextStyle(
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w900,
-                                  color: colorScheme.error,
-                                  fontFeatures: const [
-                                    FontFeature.tabularFigures(),
-                                  ],
-                                ),
-                              ),
+                        Icon(
+                          Icons.timer_outlined,
+                          size: 11,
+                          color: colorScheme.error,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          'ABERTA HÁ ${freezer.currentDoorOpenFormatted}',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w900,
+                            color: colorScheme.error,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures(),
                             ],
                           ),
                         ),
                         const SizedBox(width: 6),
                       ],
-                      Icon(
-                        isOpen
-                            ? Icons.trending_up_rounded
-                            : Icons.swap_vert_rounded,
-                        size: (isOpen || hasDoorShift) ? 13 : 11,
-                        color: (isOpen || hasDoorShift)
-                            ? curveColor
-                            : AppTheme.textMuted.withValues(alpha: 0.6),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        doorShiftLabel,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          fontSize: (isOpen || hasDoorShift) ? 10.5 : 9.5,
-                          fontWeight: (isOpen || hasDoorShift)
-                              ? FontWeight.w800
-                              : FontWeight.w600,
-                          color: (isOpen || hasDoorShift)
-                              ? curveColor
-                              : AppTheme.textMuted.withValues(alpha: 0.65),
-                          fontFeatures: const [FontFeature.tabularFigures()],
+                      if (isOpen || hasDoorShift) ...[
+                        Icon(
+                          isOpen
+                              ? Icons.trending_up_rounded
+                              : Icons.swap_vert_rounded,
+                          size: 12,
+                          color: curveColor,
                         ),
-                      ),
+                        const SizedBox(width: 3),
+                        Text(
+                          doorShiftLabel,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: curveColor,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -902,21 +822,21 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 3),
-          if (expandGraph)
-            Expanded(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 18),
-                child: graphWidget,
-              ),
-            )
-          else
-            SizedBox(
-              height: 26,
+          const SizedBox(height: 2),
+        ],
+        if (expandGraph)
+          Expanded(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 18),
               child: graphWidget,
             ),
-        ],
-      ),
+          )
+        else
+          SizedBox(
+            height: 24,
+            child: graphWidget,
+          ),
+      ],
     );
   }
 }

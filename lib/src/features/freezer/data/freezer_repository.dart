@@ -31,7 +31,10 @@ final class FreezerRepository {
 
   final _freezersStreamController =
       StreamController<Map<String, FreezerLiveState>>.broadcast();
+  final _cycleStartedController = StreamController<String>.broadcast();
   final _cycleReadyController = StreamController<String>.broadcast();
+  final _doorToggleController =
+      StreamController<({String freezerId, bool isOpen})>.broadcast();
   final _doorAlarmController = StreamController<String>.broadcast();
 
   static const int _maxHistoryPoints = 60;
@@ -54,7 +57,10 @@ final class FreezerRepository {
 
   Stream<Map<String, FreezerLiveState>> get freezersStream =>
       _freezersStreamController.stream;
+  Stream<String> get cycleStartedStream => _cycleStartedController.stream;
   Stream<String> get cycleReadyStream => _cycleReadyController.stream;
+  Stream<({String freezerId, bool isOpen})> get doorToggleStream =>
+      _doorToggleController.stream;
   Stream<String> get doorAlarmStream => _doorAlarmController.stream;
 
   Map<String, FreezerLiveState> get currentFreezers =>
@@ -239,6 +245,10 @@ final class FreezerRepository {
           state.doorTransitions,
         )..add((timestamp: now, isOpen: isNowOpen, temperature: temp));
     if (transitions.length > 10) transitions.removeAt(0);
+
+    if (!_doorToggleController.isClosed) {
+      _doorToggleController.add((freezerId: id, isOpen: isNowOpen));
+    }
 
     if (isNowOpen) {
       // Porta acabou de ABRIR
@@ -555,6 +565,10 @@ final class FreezerRepository {
       calibratedBaseSeconds: baseSeconds,
     );
 
+    if (!_cycleStartedController.isClosed) {
+      _cycleStartedController.add(freezerId);
+    }
+
     _emitState();
   }
 
@@ -815,7 +829,9 @@ final class FreezerRepository {
     _wsSubscription?.cancel();
     _tickerTimer?.cancel();
     _freezersStreamController.close();
+    _cycleStartedController.close();
     _cycleReadyController.close();
+    _doorToggleController.close();
     _doorAlarmController.close();
   }
 }

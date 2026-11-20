@@ -53,8 +53,13 @@ class _SettingsDialogState extends State<SettingsDialog> {
       builder: (context) {
         final state = vm.connectionState.value;
         final isDiscovering = vm.isDiscovering.value;
-        final eggSound = vm.eggSoundEnabled.value;
-        final alarmSound = vm.alarmSoundEnabled.value;
+        final eggHitSound = vm.eggHitSoundEnabled.value;
+        final boxCompletedSound = vm.boxCompletedSoundEnabled.value;
+        final conveyorAlertSound = vm.conveyorAlertSoundEnabled.value;
+        final freezerStartSound = vm.freezerStartSoundEnabled.value;
+        final freezerReadySound = vm.freezerReadySoundEnabled.value;
+        final doorToggleSound = vm.doorToggleSoundEnabled.value;
+        final doorAlarmSound = vm.doorAlarmSoundEnabled.value;
 
         final (Color statusColor, String statusText) = switch (state) {
           WsConnectionStateEnum.connected => (
@@ -220,7 +225,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
 
                   const SizedBox(height: AppSpacing.sm),
 
-                  // --- Card Tonal: Feedback Sonoro Industrial ---
+                  // --- Card Tonal: Avisos Sonoros Únicos (Sala 4x4m — 3 Operadores) ---
                   Card.filled(
                     color: colorScheme.surfaceContainer,
                     shape: RoundedRectangleBorder(
@@ -230,30 +235,80 @@ class _SettingsDialogState extends State<SettingsDialog> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.sm,
-                        vertical: AppSpacing.xxs,
+                        vertical: AppSpacing.xs,
                       ),
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            dense: true,
-                            title: const Text(
-                              'Som de Contagem de Ovos (Bip + Caixa)',
-                              style: TextStyle(fontWeight: FontWeight.w700),
+                          Text(
+                            'AVISOS SONOROS DA SALA (TOQUE EM TESTAR PARA OUVIR)',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.4,
+                              color: AppTheme.textSecondary,
                             ),
-                            value: eggSound,
-                            onChanged: vm.toggleEggSound,
+                          ),
+                          const SizedBox(height: 4),
+                          _SoundSettingRow(
+                            title: 'Bip de Ovo Contado',
+                            value: eggHitSound,
+                            onChanged: vm.toggleEggHitSound,
+                            onTestPrimary: vm.testEggHitSound,
+                            testPrimaryLabel: 'Testar',
                           ),
                           const Divider(height: 1),
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            dense: true,
-                            title: const Text(
-                              'Alarmes Sonoros de Freezer (Pronto / Porta Aberta)',
-                              style: TextStyle(fontWeight: FontWeight.w700),
-                            ),
-                            value: alarmSound,
-                            onChanged: vm.toggleAlarmSound,
+                          _SoundSettingRow(
+                            title: 'Caixa Fechada (Completa)',
+                            value: boxCompletedSound,
+                            onChanged: vm.toggleBoxCompletedSound,
+                            onTestPrimary: vm.testBoxCompletedSound,
+                            testPrimaryLabel: 'Testar',
+                          ),
+                          const Divider(height: 1),
+                          _SoundSettingRow(
+                            title: 'Alerta: Esteira Sem Lote Aberto',
+                            value: conveyorAlertSound,
+                            onChanged: vm.toggleConveyorAlertSound,
+                            onTestPrimary: vm.testConveyorAlertSound,
+                            testPrimaryLabel: 'Testar',
+                          ),
+                          const Divider(height: 1),
+                          _SoundSettingRow(
+                            title: 'Freezer Iniciando Ciclo (F1 vs F2)',
+                            value: freezerStartSound,
+                            onChanged: vm.toggleFreezerStartSound,
+                            onTestPrimary: () => vm.testFreezerStartSound('f1'),
+                            testPrimaryLabel: 'F1',
+                            onTestSecondary: () =>
+                                vm.testFreezerStartSound('f2'),
+                            testSecondaryLabel: 'F2',
+                          ),
+                          const Divider(height: 1),
+                          _SoundSettingRow(
+                            title: 'Freezer Pronto para Retirada (F1 vs F2)',
+                            value: freezerReadySound,
+                            onChanged: vm.toggleFreezerReadySound,
+                            onTestPrimary: () => vm.testFreezerReadySound('f1'),
+                            testPrimaryLabel: 'F1',
+                            onTestSecondary: () =>
+                                vm.testFreezerReadySound('f2'),
+                            testSecondaryLabel: 'F2',
+                          ),
+                          const Divider(height: 1),
+                          _SoundSettingRow(
+                            title: 'Clique de Porta (Abriu / Fechou)',
+                            value: doorToggleSound,
+                            onChanged: vm.toggleDoorToggleSound,
+                            onTestPrimary: vm.testDoorToggleSound,
+                            testPrimaryLabel: 'Testar',
+                          ),
+                          const Divider(height: 1),
+                          _SoundSettingRow(
+                            title: 'Alarme: Porta Esquecida Aberta',
+                            value: doorAlarmSound,
+                            onChanged: vm.toggleDoorAlarmSound,
+                            onTestPrimary: vm.testDoorAlarmSound,
+                            testPrimaryLabel: 'Testar',
                           ),
                         ],
                       ),
@@ -314,6 +369,88 @@ class _SettingsDialogState extends State<SettingsDialog> {
           ],
         );
       },
+    );
+  }
+}
+
+final class _SoundSettingRow extends StatelessWidget {
+  final String title;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final VoidCallback onTestPrimary;
+  final String testPrimaryLabel;
+  final VoidCallback? onTestSecondary;
+  final String? testSecondaryLabel;
+
+  const _SoundSettingRow({
+    required this.title,
+    required this.value,
+    required this.onChanged,
+    required this.onTestPrimary,
+    required this.testPrimaryLabel,
+    this.onTestSecondary,
+    this.testSecondaryLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          TextButton.icon(
+            style: TextButton.styleFrom(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              minimumSize: const Size(0, 28),
+              foregroundColor: colorScheme.primary,
+            ),
+            onPressed: onTestPrimary,
+            icon: const Icon(Icons.volume_up_rounded, size: 14),
+            label: Text(
+              testPrimaryLabel,
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+            ),
+          ),
+          if (onTestSecondary != null && testSecondaryLabel != null) ...[
+            const SizedBox(width: 2),
+            TextButton.icon(
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                minimumSize: const Size(0, 28),
+                foregroundColor: colorScheme.secondary,
+              ),
+              onPressed: onTestSecondary,
+              icon: const Icon(Icons.volume_up_rounded, size: 14),
+              label: Text(
+                testSecondaryLabel!,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+          Transform.scale(
+            scale: 0.82,
+            child: Switch(
+              value: value,
+              onChanged: onChanged,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
