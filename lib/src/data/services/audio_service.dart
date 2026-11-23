@@ -1,8 +1,26 @@
-import 'package:audioplayers/audioplayers.dart';
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+/// Industrial 24/7 audio feedback service backed directly by Android's native
+/// [SoundPool] (and iOS [AVAudioPlayer] pool) via [MethodChannel].
+///
+/// Why native [SoundPool] instead of `audioplayers`:
+/// - Preloads all WAV files directly from the APK (`AssetFileDescriptor`) into
+///   native audio RAM at startup — never extracts temporary files to `/cache`
+///   (which Android OS periodically cleans up during long 18h+ runs).
+/// - Stateless fire-and-forget playback (`soundPool.play()`): no `MediaPlayer`
+///   state machine (`playing`, `prepared`) or `AudioFocus` conflicts that can
+///   deadlock when conveyor beeps and freezer alarms fire simultaneously.
+/// - Automatic self-healing: if the Android audio server ever restarts or
+///   returns `streamId == 0`, the native pool automatically rebuilds and
+///   reloads all WAV assets in memory.
 class AudioService {
+  static const MethodChannel _channel = MethodChannel(
+    'com.gm_fabrica/native_audio',
+  );
+
   bool isMuted;
   bool _eggSoundEnabled;
   bool _alarmSoundEnabled;
@@ -33,20 +51,24 @@ class AudioService {
   static const String doorCloseAsset = 'audio/door_close.wav';
   static const String doorAlarmAsset = 'audio/door_alarm.wav';
 
-  // Round-robin pool of AudioPlayers for rapid hits
-  final List<AudioPlayer> _hitPlayers = [];
-  int _hitIndex = 0;
-  static const int _poolSize = 3;
-
-  AudioPlayer? _undoPlayer;
-  AudioPlayer? _boxPlayer;
-  AudioPlayer? _conveyorAlertPlayer;
-  AudioPlayer? _freezerStartPlayer;
-  AudioPlayer? _freezerPlayer;
-  AudioPlayer? _doorTogglePlayer;
-  AudioPlayer? _alarmPlayer;
+  static const List<String> allAudioAssets = [
+    eggHitAsset,
+    eggUndoAsset,
+    boxCompletedAsset,
+    conveyorAlertAsset,
+    freezer1StartAsset,
+    freezer2StartAsset,
+    freezerReadyAsset,
+    freezer1ReadyAsset,
+    freezer2ReadyAsset,
+    doorOpenAsset,
+    doorCloseAsset,
+    doorAlarmAsset,
+  ];
 
   bool _initialized = false;
+  bool _isResetting = false;
+  int _consecutiveFailures = 0;
 
   AudioService({
     this.isMuted = false,
@@ -69,7 +91,7 @@ class AudioService {
        doorToggleSoundEnabled = doorToggleSoundEnabled ?? alarmSoundEnabled,
        doorAlarmSoundEnabled = doorAlarmSoundEnabled ?? alarmSoundEnabled {
     if (!isMuted) {
-      _initPlayers();
+      _ensureInitialized();
     }
   }
 
@@ -90,25 +112,29 @@ class AudioService {
     doorAlarmSoundEnabled = value;
   }
 
-  void _initPlayers() {
-    if (_initialized) return;
+  void _ensureInitialized() {
+    if (_initialized || kIsWeb) return;
     _initialized = true;
+    unawaited(
+      _channel
+          .invokeMethod<int>('preload', {'assets': allAudioAssets})
+          .catchError((Object e) {
+            debugPrint('AudioService: preload notice ($e)');
+            return 0;
+          }),
+    );
+  }
+
+  Future<void> _selfHealNativePool() async {
+    if (_isResetting || kIsWeb) return;
+    _isResetting = true;
     try {
-      for (int i = 0; i < _poolSize; i++) {
-        final p = AudioPlayer()..setPlayerMode(PlayerMode.lowLatency);
-        _hitPlayers.add(p);
-      }
-      _undoPlayer = AudioPlayer()..setPlayerMode(PlayerMode.lowLatency);
-      _boxPlayer = AudioPlayer()..setPlayerMode(PlayerMode.lowLatency);
-      _conveyorAlertPlayer = AudioPlayer()
-        ..setPlayerMode(PlayerMode.lowLatency);
-      _freezerStartPlayer = AudioPlayer()
-        ..setPlayerMode(PlayerMode.lowLatency);
-      _freezerPlayer = AudioPlayer()..setPlayerMode(PlayerMode.lowLatency);
-      _doorTogglePlayer = AudioPlayer()..setPlayerMode(PlayerMode.lowLatency);
-      _alarmPlayer = AudioPlayer()..setPlayerMode(PlayerMode.lowLatency);
+      debugPrint('AudioService: self-healing native SoundPool...');
+      await _channel.invokeMethod<int>('reset', {'assets': allAudioAssets});
     } catch (e) {
-      debugPrint('AudioService: AudioPlayer initialization error: $e');
+      debugPrint('AudioService: self-heal reset failed ($e)');
+    } finally {
+      _isResetting = false;
     }
   }
 
@@ -124,12 +150,7 @@ class AudioService {
       } catch (_) {}
     }
 
-    _initPlayers();
-    final player = _hitPlayers.isNotEmpty
-        ? _hitPlayers[_hitIndex % _hitPlayers.length]
-        : null;
-    _hitIndex++;
-    _play(player, eggHitAsset, fallback: SystemSoundType.click);
+    _play(eggHitAsset, fallback: SystemSoundType.click);
   }
 
   /// Plays descending cancel tone (480 -> 320 Hz, 85ms) when an egg count is decremented
@@ -144,8 +165,7 @@ class AudioService {
       } catch (_) {}
     }
 
-    _initPlayers();
-    _play(_undoPlayer, eggUndoAsset, fallback: SystemSoundType.click);
+    _play(eggUndoAsset, fallback: SystemSoundType.click);
   }
 
   /// Plays dual affirmative chirp ("bip-BIP!") when box is full (40 or 50 eggs)
@@ -164,8 +184,7 @@ class AudioService {
       } catch (_) {}
     }
 
-    _initPlayers();
-    _play(_boxPlayer, boxCompletedAsset, fallback: SystemSoundType.alert);
+    _play(boxCompletedAsset, fallback: SystemSoundType.alert);
   }
 
   /// Plays warning tone when conveyor moves without an active batch
@@ -190,12 +209,7 @@ class AudioService {
       } catch (_) {}
     }
 
-    _initPlayers();
-    _play(
-      _conveyorAlertPlayer,
-      conveyorAlertAsset,
-      fallback: SystemSoundType.alert,
-    );
+    _play(conveyorAlertAsset, fallback: SystemSoundType.alert);
   }
 
   /// Plays unique cycle start chime differentiated by freezer (F1: 1 warm chord, F2: 2 bright pulses)
@@ -211,10 +225,8 @@ class AudioService {
       } catch (_) {}
     }
 
-    _initPlayers();
-    final asset =
-        freezerId == 'f2' ? freezer2StartAsset : freezer1StartAsset;
-    _play(_freezerStartPlayer, asset, fallback: SystemSoundType.click);
+    final asset = freezerId == 'f2' ? freezer2StartAsset : freezer1StartAsset;
+    _play(asset, fallback: SystemSoundType.click);
   }
 
   /// Plays machine chime when freezer batch is ready for pickup, differentiated by freezer (F1 vs F2)
@@ -230,10 +242,8 @@ class AudioService {
       } catch (_) {}
     }
 
-    _initPlayers();
-    final asset =
-        freezerId == 'f2' ? freezer2ReadyAsset : freezer1ReadyAsset;
-    _play(_freezerPlayer, asset, fallback: SystemSoundType.alert);
+    final asset = freezerId == 'f2' ? freezer2ReadyAsset : freezer1ReadyAsset;
+    _play(asset, fallback: SystemSoundType.alert);
   }
 
   /// Plays subtle ascending pop when freezer door opens
@@ -249,8 +259,7 @@ class AudioService {
       } catch (_) {}
     }
 
-    _initPlayers();
-    _play(_doorTogglePlayer, doorOpenAsset, fallback: SystemSoundType.click);
+    _play(doorOpenAsset, fallback: SystemSoundType.click);
   }
 
   /// Plays subtle descending seal click when freezer door closes
@@ -266,8 +275,7 @@ class AudioService {
       } catch (_) {}
     }
 
-    _initPlayers();
-    _play(_doorTogglePlayer, doorCloseAsset, fallback: SystemSoundType.click);
+    _play(doorCloseAsset, fallback: SystemSoundType.click);
   }
 
   /// Plays two-tone industrial buzzer when freezer door is left open
@@ -292,46 +300,62 @@ class AudioService {
       } catch (_) {}
     }
 
-    _initPlayers();
-    _play(_alarmPlayer, doorAlarmAsset, fallback: SystemSoundType.alert);
+    _play(doorAlarmAsset, fallback: SystemSoundType.alert);
   }
 
   void _play(
-    AudioPlayer? player,
     String assetPath, {
     required SystemSoundType fallback,
-    bool stopBeforePlay = false,
   }) {
-    if (player != null) {
-      final playFuture = stopBeforePlay
-          ? player.stop().then((_) => player.play(AssetSource(assetPath)))
-          : player.play(AssetSource(assetPath));
-      playFuture.catchError((e) {
-        debugPrint(
-          'AudioService: error playing $assetPath ($e). Using system fallback.',
-        );
-        try {
-          SystemSound.play(fallback);
-        } catch (_) {}
-      });
+    _ensureInitialized();
+    unawaited(_invokeNativePlay(assetPath, fallback));
+  }
+
+  Future<void> _invokeNativePlay(
+    String assetPath,
+    SystemSoundType fallback,
+  ) async {
+    if (kIsWeb) {
+      try {
+        await SystemSound.play(fallback);
+      } catch (_) {}
       return;
     }
+
     try {
-      SystemSound.play(fallback);
+      final played = await _channel.invokeMethod<bool>(
+        'play',
+        {'asset': assetPath},
+      );
+      if (played == true) {
+        _consecutiveFailures = 0;
+        return;
+      }
+
+      // If native SoundPool returned false (e.g. Android audio server died or
+      // stream allocation failed), trigger self-healing and play again.
+      _consecutiveFailures++;
+      if (_consecutiveFailures >= 2) {
+        _consecutiveFailures = 0;
+        await _selfHealNativePool();
+        final retryPlayed = await _channel.invokeMethod<bool>(
+          'play',
+          {'asset': assetPath},
+        );
+        if (retryPlayed == true) return;
+      }
+    } catch (e) {
+      debugPrint(
+        'AudioService: error playing $assetPath ($e). Using system fallback.',
+      );
+    }
+
+    try {
+      await SystemSound.play(fallback);
     } catch (_) {}
   }
 
   void dispose() {
-    for (final p in _hitPlayers) {
-      p.dispose();
-    }
-    _hitPlayers.clear();
-    _undoPlayer?.dispose();
-    _boxPlayer?.dispose();
-    _conveyorAlertPlayer?.dispose();
-    _freezerStartPlayer?.dispose();
-    _freezerPlayer?.dispose();
-    _doorTogglePlayer?.dispose();
-    _alarmPlayer?.dispose();
+    _initialized = false;
   }
 }

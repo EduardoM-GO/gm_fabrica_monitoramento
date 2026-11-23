@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'src/core/services/kiosk_wakelock_service.dart';
 import 'src/core/supabase/supabase_bootstrap.dart';
 import 'src/core/themes/app_theme.dart';
 import 'src/data/local/app_database.dart';
@@ -27,6 +28,9 @@ import 'src/features/splash/ui/views/kiosk_splash_view.dart';
 /// with Feature-First + Signals + Drift SQLite + Supabase Catalog architecture.
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Keep screen permanently awake across all screens (Splash, Login, Dashboard)
+  await KioskWakeLockService.ensureAlwaysAwake();
 
   // Lock to landscape orientation for factory wall-mount kiosk (Samsung Galaxy A05)
   await SystemChrome.setPreferredOrientations([
