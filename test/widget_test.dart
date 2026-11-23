@@ -7,10 +7,13 @@ import 'package:gm_fabrica_monitoramento/src/core/themes/app_motion.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_theme.dart';
 import 'package:gm_fabrica_monitoramento/src/core/widgets/status_badge.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/app_database.dart';
+import 'package:gm_fabrica_monitoramento/src/data/remote/supabase_catalog_datasource.dart';
 import 'package:gm_fabrica_monitoramento/src/data/services/audio_service.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/enum/ws_connection_state_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/base_raw_data.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/websocket_service.dart';
+import 'package:gm_fabrica_monitoramento/src/domain/models/freezer_model.dart';
+import 'package:gm_fabrica_monitoramento/src/domain/models/product_model.dart';
 import 'package:gm_fabrica_monitoramento/src/features/dashboard/ui/views/dashboard_view.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/data/freezer_repository.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/domain/engine/freezer_adaptive_engine.dart';
@@ -57,25 +60,109 @@ final class WidgetTestFakeWs implements WebsocketService {
   }
 }
 
+final class FakeSupabaseCatalogDatasource implements CatalogRemoteDatasource {
+  final List<ProductModel> remoteProducts;
+  final List<EquipmentModel> remoteEquipments;
+  final List<FreezerSensorBindingModel> savedBindings;
+
+  FakeSupabaseCatalogDatasource({
+    required this.remoteProducts,
+    required this.remoteEquipments,
+    List<FreezerSensorBindingModel>? initialBindings,
+  }) : savedBindings = List<FreezerSensorBindingModel>.from(
+         initialBindings ?? const [],
+       );
+
+  @override
+  bool get isAuthenticated => true;
+
+  @override
+  String? get currentUserEmail => 'producao@gmchocolatesfinos.com.br';
+
+  @override
+  Future<List<ProductModel>> fetchActiveProducts() async => remoteProducts;
+
+  @override
+  Future<List<EquipmentModel>> fetchEquipments() async => remoteEquipments;
+
+  @override
+  Future<List<FreezerSensorBindingModel>> fetchFreezerSensorBindings() async =>
+      savedBindings;
+
+  @override
+  Future<void> upsertFreezerSensorBinding(
+    FreezerSensorBindingModel binding,
+  ) async {
+    savedBindings.removeWhere((b) => b.sensorKey == binding.sensorKey);
+    savedBindings.add(binding);
+  }
+
+  @override
+  void subscribeRealtime({
+    VoidCallback? onProductsChanged,
+    VoidCallback? onEquipmentsChanged,
+    VoidCallback? onBindingsChanged,
+  }) {}
+
+  @override
+  void dispose() {}
+}
+
 void main() {
   testWidgets(
-    'Dashboard Kiosk 60/40 renders EggCountCard, Freezers, Modals and M3 components without overflow on Samsung Galaxy A05',
+    'Dashboard Kiosk 60/40 syncs Products & Equipments from Supabase, binds Freezers to Sensors and renders M3 components without overflow',
     (WidgetTester tester) async {
       SharedPreferences.setMockInitialValues({});
       final db = AppDatabase.forTesting(NativeDatabase.memory());
       final fakeWs = WidgetTestFakeWs();
       final audioService = AudioService(isMuted: true);
 
+      final fakeSupabaseCatalog = FakeSupabaseCatalogDatasource(
+        remoteProducts: [
+          ProductModel.fromSupabaseMap({
+            'id': '11111111-1111-4111-8111-111111111111',
+            'name': 'Ovo Ao Leite 250g',
+            'category': 'ovos',
+            'is_active': true,
+          }),
+          ProductModel.fromSupabaseMap({
+            'id': '22222222-2222-4222-8222-222222222222',
+            'name': 'Casca Trufada 500g',
+            'category': 'cascas',
+            'is_active': true,
+          }),
+        ],
+        remoteEquipments: [
+          EquipmentModel.fromSupabaseMap({
+            'id': '24000000-0000-4000-8000-000000000001',
+            'name': 'Freezer 1',
+            'type': 'equipamento',
+            'is_active': true,
+          }),
+          EquipmentModel.fromSupabaseMap({
+            'id': '24000000-0000-4000-8000-000000000002',
+            'name': 'Freezer Horizontal 500L',
+            'type': 'equipamento',
+            'is_active': true,
+          }),
+        ],
+      );
+
       final settingsViewModel = SettingsViewModel(
         wsService: fakeWs,
         audioService: audioService,
       );
-      final productionRepo = ProductionRepository(db.productionDao, fakeWs);
+      final productionRepo = ProductionRepository(
+        db.productionDao,
+        fakeWs,
+        remoteDatasource: fakeSupabaseCatalog,
+      );
       final freezerRepo = FreezerRepository(
         freezerDao: db.freezerDao,
         wsService: fakeWs,
         productionRepo: productionRepo,
         engine: const FreezerAdaptiveEngine(),
+        remoteDatasource: fakeSupabaseCatalog,
       );
 
       final eggViewModel = EggCountViewModel(
@@ -97,6 +184,7 @@ void main() {
         MultiProvider(
           providers: [
             Provider<AppDatabase>.value(value: db),
+            Provider<CatalogRemoteDatasource>.value(value: fakeSupabaseCatalog),
             Provider<WebsocketService>.value(value: fakeWs),
             Provider<AudioService>.value(value: audioService),
             Provider<ProductionRepository>.value(value: productionRepo),
@@ -112,13 +200,28 @@ void main() {
         ),
       );
 
-      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 150));
 
       // Verifica renderização do Kiosk 60/40 (EggCountCard + 2 Freezers + StatusBadges + SlidingCounterText)
       expect(find.byType(EggCountCard), findsOneWidget);
       expect(find.byType(FreezerMonitoringCard), findsNWidgets(2));
       expect(find.byType(SlidingCounterText), findsOneWidget);
       expect(find.byType(StatusBadge), findsWidgets);
+
+      // Verifica que os freezers vindos de cost_centers foram vinculados aos sensores f1 e f2
+      expect(
+        freezerViewModel.freezer1.value?.equipmentId,
+        '24000000-0000-4000-8000-000000000001',
+      );
+      expect(
+        freezerViewModel.freezer2.value?.equipmentId,
+        '24000000-0000-4000-8000-000000000002',
+      );
+      expect(find.textContaining('FREEZER 1 • S1'), findsOneWidget);
+      expect(
+        find.textContaining('FREEZER HORIZONTAL 500L • S2'),
+        findsOneWidget,
+      );
 
       // Envia frame de telemetria completo (2 freezers + sala + contador)
       fakeWs.rawDataController.add(
@@ -140,13 +243,17 @@ void main() {
       expect(find.textContaining('-18.4 °C'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
-      // 1. Abre o seletor de produto e inicia um lote
+      // 1. Abre o seletor de produto e inicia um lote com o produto vindo do Supabase
       await tester.tap(find.text('INICIAR LOTE DE PRODUÇÃO'));
       await tester.pumpAndSettle();
       expect(find.text('SELECIONAR PRODUTO DO LOTE'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
       final firstProduct = eggViewModel.availableProducts.value.first;
+      expect(firstProduct.name, 'Casca Trufada 500g');
+      expect(firstProduct.unitWeightGrams, 500);
+      expect(firstProduct.defaultBoxCapacity, 40);
+
       await tester.tap(find.text(firstProduct.name));
       await tester.pumpAndSettle();
       expect(find.text('LOTE ATIVO'), findsOneWidget);
@@ -199,7 +306,6 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('LOTE EM ANDAMENTO'), findsOneWidget);
 
-      // Tentar tocar no segundo produto enquanto o lote está ativo não troca o produto
       await tester.tap(find.text(secondProduct.name));
       await tester.pumpAndSettle();
       expect(eggViewModel.activeBatch.value?.product.id, firstProduct.id);
@@ -211,7 +317,7 @@ void main() {
       expect(find.text('INICIAR LOTE DE PRODUÇÃO'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
-      // 3. Valida o Card Enxuto do Freezer: Tempo Passado / Tempo Alvo (00:00 / 20:00), Porta Fechada e botão tímido Reiniciar
+      // 3. Valida o Card Enxuto do Freezer: Tempo Passado / Tempo Alvo (00:00 / 20:00), Porta Fechada e botão Reiniciar
       expect(find.byType(FreezerThermalCurvePanel), findsNWidgets(2));
       expect(find.text('PORTA FECHADA'), findsNWidgets(2));
       expect(find.text('00:00 / 20:00'), findsOneWidget);
@@ -219,7 +325,10 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('freezer_restart_f1')));
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.text('CRISTALIZANDO'), findsOneWidget);
-      expect(find.byKey(const ValueKey('freezer_mark_ready_f1')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('freezer_mark_ready_f1')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
 
       // 3.b Simula abertura de porta no Freezer 1 (subida de 3.8 °C -> 7.8 °C) e fechamento
@@ -240,7 +349,7 @@ void main() {
       expect(find.textContaining('ABERTA HÁ 00:0'), findsOneWidget);
       expect(find.textContaining('Perda: +0.0 °C ▲'), findsOneWidget);
 
-      // Porta fecha no pico de 7.8 °C (+2.0 °C acima dos 5.8 °C de quando abriu)
+      // Porta fecha no pico de 7.8 °C
       fakeWs.rawDataController.add(
         BaseRawData.fromJson({
           't': 'telem',
@@ -256,11 +365,21 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.textContaining('+2.0 °C pós-porta'), findsOneWidget);
 
-      // 3.c Abre modal rápido de configurar tempos da porta no Freezer 1 e altera Tempo Alvo Base para 12 min
+      // 3.c Abre modal rápido de configurar tempos da porta e vínculo do Freezer 1
       await tester.tap(find.byKey(const ValueKey('freezer_config_f1')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('input_unload_seconds')), findsOneWidget);
-      expect(find.byKey(const ValueKey('input_reload_seconds')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('freezer_equipment_dropdown_f1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('input_unload_seconds')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('input_reload_seconds')),
+        findsOneWidget,
+      );
       await tester.enterText(
         find.byKey(const ValueKey('input_target_minutes')),
         '12',
@@ -268,16 +387,23 @@ void main() {
       await tester.tap(find.byKey(const ValueKey('save_door_timing_btn')));
       await tester.pumpAndSettle();
 
-      // Ao clicar em Reiniciar (mesmo após subida de temperatura), deve exibir apenas o tempo base exato (00:00 / 12:00)
       await tester.tap(find.byKey(const ValueKey('freezer_restart_f1')));
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.text('00:00 / 12:00'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
-      // 4. Abre o diálogo de Configurações
+      // 4. Abre o diálogo de Configurações e valida os dropdowns de vínculo de Sensores <-> Freezers
       await tester.tap(find.byIcon(Icons.settings_rounded));
       await tester.pump(const Duration(milliseconds: 250));
       expect(find.byType(SettingsDialog), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('settings_sensor_binding_f1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('settings_sensor_binding_f2')),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
 
       await tester.tap(find.text('Fechar'));

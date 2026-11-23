@@ -2,10 +2,12 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:gm_fabrica_monitoramento/src/data/local/daos/freezer_dao.dart';
+import 'package:gm_fabrica_monitoramento/src/data/remote/supabase_catalog_datasource.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/door_raw_data.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/freezer_raw_data.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/telemetry_raw_data.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/websocket_service.dart';
+import 'package:gm_fabrica_monitoramento/src/domain/models/freezer_model.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/domain/engine/freezer_adaptive_engine.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/domain/models/freezer_feedback_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/domain/models/freezer_live_state.dart';
@@ -19,6 +21,7 @@ final class FreezerRepository {
   final WebsocketService _wsService;
   final ProductionRepository _productionRepo;
   final FreezerAdaptiveEngine _engine;
+  final CatalogRemoteDatasource? remoteDatasource;
 
   StreamSubscription? _wsSubscription;
   Timer? _tickerTimer;
@@ -29,8 +32,14 @@ final class FreezerRepository {
   final Map<String, double> _baselineTempBeforeLoad = {};
   final Map<String, int> _executedSecondsInCycle = {};
 
+  List<EquipmentModel> _availableEquipments = const [];
+  bool _isSyncingEquipments = false;
+
   final _freezersStreamController =
       StreamController<Map<String, FreezerLiveState>>.broadcast();
+  final _equipmentsStreamController =
+      StreamController<List<EquipmentModel>>.broadcast();
+  final _equipmentsLoadingController = StreamController<bool>.broadcast();
   final _cycleStartedController = StreamController<String>.broadcast();
   final _cycleReadyController = StreamController<String>.broadcast();
   final _doorToggleController =
@@ -46,17 +55,22 @@ final class FreezerRepository {
     required this._wsService,
     required this._productionRepo,
     this._engine = const FreezerAdaptiveEngine(),
+    this.remoteDatasource,
     this.doorCriticalSeconds = 60,
     this.inspectionThresholdSeconds = 12,
   }) {
     _initDefaultFreezers();
     _startTicker();
     _listenWebsocket();
-    _restoreActiveCycles();
+    _restoreActiveCyclesAndSync();
   }
 
   Stream<Map<String, FreezerLiveState>> get freezersStream =>
       _freezersStreamController.stream;
+  Stream<List<EquipmentModel>> get availableEquipmentsStream =>
+      _equipmentsStreamController.stream;
+  Stream<bool> get isSyncingEquipmentsStream =>
+      _equipmentsLoadingController.stream;
   Stream<String> get cycleStartedStream => _cycleStartedController.stream;
   Stream<String> get cycleReadyStream => _cycleReadyController.stream;
   Stream<({String freezerId, bool isOpen})> get doorToggleStream =>
@@ -65,13 +79,17 @@ final class FreezerRepository {
 
   Map<String, FreezerLiveState> get currentFreezers =>
       Map.unmodifiable(_freezers);
+  List<EquipmentModel> get currentEquipments =>
+      List.unmodifiable(_availableEquipments);
+  bool get isSyncingEquipments => _isSyncingEquipments;
 
   FreezerLiveState? getFreezer(String freezerId) => _freezers[freezerId];
 
   void _initDefaultFreezers() {
     _freezers['f1'] = const FreezerLiveState(
       freezerId: 'f1',
-      name: 'Freezer 1 (Câmara)',
+      sensorIndex: 1,
+      name: 'Sensor 1 (F1)',
       currentTemp: 4.0,
       isDoorOpen: false,
       isSensorOk: true,
@@ -83,7 +101,8 @@ final class FreezerRepository {
 
     _freezers['f2'] = const FreezerLiveState(
       freezerId: 'f2',
-      name: 'Freezer 2 (Congelamento)',
+      sensorIndex: 2,
+      name: 'Sensor 2 (F2)',
       currentTemp: -18.0,
       isDoorOpen: false,
       isSensorOk: true,
@@ -96,7 +115,28 @@ final class FreezerRepository {
     _emitState();
   }
 
-  Future<void> _restoreActiveCycles() async {
+  Future<void> _restoreActiveCyclesAndSync() async {
+    // 0. Garante que f1 e f2 existam no SQLite local para satisfazer FKs
+    final localFreezersRes = await _freezerDao.ensureSensorFreezersExist();
+    if (localFreezersRes.isOk) {
+      for (final row in localFreezersRes.valueOrThrow) {
+        final current = _freezers[row.id];
+        if (current != null) {
+          _freezers[row.id] = current.copyWith(
+            sensorIndex: row.idSensor,
+            name: row.name,
+            equipmentId: row.equipmentId,
+            equipmentName: row.equipmentName,
+            unloadMinSeconds: row.unloadMinSeconds,
+            reloadMinSeconds: row.reloadMinSeconds,
+            calibratedBaseSeconds: row.defaultCoolingSeconds,
+            expectedDurationSeconds: row.defaultCoolingSeconds,
+            remainingSeconds: row.defaultCoolingSeconds,
+          );
+        }
+      }
+    }
+
     SharedPreferences? prefs;
     try {
       prefs = await SharedPreferences.getInstance();
@@ -155,7 +195,155 @@ final class FreezerRepository {
       }
     }
     _emitState();
+
+    // 3. Sincroniza equipamentos (`cost_centers`) e vínculos (`freezer_sensor_bindings`) do Supabase
+    await refreshEquipmentsAndBindingsFromSupabase();
   }
+
+  /// Busca equipamentos reais (`public.cost_centers` onde `type = 'equipamento'`)
+  /// e os vínculos de sensores (`public.freezer_sensor_bindings`) no Supabase.
+  Future<Result<List<EquipmentModel>>>
+  refreshEquipmentsAndBindingsFromSupabase() => Result.catchInAsync(
+    fn: () async {
+      final remote = remoteDatasource;
+      if (remote == null) return _availableEquipments;
+
+      _isSyncingEquipments = true;
+      if (!_equipmentsLoadingController.isClosed) {
+        _equipmentsLoadingController.add(true);
+      }
+
+      try {
+        final results = await Future.wait<dynamic>([
+          remote.fetchEquipments(),
+          remote.fetchFreezerSensorBindings(),
+        ]);
+
+        final equipments = results[0] as List<EquipmentModel>;
+        final bindings = results[1] as List<FreezerSensorBindingModel>;
+
+        _availableEquipments = equipments;
+        if (!_equipmentsStreamController.isClosed) {
+          _equipmentsStreamController.add(_availableEquipments);
+        }
+
+        // Mapa rápido de equipamentos por ID para resolver nome atualizado
+        final eqById = {for (final e in equipments) e.id: e};
+
+        if (bindings.isNotEmpty) {
+          for (final b in bindings) {
+            final linkedEq = b.costCenterId != null
+                ? eqById[b.costCenterId!]
+                : null;
+            final resolvedBinding = FreezerSensorBindingModel(
+              sensorKey: b.sensorKey,
+              sensorIndex: b.sensorIndex,
+              costCenterId: b.costCenterId,
+              costCenterName: linkedEq?.name ?? b.costCenterName,
+              customLabel: b.customLabel,
+              targetTemperature: b.targetTemperature,
+              criticalTemperature: b.criticalTemperature,
+              defaultCoolingSeconds: b.defaultCoolingSeconds,
+              unloadMinSeconds: b.unloadMinSeconds,
+              reloadMinSeconds: b.reloadMinSeconds,
+              inspectionThresholdSeconds: b.inspectionThresholdSeconds,
+              maxDoorOpenSeconds: b.maxDoorOpenSeconds,
+            );
+
+            await _freezerDao.upsertFreezerBinding(resolvedBinding);
+            _applyBindingToLiveState(resolvedBinding);
+          }
+        } else if (equipments.isNotEmpty) {
+          // Auto-sugestão inteligente caso nenhum vínculo tenha sido salvo ainda
+          // e existam equipamentos com nome contendo "Freezer"
+          final freezerEquipments = equipments
+              .where((e) => e.name.toLowerCase().contains('freezer'))
+              .toList();
+          for (var i = 0; i < min(2, freezerEquipments.length); i++) {
+            final sensorKey = 'f${i + 1}';
+            final current = _freezers[sensorKey];
+            if (current != null && !current.hasLinkedEquipment) {
+              await bindEquipmentToSensor(
+                sensorKey: sensorKey,
+                equipment: freezerEquipments[i],
+              );
+            }
+          }
+        }
+
+        _emitState();
+        return _availableEquipments;
+      } finally {
+        _isSyncingEquipments = false;
+        if (!_equipmentsLoadingController.isClosed) {
+          _equipmentsLoadingController.add(false);
+        }
+      }
+    },
+    tag: 'FreezerRepository.refreshEquipmentsAndBindingsFromSupabase',
+  );
+
+  void _applyBindingToLiveState(FreezerSensorBindingModel binding) {
+    final current = _freezers[binding.sensorKey];
+    if (current == null) return;
+
+    final isIdle = current.status == FreezerStatusEnum.idle;
+    final resolvedBase = current.isCalibrated
+        ? current.calibratedBaseSeconds
+        : binding.defaultCoolingSeconds;
+
+    _freezers[binding.sensorKey] = current.copyWith(
+      sensorIndex: binding.sensorIndex,
+      name: binding.resolvedDisplayName,
+      equipmentId: binding.costCenterId,
+      clearEquipment: binding.costCenterId == null,
+      equipmentName: binding.costCenterName,
+      unloadMinSeconds: binding.unloadMinSeconds,
+      reloadMinSeconds: binding.reloadMinSeconds,
+      calibratedBaseSeconds: resolvedBase,
+      expectedDurationSeconds: isIdle
+          ? resolvedBase
+          : current.expectedDurationSeconds,
+      remainingSeconds: isIdle ? resolvedBase : current.remainingSeconds,
+    );
+  }
+
+  /// Vincula (ou desvincula) um equipamento vindo do Supabase (`public.cost_centers`)
+  /// a um sensor físico do ESP32 (`f1`, `f2`), persistindo no SQLite local e no Supabase.
+  Future<Result<Unit>> bindEquipmentToSensor({
+    required String sensorKey,
+    required EquipmentModel? equipment,
+  }) => Result.catchInAsync(
+    fn: () async {
+      final current = _freezers[sensorKey];
+      if (current == null) return unit;
+
+      final binding = FreezerSensorBindingModel(
+        sensorKey: sensorKey,
+        sensorIndex: current.sensorIndex,
+        costCenterId: equipment?.id,
+        costCenterName: equipment?.name,
+        targetTemperature: sensorKey == 'f2' ? -18.0 : 4.0,
+        criticalTemperature: sensorKey == 'f2' ? -5.0 : 8.0,
+        defaultCoolingSeconds: current.calibratedBaseSeconds,
+        unloadMinSeconds: current.unloadMinSeconds,
+        reloadMinSeconds: current.reloadMinSeconds,
+        inspectionThresholdSeconds: inspectionThresholdSeconds,
+        maxDoorOpenSeconds: doorCriticalSeconds,
+      );
+
+      _applyBindingToLiveState(binding);
+      _emitState();
+
+      await _freezerDao.upsertFreezerBinding(binding);
+      if (remoteDatasource != null) {
+        await remoteDatasource!.upsertFreezerSensorBinding(binding);
+      }
+
+      return unit;
+    },
+    tag: 'FreezerRepository.bindEquipmentToSensor',
+  );
 
   void _listenWebsocket() {
     _wsSubscription = _wsService.rawDataStream.listen((data) {
@@ -173,10 +361,12 @@ final class FreezerRepository {
 
   void _handleFreezerRaw(FreezerRawData raw) {
     final now = DateTime.now();
-    final prev = _freezers[raw.id] ??
+    final prev =
+        _freezers[raw.id] ??
         FreezerLiveState(
           freezerId: raw.id,
-          name: raw.id == 'f1' ? 'Freezer 1 (Câmara)' : 'Freezer 2',
+          sensorIndex: raw.id == 'f2' ? 2 : 1,
+          name: raw.id == 'f1' ? 'Sensor 1 (F1)' : 'Sensor 2 (F2)',
           currentTemp: raw.temp,
           isDoorOpen: raw.isDoorOpen,
           isSensorOk: raw.isSensorOk,
@@ -187,7 +377,6 @@ final class FreezerRepository {
 
     final doorChanged = prev.isDoorOpen != raw.isDoorOpen;
 
-    // Atualiza histórico de temperatura
     final history = List<({DateTime timestamp, double temperature})>.from(
       prev.temperatureHistory,
     );
@@ -251,12 +440,10 @@ final class FreezerRepository {
     }
 
     if (isNowOpen) {
-      // Porta acabou de ABRIR
       _doorOpenSince[id] = now;
       _tempWhenOpened[id] = temp;
 
       if (state.status == FreezerStatusEnum.idle) {
-        // Grava temperatura basal antes do carregamento
         _baselineTempBeforeLoad[id] = temp;
       }
 
@@ -281,7 +468,6 @@ final class FreezerRepository {
         doorTransitions: transitions,
       );
     } else {
-      // Porta acabou de FECHAR
       final openedAt = _doorOpenSince[id] ?? now;
       final openSeconds = now.difference(openedAt).inSeconds;
       final openedTemp =
@@ -299,12 +485,10 @@ final class FreezerRepository {
           inspectionThresholdSeconds: inspectionThresholdSeconds,
         );
 
-        // Se a porta ficou aberta tempo suficiente para carregamento (> limiar de inspeção)
         if (!isInspection) {
           final baseline = _baselineTempBeforeLoad[id] ?? openedTemp;
           final peakTemp = recordedPeak;
 
-          // Inicia ciclo automático inteligente!
           _startAdaptiveCycleInternal(
             freezerId: id,
             baselineTemp: baseline,
@@ -331,10 +515,9 @@ final class FreezerRepository {
         );
       }
 
-      // CASO 2: Estava em RESFRIAMENTO (COOLING ou DOOR_OPEN) -> Abertura antes da hora!
+      // CASO 2: Estava em RESFRIAMENTO (COOLING ou DOOR_OPEN)
       if (state.status == FreezerStatusEnum.cooling ||
           state.status == FreezerStatusEnum.doorOpen) {
-        // Se ficou aberta tempo de remoção + novo abastecimento (>= reloadMinSeconds), reinicia o ciclo!
         if (openSeconds >= state.reloadMinSeconds) {
           _startAdaptiveCycleInternal(
             freezerId: id,
@@ -351,7 +534,6 @@ final class FreezerRepository {
           );
         }
 
-        // Aplica penalidade silenciosa proporcional à perda térmica
         final penaltySeconds = _engine.calculateDoorPenalty(
           doorOpenSeconds: openSeconds,
           tempRise: tempRise,
@@ -388,9 +570,8 @@ final class FreezerRepository {
         );
       }
 
-      // CASO 3: Estava PRONTO (READY) -> Avalia tempo de porta aberta!
+      // CASO 3: Estava PRONTO (READY)
       if (state.status == FreezerStatusEnum.ready) {
-        // 3A. Abertura curta (< unloadMinSeconds, ex: 15s): Apenas verificação -> Ainda está mole!
         if (openSeconds > 0 && openSeconds < state.unloadMinSeconds) {
           final extensionSec = _engine.immediateExtensionSeconds(
             feedback: FreezerFeedbackEnum.soft,
@@ -418,7 +599,6 @@ final class FreezerRepository {
           );
         }
 
-        // 3B. Abertura longa (>= reloadMinSeconds, ex: >= 60s): Retirou tudo e já abasteceu novo lote!
         if (openSeconds >= state.reloadMinSeconds) {
           unawaited(recordFeedback(id, FreezerFeedbackEnum.autoOk));
           unawaited(
@@ -438,8 +618,6 @@ final class FreezerRepository {
           );
         }
 
-        // 3C. Retirada das formas (entre unloadMinSeconds e reloadMinSeconds, ex: 30s..59s)
-        // Mostra prompt de feedback por 30s (se sumir sozinho = estava tudo bem -> vai para IDLE)
         return state.copyWith(
           isDoorOpen: false,
           status: FreezerStatusEnum.feedbackPending,
@@ -470,7 +648,6 @@ final class FreezerRepository {
         final id = entry.key;
         var s = entry.value;
 
-        // Cronômetro ao vivo e alerta sonoro de porta aberta há tempo crítico
         if (s.isDoorOpen) {
           final openSec = _doorOpenSince[id] != null
               ? max(1, now.difference(_doorOpenSince[id]!).inSeconds)
@@ -478,12 +655,12 @@ final class FreezerRepository {
           s = s.copyWith(currentDoorOpenSeconds: openSec);
           _freezers[id] = s;
           changed = true;
-          if (openSec >= doorCriticalSeconds && !_doorAlarmController.isClosed) {
+          if (openSec >= doorCriticalSeconds &&
+              !_doorAlarmController.isClosed) {
             _doorAlarmController.add(id);
           }
         }
 
-        // Ticker contínuo (sem pausa na porta e continua contando o tempo extra após atingir o alvo)
         if (s.status == FreezerStatusEnum.cooling ||
             s.status == FreezerStatusEnum.doorOpen ||
             s.status == FreezerStatusEnum.ready) {
@@ -510,10 +687,8 @@ final class FreezerRepository {
           _freezers[id] = s;
           changed = true;
         } else if (s.status == FreezerStatusEnum.feedbackPending) {
-          // Contagem regressiva do feedback (tolerância de 30s -> auto OK)
           final cd = s.feedbackCountdownSeconds ?? 30;
           if (cd <= 1) {
-            // Auto-resolução silenciosa: silêncio = lote OK!
             recordFeedback(id, FreezerFeedbackEnum.autoOk);
             changed = true;
           } else {
@@ -585,7 +760,7 @@ final class FreezerRepository {
   }
 
   /// Marca manualmente que os ovos já estão prontos ("Pronto"), encerrando o ciclo
-  /// e usando o tempo real corrido (seja antes ou depois do planejado) para calibrar o próximo ciclo.
+  /// e usando o tempo real corrido para calibrar o próximo ciclo.
   Future<void> markBatchReadyAndCalibrate(String freezerId) async {
     final current = _freezers[freezerId];
     if (current == null || current.status == FreezerStatusEnum.idle) return;
@@ -608,11 +783,11 @@ final class FreezerRepository {
             ? (_executedSecondsInCycle[freezerId] ?? current.elapsedSeconds)
             : current.expectedDurationSeconds;
 
-    // 1. Caso 'Ainda Mole': Extensão Imediata de segurança (+3 min)
     if (feedback == FreezerFeedbackEnum.soft) {
-      final extensionSec = _engine.immediateExtensionSeconds(feedback: feedback);
+      final extensionSec = _engine.immediateExtensionSeconds(
+        feedback: feedback,
+      );
 
-      // Atualiza calibração futura
       final newCalibrated = _engine.adaptCalibration(
         currentCalibratedSeconds: current.calibratedBaseSeconds,
         executedEffectiveSeconds: executedSeconds + extensionSec,
@@ -626,7 +801,6 @@ final class FreezerRepository {
         lastFeedback: feedback.code,
       );
 
-      // Reabre ciclo com tempo extra imediato!
       _freezers[freezerId] = current.copyWith(
         status: FreezerStatusEnum.cooling,
         expectedDurationSeconds: current.expectedDurationSeconds + extensionSec,
@@ -642,7 +816,6 @@ final class FreezerRepository {
       return;
     }
 
-    // 2. Finaliza ciclo no SQLite
     if (current.activeCycleId != null) {
       await _freezerDao.finishCoolingCycle(
         cycleId: current.activeCycleId!,
@@ -654,7 +827,6 @@ final class FreezerRepository {
       );
     }
 
-    // 3. Atualiza calibração em malha fechada para os próximos lotes (usando o tempo real corrido)
     final newCalibrated = _engine.adaptCalibration(
       currentCalibratedSeconds: current.calibratedBaseSeconds,
       executedEffectiveSeconds: executedSeconds,
@@ -673,7 +845,6 @@ final class FreezerRepository {
       await prefs.setInt('freezer_${freezerId}_target_sec', newCalibrated);
     } catch (_) {}
 
-    // 4. Retorna freezer ao estado IDLE com o novo tempo calibrado pronto para o próximo ciclo
     _executedSecondsInCycle.remove(freezerId);
     _freezers[freezerId] = current.copyWith(
       status: FreezerStatusEnum.idle,
@@ -690,7 +861,7 @@ final class FreezerRepository {
     _emitState();
   }
 
-  /// Cancela o ciclo em andamento (caso o operador tenha disparado sem querer)
+  /// Cancela o ciclo em andamento
   void cancelCycle(String freezerId) {
     final current = _freezers[freezerId];
     if (current == null) return;
@@ -707,7 +878,7 @@ final class FreezerRepository {
     _emitState();
   }
 
-  /// Reinicia manualmente a contagem do ciclo (caso o sensor de porta não tenha detectado a troca)
+  /// Reinicia manualmente a contagem do ciclo
   Future<void> restartCycle(String freezerId) async {
     final current = _freezers[freezerId];
     if (current == null) return;
@@ -719,12 +890,14 @@ final class FreezerRepository {
     );
   }
 
-  /// Atualiza os parâmetros de tempo de porta do sensor e tempo alvo base (configuráveis no Kiosk ou via Supabase)
+  /// Atualiza os parâmetros de tempo de porta do sensor, tempo alvo base e opcionalmente o equipamento vinculado
   Future<void> updateDoorTimingConfig(
     String freezerId, {
     required int unloadMinSeconds,
     required int reloadMinSeconds,
     int? targetDurationSeconds,
+    EquipmentModel? linkedEquipment,
+    bool updateEquipmentBinding = false,
   }) async {
     final current = _freezers[freezerId];
     if (current == null) return;
@@ -736,13 +909,12 @@ final class FreezerRepository {
         : current.calibratedBaseSeconds;
 
     final isIdle = current.status == FreezerStatusEnum.idle;
-    final elapsed = _executedSecondsInCycle[freezerId] ?? current.elapsedSeconds;
+    final elapsed =
+        _executedSecondsInCycle[freezerId] ?? current.elapsedSeconds;
     final newExpected = isIdle
         ? newBase
         : newBase + current.accumulatedPenaltySeconds;
-    final newRemaining = isIdle
-        ? newBase
-        : max(0, newExpected - elapsed);
+    final newRemaining = isIdle ? newBase : max(0, newExpected - elapsed);
 
     FreezerStatusEnum updatedStatus = current.status;
     if (current.status == FreezerStatusEnum.cooling && newRemaining == 0) {
@@ -751,7 +923,23 @@ final class FreezerRepository {
       updatedStatus = FreezerStatusEnum.cooling;
     }
 
+    final resolvedEquipmentId = updateEquipmentBinding
+        ? linkedEquipment?.id
+        : current.equipmentId;
+    final resolvedEquipmentName = updateEquipmentBinding
+        ? linkedEquipment?.name
+        : current.equipmentName;
+    final resolvedName =
+        (resolvedEquipmentName != null &&
+            resolvedEquipmentName.trim().isNotEmpty)
+        ? resolvedEquipmentName
+        : 'Sensor ${current.sensorIndex} (${freezerId.toUpperCase()})';
+
     _freezers[freezerId] = current.copyWith(
+      name: resolvedName,
+      equipmentId: resolvedEquipmentId,
+      clearEquipment: updateEquipmentBinding && linkedEquipment == null,
+      equipmentName: resolvedEquipmentName,
       status: updatedStatus,
       unloadMinSeconds: safeUnload,
       reloadMinSeconds: safeReload,
@@ -762,7 +950,7 @@ final class FreezerRepository {
 
     _emitState();
 
-    // Persiste no SQLite (calibração base) e SharedPreferences
+    // Persiste no SQLite (calibração base + vínculo do freezer) e SharedPreferences
     final activeProductId = _productionRepo.currentActiveBatch?.product.id;
     await _freezerDao.resetCalibration(
       freezerId: freezerId,
@@ -777,14 +965,32 @@ final class FreezerRepository {
       );
     }
 
+    final binding = FreezerSensorBindingModel(
+      sensorKey: freezerId,
+      sensorIndex: current.sensorIndex,
+      costCenterId: resolvedEquipmentId,
+      costCenterName: resolvedEquipmentName,
+      targetTemperature: freezerId == 'f2' ? -18.0 : 4.0,
+      criticalTemperature: freezerId == 'f2' ? -5.0 : 8.0,
+      defaultCoolingSeconds: newBase,
+      unloadMinSeconds: safeUnload,
+      reloadMinSeconds: safeReload,
+      inspectionThresholdSeconds: inspectionThresholdSeconds,
+      maxDoorOpenSeconds: doorCriticalSeconds,
+    );
+    await _freezerDao.upsertFreezerBinding(binding);
+    if (remoteDatasource != null) {
+      try {
+        await remoteDatasource!.upsertFreezerSensorBinding(binding);
+      } catch (_) {}
+    }
+
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setInt('freezer_${freezerId}_unload_sec', safeUnload);
       await prefs.setInt('freezer_${freezerId}_reload_sec', safeReload);
       await prefs.setInt('freezer_${freezerId}_target_sec', newBase);
-    } catch (_) {
-      // Ignora em ambientes de teste sem plugin inicializado
-    }
+    } catch (_) {}
   }
 
   /// Reseta calibração para valores padrão
@@ -804,16 +1010,22 @@ final class FreezerRepository {
       if (current != null) {
         _freezers[freezerId] = current.copyWith(
           calibratedBaseSeconds: defaultSeconds,
+          expectedDurationSeconds:
+              current.status == FreezerStatusEnum.idle
+                  ? defaultSeconds
+                  : current.expectedDurationSeconds,
+          remainingSeconds:
+              current.status == FreezerStatusEnum.idle
+                  ? defaultSeconds
+                  : current.remainingSeconds,
           isCalibrated: false,
-          expectedDurationSeconds: current.status == FreezerStatusEnum.idle
-              ? defaultSeconds
-              : current.expectedDurationSeconds,
-          remainingSeconds: current.status == FreezerStatusEnum.idle
-              ? defaultSeconds
-              : current.remainingSeconds,
         );
         _emitState();
       }
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove('freezer_${freezerId}_target_sec');
+      } catch (_) {}
     }
 
     return res;
@@ -829,9 +1041,13 @@ final class FreezerRepository {
     _wsSubscription?.cancel();
     _tickerTimer?.cancel();
     _freezersStreamController.close();
+    _equipmentsStreamController.close();
+    _equipmentsLoadingController.close();
     _cycleStartedController.close();
     _cycleReadyController.close();
     _doorToggleController.close();
     _doorAlarmController.close();
   }
 }
+
+void unawaited(Future<void> future) {}

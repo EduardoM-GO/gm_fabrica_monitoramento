@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart';
 import 'package:gm_fabrica_monitoramento/src/domain/models/freezer_event_model.dart';
+import 'package:gm_fabrica_monitoramento/src/domain/models/freezer_model.dart';
 import 'package:gm_fabrica_monitoramento/src/utils/generator_id.dart';
 import 'package:gm_fabrica_monitoramento/src/utils/result.dart';
 
@@ -12,15 +13,98 @@ import '../enum/sync_status_enum.dart';
 
 part 'freezer_dao.g.dart';
 
-@DriftAccessor(tables: [
-  FreezerEventsTable,
-  CoolingCyclesTable,
-  FreezersTable,
-  FreezerCalibrationsTable,
-])
+@DriftAccessor(
+  tables: [
+    FreezerEventsTable,
+    CoolingCyclesTable,
+    FreezersTable,
+    FreezerCalibrationsTable,
+  ],
+)
 final class FreezerDao extends DatabaseAccessor<AppDatabase>
     with _$FreezerDaoMixin {
   FreezerDao(super.db);
+
+  // ==========================================
+  // CADASTRO E VÍNCULO DOS FREEZERS <-> SENSORES
+  // ==========================================
+
+  /// Garante que as linhas base dos sensores `f1` e `f2` existam no SQLite
+  /// para satisfazer as Foreign Keys de ciclos, calibrações e eventos.
+  Future<Result<List<Freezer>>> ensureSensorFreezersExist() =>
+      Result.catchInAsync(
+        fn: () async {
+          final existing = await select(freezersTable).get();
+          final existingIds = {for (final f in existing) f.id};
+
+          if (!existingIds.contains('f1')) {
+            await into(freezersTable).insert(
+              FreezersTableCompanion.insert(
+                id: 'f1',
+                idSensor: 1,
+                name: 'Sensor 1 (F1)',
+                defaultCoolingSeconds: const Value(1200),
+                targetTemperature: const Value(4.0),
+              ),
+            );
+          }
+
+          if (!existingIds.contains('f2')) {
+            await into(freezersTable).insert(
+              FreezersTableCompanion.insert(
+                id: 'f2',
+                idSensor: 2,
+                name: 'Sensor 2 (F2)',
+                defaultCoolingSeconds: const Value(900),
+                targetTemperature: const Value(-18.0),
+              ),
+            );
+          }
+
+          return (select(
+            freezersTable,
+          )..orderBy([(t) => OrderingTerm.asc(t.idSensor)])).get();
+        },
+        tag: 'FreezerDao.ensureSensorFreezersExist',
+      );
+
+  /// Salva no SQLite local o vínculo entre um sensor (`f1`, `f2`) e o equipamento do Supabase (`cost_centers`).
+  Future<Result<Freezer>> upsertFreezerBinding(
+    FreezerSensorBindingModel binding,
+  ) => Result.catchInAsync(
+    fn: () async {
+      await into(freezersTable).insertOnConflictUpdate(
+        FreezersTableCompanion.insert(
+          id: binding.sensorKey,
+          idSensor: binding.sensorIndex,
+          name: binding.resolvedDisplayName,
+          description: Value(binding.customLabel),
+          equipmentId: Value(binding.costCenterId),
+          equipmentName: Value(binding.costCenterName),
+          targetTemperature: Value(binding.targetTemperature),
+          defaultCoolingSeconds: Value(binding.defaultCoolingSeconds),
+          unloadMinSeconds: Value(binding.unloadMinSeconds),
+          reloadMinSeconds: Value(binding.reloadMinSeconds),
+          syncStatus: const Value(SyncStatusEnum.synced),
+        ),
+      );
+
+      return (select(
+        freezersTable,
+      )..where((f) => f.id.equals(binding.sensorKey))).getSingle();
+    },
+    tag: 'FreezerDao.upsertFreezerBinding',
+  );
+
+  /// Busca todas as configurações locais de sensores/freezers
+  Future<Result<List<Freezer>>> getFreezers() => Result.catchInAsync(
+    fn: () async {
+      return (select(
+        freezersTable,
+      )..orderBy([(t) => OrderingTerm.asc(t.idSensor)])).get();
+    },
+    tag: 'FreezerDao.getFreezers',
+  );
 
   // ==========================================
   // TELEMETRIA E EVENTOS

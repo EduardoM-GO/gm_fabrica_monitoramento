@@ -342,5 +342,32 @@ void main() {
 
       viewModel.dispose();
     });
+
+    test('Sincroniza produtos do Supabase sem manter nenhum mock local', () async {
+      final synced = await db.productionDao.syncProductsFromSupabase([
+        ProductModel.fromSupabaseMap({
+          'id': 'supa_prod_1',
+          'name': 'Ovo Pistache 350g',
+          'category': 'ovos',
+          'is_active': true,
+        }),
+        ProductModel.fromSupabaseMap({
+          'id': 'supa_prod_2',
+          'name': 'Casca Gourmet 500g',
+          'category': 'cascas',
+          'is_active': true,
+        }),
+      ]);
+
+      expect(synced.isOk, isTrue);
+      final list = synced.valueOrThrow;
+      expect(list.length, 2);
+      expect(list[0].name, 'Casca Gourmet 500g');
+      expect(list[0].unitWeightGrams, 500);
+      expect(list[0].defaultBoxCapacity, 40);
+      expect(list[1].name, 'Ovo Pistache 350g');
+      expect(list[1].unitWeightGrams, 350);
+      expect(list[1].defaultBoxCapacity, 50);
+    });
   });
 }

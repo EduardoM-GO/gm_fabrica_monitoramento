@@ -286,6 +286,7 @@ final class _TopKioskStatusStrip extends StatelessWidget {
       builder: (_) => SettingsDialog(
         settingsViewModel: settingsViewModel,
         freezerViewModel: freezerViewModel,
+        eggViewModel: eggViewModel,
       ),
     );
   }

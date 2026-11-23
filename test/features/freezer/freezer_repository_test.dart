@@ -9,6 +9,7 @@ import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/door_raw_da
 import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/enum/type_raw_data_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/freezer_raw_data.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/websocket_service.dart';
+import 'package:gm_fabrica_monitoramento/src/domain/models/freezer_model.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/data/freezer_repository.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/domain/engine/freezer_adaptive_engine.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/domain/models/freezer_feedback_enum.dart';
@@ -199,6 +200,29 @@ void main() {
       expect(f1.isCalibrated, isTrue);
       // Como finalizou muito antes de 1200s, o tempo base calibrado para o próximo ciclo reduz
       expect(f1.calibratedBaseSeconds, lessThan(initialBase));
+    });
+
+    test('bindEquipmentToSensor vincula equipamento do Supabase ao sensor f1 e persiste no SQLite', () async {
+      final equipment = EquipmentModel(
+        id: '24000000-0000-4000-8000-000000000001',
+        name: 'Freezer Vertical 1',
+      );
+
+      final res = await freezerRepo.bindEquipmentToSensor(
+        sensorKey: 'f1',
+        equipment: equipment,
+      );
+      expect(res.isOk, isTrue);
+
+      final f1 = freezerRepo.getFreezer('f1')!;
+      expect(f1.equipmentId, equals('24000000-0000-4000-8000-000000000001'));
+      expect(f1.equipmentName, equals('Freezer Vertical 1'));
+      expect(f1.displayHeaderName, equals('Freezer Vertical 1 • S1'));
+
+      final savedFreezers = await db.freezerDao.getFreezers();
+      final savedF1 = savedFreezers.valueOrThrow.firstWhere((f) => f.id == 'f1');
+      expect(savedF1.equipmentId, equals('24000000-0000-4000-8000-000000000001'));
+      expect(savedF1.equipmentName, equals('Freezer Vertical 1'));
     });
   });
 }

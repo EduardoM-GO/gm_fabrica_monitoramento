@@ -3,8 +3,10 @@ import 'package:material_ui/material_ui.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_motion.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_spacing.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_theme.dart';
+import 'package:gm_fabrica_monitoramento/src/core/widgets/app_states.dart';
 import 'package:gm_fabrica_monitoramento/src/core/widgets/status_badge.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/enum/adjustment_reason_enum.dart';
+import 'package:gm_fabrica_monitoramento/src/domain/models/product_model.dart';
 import 'package:gm_fabrica_monitoramento/src/features/production/ui/view_models/egg_count_view_model.dart';
 import 'package:signals/signals_flutter.dart';
 
@@ -46,7 +48,6 @@ final class EggCountCard extends StatelessWidget {
             builder: (context, cardConstraints) {
               final hasBoundedHeight = cardConstraints.maxHeight.isFinite;
 
-              // Centro Super Clean: apenas o número gigante da caixa atual + barra de progresso
               final heroCurrentBoxSection = Column(
                 mainAxisSize:
                     hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
@@ -243,7 +244,7 @@ final class EggCountCard extends StatelessWidget {
 
                     const SizedBox(height: 8),
 
-                    // --- 2º MAIS IMPORTANTE: Apenas Total e Caixas Fechadas limpos (sem caixinhas) ---
+                    // --- 2º MAIS IMPORTANTE: Apenas Total e Caixas Fechadas limpos ---
                     Row(
                       children: [
                         Expanded(
@@ -336,8 +337,10 @@ final class EggCountCard extends StatelessWidget {
   }
 
   void _showProductSelectorSheet(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final colorScheme = Theme.of(context).colorScheme;
+
+    // Dispara atualização em background ao abrir o seletor
+    viewModel.refreshProducts();
 
     showModalBottomSheet<void>(
       context: context,
@@ -345,197 +348,7 @@ final class EggCountCard extends StatelessWidget {
       constraints: const BoxConstraints(maxWidth: 720),
       backgroundColor: colorScheme.surfaceContainerHigh,
       builder: (sheetCtx) {
-        return SignalBuilder(
-          builder: (ctx) {
-            final products = viewModel.availableProducts.value;
-            final activeBatch = viewModel.activeBatch.value;
-            final isLocked = activeBatch != null;
-
-            return SafeArea(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg,
-                  AppSpacing.xs,
-                  AppSpacing.lg,
-                  AppSpacing.lg,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                isLocked
-                                    ? 'LOTE EM ANDAMENTO'
-                                    : 'SELECIONAR PRODUTO DO LOTE',
-                                style: theme.textTheme.titleMedium?.copyWith(
-                                  fontFamily: AppTheme.fontHeading,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                              Text(
-                                isLocked
-                                    ? 'Encerre o lote atual antes de iniciar outro produto na esteira'
-                                    : 'Toque em um item do catálogo para iniciar a OP na esteira',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  color: colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (isLocked) ...[
-                          const SizedBox(width: AppSpacing.xs),
-                          FilledButton.tonalIcon(
-                            key: const ValueKey('finish_active_batch_btn'),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: colorScheme.errorContainer,
-                              foregroundColor: colorScheme.onErrorContainer,
-                            ),
-                            onPressed: () async {
-                              await viewModel.finishActiveBatch();
-                              if (sheetCtx.mounted) Navigator.pop(sheetCtx);
-                            },
-                            icon: const Icon(
-                              Icons.stop_circle_outlined,
-                              size: 18,
-                            ),
-                            label: const Text('Encerrar Lote Atual'),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Wrap(
-                      spacing: AppSpacing.sm,
-                      runSpacing: AppSpacing.sm,
-                      children: [
-                        for (final product in products)
-                          Builder(
-                            builder: (_) {
-                              final isCurrent =
-                                  activeBatch?.product.id == product.id;
-
-                              return Opacity(
-                                opacity: (!isLocked || isCurrent) ? 1.0 : 0.45,
-                                child: SizedBox(
-                                  width: 220,
-                                  child: Card.outlined(
-                                    color: isCurrent
-                                        ? colorScheme.primaryContainer
-                                        : colorScheme.surfaceContainerHighest,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: AppSpacing.borderRadiusMd,
-                                      side: BorderSide(
-                                        color: isCurrent
-                                            ? colorScheme.primary
-                                            : colorScheme.outlineVariant,
-                                        width: isCurrent ? 1.8 : 1.0,
-                                      ),
-                                    ),
-                                    child: InkWell(
-                                      borderRadius: AppSpacing.borderRadiusMd,
-                                      onTap: isLocked
-                                          ? null
-                                          : () async {
-                                              await viewModel.startBatch(
-                                                product,
-                                              );
-                                              if (sheetCtx.mounted) {
-                                                Navigator.pop(sheetCtx);
-                                              }
-                                            },
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(
-                                          AppSpacing.sm,
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    product.name,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: theme
-                                                        .textTheme
-                                                        .titleSmall
-                                                        ?.copyWith(
-                                                          fontWeight:
-                                                              FontWeight.w800,
-                                                          color: isCurrent
-                                                              ? colorScheme
-                                                                    .onPrimaryContainer
-                                                              : colorScheme
-                                                                    .onSurface,
-                                                        ),
-                                                  ),
-                                                ),
-                                                if (isCurrent)
-                                                  Icon(
-                                                    Icons.check_circle_rounded,
-                                                    size: 16,
-                                                    color: colorScheme.primary,
-                                                  )
-                                                else if (isLocked)
-                                                  Icon(
-                                                    Icons.lock_outline_rounded,
-                                                    size: 15,
-                                                    color: colorScheme
-                                                        .onSurfaceVariant,
-                                                  ),
-                                              ],
-                                            ),
-                                            const SizedBox(
-                                              height: AppSpacing.xxs,
-                                            ),
-                                            Text(
-                                              '${product.unitWeightGrams}g • Caixa: ${product.defaultBoxCapacity} un',
-                                              style: theme.textTheme.bodySmall
-                                                  ?.copyWith(
-                                                    color: isCurrent
-                                                        ? colorScheme
-                                                              .onPrimaryContainer
-                                                              .withValues(
-                                                                alpha: 0.85,
-                                                              )
-                                                        : colorScheme
-                                                              .onSurfaceVariant,
-                                                    fontFeatures: const [
-                                                      FontFeature.tabularFigures(),
-                                                    ],
-                                                  ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
+        return _ProductSelectorBottomSheet(viewModel: viewModel);
       },
     );
   }
@@ -550,6 +363,313 @@ final class EggCountCard extends StatelessWidget {
       backgroundColor: colorScheme.surfaceContainerHigh,
       builder: (sheetCtx) {
         return _DiscardBottomSheet(viewModel: viewModel);
+      },
+    );
+  }
+}
+
+final class _ProductSelectorBottomSheet extends StatefulWidget {
+  final EggCountViewModel viewModel;
+
+  const _ProductSelectorBottomSheet({required this.viewModel});
+
+  @override
+  State<_ProductSelectorBottomSheet> createState() =>
+      _ProductSelectorBottomSheetState();
+}
+
+class _ProductSelectorBottomSheetState
+    extends State<_ProductSelectorBottomSheet> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<ProductModel> _filterProducts(List<ProductModel> all) {
+    final q = _searchQuery.trim().toLowerCase();
+    if (q.isEmpty) return all;
+    return [
+      for (final p in all)
+        if (p.name.toLowerCase().contains(q) ||
+            p.category.toLowerCase().contains(q) ||
+            p.eanCode.toLowerCase().contains(q) ||
+            '${p.unitWeightGrams}g'.contains(q))
+          p,
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return SignalBuilder(
+      builder: (ctx) {
+        final allProducts = widget.viewModel.availableProducts.value;
+        final filteredProducts = _filterProducts(allProducts);
+        final isSyncing = widget.viewModel.isSyncingProducts.value;
+        final syncError = widget.viewModel.productsSyncError.value;
+        final activeBatch = widget.viewModel.activeBatch.value;
+        final isLocked = activeBatch != null;
+
+        return SafeArea(
+          child: SingleChildScrollView(
+            padding: EdgeInsets.fromLTRB(
+              AppSpacing.lg,
+              AppSpacing.xs,
+              AppSpacing.lg,
+              AppSpacing.lg + bottomInset,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            isLocked
+                                ? 'LOTE EM ANDAMENTO'
+                                : 'SELECIONAR PRODUTO DO LOTE',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontFamily: AppTheme.fontHeading,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          Text(
+                            isLocked
+                                ? 'Encerre o lote atual antes de iniciar outro produto na esteira'
+                                : 'Produtos sincronizados do catálogo Supabase (sem mock)',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      key: const ValueKey('refresh_supabase_products_btn'),
+                      tooltip: 'Sincronizar produtos do Supabase',
+                      onPressed: isSyncing
+                          ? null
+                          : () => widget.viewModel.refreshProducts(),
+                      icon: isSyncing
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.sync_rounded, size: 20),
+                    ),
+                    if (isLocked) ...[
+                      const SizedBox(width: AppSpacing.xs),
+                      FilledButton.tonalIcon(
+                        key: const ValueKey('finish_active_batch_btn'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: colorScheme.errorContainer,
+                          foregroundColor: colorScheme.onErrorContainer,
+                        ),
+                        onPressed: () async {
+                          await widget.viewModel.finishActiveBatch();
+                          if (context.mounted) Navigator.pop(context);
+                        },
+                        icon: const Icon(
+                          Icons.stop_circle_outlined,
+                          size: 18,
+                        ),
+                        label: const Text('Encerrar Lote Atual'),
+                      ),
+                    ],
+                  ],
+                ),
+
+                if (allProducts.length > 3) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  TextField(
+                    key: const ValueKey('product_search_input'),
+                    controller: _searchController,
+                    onChanged: (v) => setState(() => _searchQuery = v),
+                    decoration: InputDecoration(
+                      hintText: 'Buscar produto por nome, categoria ou gramas...',
+                      prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                              icon: const Icon(Icons.clear_rounded, size: 16),
+                            )
+                          : null,
+                      isDense: true,
+                      filled: true,
+                      fillColor: colorScheme.surfaceContainer,
+                      border: OutlineInputBorder(
+                        borderRadius: AppSpacing.borderRadiusSm,
+                      ),
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: AppSpacing.md),
+
+                if (isSyncing && allProducts.isEmpty)
+                  const AppLoadingState(
+                    label: 'Buscando produtos ativos no Supabase...',
+                  )
+                else if (allProducts.isEmpty)
+                  AppEmptyState(
+                    icon: Icons.inventory_2_outlined,
+                    title: 'Nenhum produto sincronizado do Supabase',
+                    subtitle:
+                        syncError ??
+                        'Verifique a conexão/login do Kiosk com o Supabase ou cadastre produtos ativos no ERP.',
+                    action: FilledButton.tonalIcon(
+                      onPressed: isSyncing
+                          ? null
+                          : () => widget.viewModel.refreshProducts(),
+                      icon: const Icon(Icons.sync_rounded, size: 18),
+                      label: const Text('Sincronizar Agora'),
+                    ),
+                  )
+                else if (filteredProducts.isEmpty)
+                  const AppEmptyState(
+                    icon: Icons.search_off_rounded,
+                    title: 'Nenhum produto encontrado para a busca',
+                    subtitle: 'Tente outro termo de pesquisa.',
+                  )
+                else
+                  Wrap(
+                    spacing: AppSpacing.sm,
+                    runSpacing: AppSpacing.sm,
+                    children: [
+                      for (final product in filteredProducts)
+                        Builder(
+                          builder: (_) {
+                            final isCurrent =
+                                activeBatch?.product.id == product.id;
+
+                            return Opacity(
+                              opacity: (!isLocked || isCurrent) ? 1.0 : 0.45,
+                              child: SizedBox(
+                                width: 220,
+                                child: Card.outlined(
+                                  color: isCurrent
+                                      ? colorScheme.primaryContainer
+                                      : colorScheme.surfaceContainerHighest,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: AppSpacing.borderRadiusMd,
+                                    side: BorderSide(
+                                      color: isCurrent
+                                          ? colorScheme.primary
+                                          : colorScheme.outlineVariant,
+                                      width: isCurrent ? 1.8 : 1.0,
+                                    ),
+                                  ),
+                                  child: InkWell(
+                                    borderRadius: AppSpacing.borderRadiusMd,
+                                    onTap: isLocked
+                                        ? null
+                                        : () async {
+                                            await widget.viewModel.startBatch(
+                                              product,
+                                            );
+                                            if (context.mounted) {
+                                              Navigator.pop(context);
+                                            }
+                                          },
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(
+                                        AppSpacing.sm,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  product.name,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: theme
+                                                      .textTheme
+                                                      .titleSmall
+                                                      ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.w800,
+                                                        color: isCurrent
+                                                            ? colorScheme
+                                                                  .onPrimaryContainer
+                                                            : colorScheme
+                                                                  .onSurface,
+                                                      ),
+                                                ),
+                                              ),
+                                              if (isCurrent)
+                                                Icon(
+                                                  Icons.check_circle_rounded,
+                                                  size: 16,
+                                                  color: colorScheme.primary,
+                                                )
+                                              else if (isLocked)
+                                                Icon(
+                                                  Icons.lock_outline_rounded,
+                                                  size: 15,
+                                                  color: colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                            ],
+                                          ),
+                                          const SizedBox(
+                                            height: AppSpacing.xxs,
+                                          ),
+                                          Text(
+                                            '${product.unitWeightGrams}g • Caixa: ${product.defaultBoxCapacity} un',
+                                            style: theme.textTheme.bodySmall
+                                                ?.copyWith(
+                                                  color: isCurrent
+                                                      ? colorScheme
+                                                            .onPrimaryContainer
+                                                            .withValues(
+                                                              alpha: 0.85,
+                                                            )
+                                                      : colorScheme
+                                                            .onSurfaceVariant,
+                                                  fontFeatures: const [
+                                                    FontFeature.tabularFigures(),
+                                                  ],
+                                                ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        );
       },
     );
   }
@@ -638,7 +758,6 @@ class _DiscardBottomSheetState extends State<_DiscardBottomSheet> {
               ],
             ),
             const SizedBox(height: AppSpacing.xxs),
-            // Resumo de métricas secundárias (Bruto, Quebras e Velocidade) dentro do modal para não poluir a tela principal
             SignalBuilder(
               builder: (context) {
                 final gross = widget.viewModel.dailyGrossCount.value;
@@ -798,9 +917,11 @@ class _DiscardBottomSheetState extends State<_DiscardBottomSheet> {
                       decoration: InputDecoration(
                         labelText: isAddition
                             ? 'Qtd. a somar (+)'
-                            : 'Digitar qtd. (-)',
+                            : 'Qtd. a descontar (-)',
                         hintText: 'Ex: 5',
                         isDense: true,
+                        filled: true,
+                        fillColor: colorScheme.surfaceContainerHighest,
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: AppSpacing.sm,
                           vertical: 12,
@@ -808,18 +929,14 @@ class _DiscardBottomSheetState extends State<_DiscardBottomSheet> {
                         border: OutlineInputBorder(
                           borderRadius: AppSpacing.borderRadiusSm,
                         ),
-                        suffixIcon: IconButton.filled(
+                        suffixIcon: IconButton(
                           key: const ValueKey('discard_custom_qty_submit'),
-                          tooltip: 'Confirmar quantidade',
-                          style: IconButton.styleFrom(
-                            backgroundColor: actionColor,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: AppSpacing.borderRadiusXs,
-                            ),
-                          ),
+                          tooltip: 'Confirmar lançamento',
                           onPressed: _submitCustomQty,
-                          icon: const Icon(Icons.check_rounded, size: 18),
+                          icon: Icon(
+                            Icons.check_circle_rounded,
+                            color: actionColor,
+                          ),
                         ),
                       ),
                     ),
@@ -849,43 +966,36 @@ final class _StatItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.xs,
-        vertical: 2,
-      ),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Text(
-              label,
-              style: theme.textTheme.labelSmall?.copyWith(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.4,
-                color: AppTheme.textSecondary,
-              ),
-            ),
-            const SizedBox(width: 8),
-            AnimatedValueText(
-              value: value,
-              pulseScale: 1.06,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontFamily: AppTheme.fontHeading,
-                fontWeight: FontWeight.w900,
-                fontSize: 24,
-                height: 1.0,
-                color: color,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-          ],
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: AppTheme.textMuted,
+            fontSize: 9.5,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.6,
+          ),
         ),
-      ),
+        const SizedBox(height: 2),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            value,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontFamily: AppTheme.fontHeading,
+              fontWeight: FontWeight.w900,
+              fontSize: 22,
+              height: 1.05,
+              color: color,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

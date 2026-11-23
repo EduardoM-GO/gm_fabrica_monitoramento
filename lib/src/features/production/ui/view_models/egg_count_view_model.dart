@@ -16,9 +16,11 @@ final class EggCountViewModel {
   final ProductionRepository _repository;
   final AudioService? _audioService;
 
-  // --- Signals de Estado do Lote Ativo & Produtos ---
+  // --- Signals de Estado do Lote Ativo & Produtos (Supabase -> SQLite) ---
   late final Signal<ProductionBatchModel?> activeBatch;
   late final Signal<List<ProductModel>> availableProducts;
+  late final Signal<bool> isSyncingProducts;
+  late final Signal<String?> productsSyncError;
   late final Computed<bool> hasActiveBatch;
   late final Computed<String> productName;
   late final Signal<int> defaultBoxCapacity;
@@ -50,6 +52,8 @@ final class EggCountViewModel {
   StreamSubscription? _conveyorAlertSub;
   StreamSubscription? _dailyAccountingSub;
   StreamSubscription? _productsSub;
+  StreamSubscription? _productsLoadingSub;
+  StreamSubscription? _productsErrorSub;
   StreamSubscription? _roomSub;
   Timer? _hitAnimationTimer;
   Timer? _speedTickerTimer;
@@ -67,6 +71,8 @@ final class EggCountViewModel {
   void _initSignals() {
     activeBatch = signal<ProductionBatchModel?>(_repository.currentActiveBatch);
     availableProducts = signal<List<ProductModel>>(_repository.currentProducts);
+    isSyncingProducts = signal<bool>(_repository.isSyncingProducts);
+    productsSyncError = signal<String?>(_repository.lastProductsSyncError);
     hasActiveBatch = computed<bool>(() => activeBatch.value != null);
     productName = computed<String>(
       () => activeBatch.value?.product.name ?? 'Sem Lote Aberto',
@@ -170,9 +176,15 @@ final class EggCountViewModel {
       _updateDailyAccounting,
     );
 
-    // 5. Catálogo de produtos e telemetria da sala
+    // 5. Catálogo de produtos do Supabase e telemetria da sala
     _productsSub = _repository.availableProductsStream.listen((products) {
       availableProducts.value = products;
+    });
+    _productsLoadingSub = _repository.isSyncingProductsStream.listen((loading) {
+      isSyncingProducts.value = loading;
+    });
+    _productsErrorSub = _repository.productsSyncErrorStream.listen((err) {
+      productsSyncError.value = err;
     });
 
     _roomSub = _repository.roomStream.listen((room) {
@@ -209,6 +221,11 @@ final class EggCountViewModel {
   }
 
   // --- Comandos do Operador ---
+
+  /// Sincroniza sob demanda a lista de produtos ativos do Supabase
+  Future<Result<List<ProductModel>>> refreshProducts() {
+    return _repository.refreshProductsFromSupabase();
+  }
 
   /// Inicia um novo lote de produção com o produto selecionado
   Future<Result<ProductionBatchModel>> startBatch(ProductModel product) async {
@@ -303,6 +320,8 @@ final class EggCountViewModel {
     _conveyorAlertSub?.cancel();
     _dailyAccountingSub?.cancel();
     _productsSub?.cancel();
+    _productsLoadingSub?.cancel();
+    _productsErrorSub?.cancel();
     _roomSub?.cancel();
     _hitAnimationTimer?.cancel();
     _speedTickerTimer?.cancel();

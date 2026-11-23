@@ -7,6 +7,7 @@ import 'package:gm_fabrica_monitoramento/src/core/themes/app_spacing.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_theme.dart';
 import 'package:gm_fabrica_monitoramento/src/core/widgets/app_states.dart';
 import 'package:gm_fabrica_monitoramento/src/core/widgets/status_badge.dart';
+import 'package:gm_fabrica_monitoramento/src/domain/models/freezer_model.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/domain/models/freezer_feedback_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/domain/models/freezer_live_state.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/domain/models/freezer_status_enum.dart';
@@ -92,7 +93,7 @@ class FreezerMonitoringCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // --- 1. Topo: Nome do Freezer + Status Forte de Porta (Fechada/Aberta) + Ações Rápidas ---
+                // --- 1. Topo: Nome do Equipamento Vinculado (Supabase) + Sensor + Status Forte de Porta + Ações Rápidas ---
                 Row(
                   children: [
                     Icon(
@@ -111,17 +112,18 @@ class FreezerMonitoringCard extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              freezer.name.toUpperCase(),
+                              freezer.displayHeaderName.toUpperCase(),
                               style: theme.textTheme.titleSmall?.copyWith(
                                 fontFamily: AppTheme.fontHeading,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.4,
                                 fontSize: 11,
-                                color: AppTheme.textSecondary,
+                                color: freezer.hasLinkedEquipment
+                                    ? colorScheme.primary
+                                    : AppTheme.textSecondary,
                               ),
                             ),
                             const SizedBox(width: 6),
-                            // Status de Porta Aberta e Fechada com visibilidade clara (importante em ambos os estados)
                             StatusBadge(
                               label: isOpen ? 'PORTA ABERTA' : 'PORTA FECHADA',
                               icon: isOpen
@@ -139,7 +141,6 @@ class FreezerMonitoringCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
 
-                    // Ações do ciclo no cabeçalho para liberar largura à leitura de Tempo + Temperatura
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerRight,
@@ -245,7 +246,8 @@ class FreezerMonitoringCard extends StatelessWidget {
                               ),
                               padding: EdgeInsets.zero,
                               visualDensity: VisualDensity.compact,
-                              tooltip: 'Configurar tempos do sensor de porta',
+                              tooltip:
+                                  'Vincular equipamento e configurar tempos do sensor',
                               onPressed: () =>
                                   _showDoorTimingConfigDialog(context),
                               icon: Icon(
@@ -305,9 +307,6 @@ class FreezerMonitoringCard extends StatelessWidget {
     );
   }
 
-  /// Faixa Principal com hierarquia estrita:
-  /// - 1º (Esquerda dominante): Tempo Atual / Tempo Previsto (MM:SS / MM:SS) + Barra de Progresso
-  /// - 2º (Direita): Temperatura Atual (°C)
   Widget _buildPrimaryTimeAndTempSection(
     BuildContext context,
     ThemeData theme,
@@ -357,7 +356,6 @@ class FreezerMonitoringCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
-            // 1º MAIS IMPORTANTE: Tempo Atual e Tempo Previsto limpos (sem sub-caixa)
             Expanded(
               child: FittedBox(
                 fit: BoxFit.scaleDown,
@@ -381,12 +379,12 @@ class FreezerMonitoringCard extends StatelessWidget {
                         children: [
                           TextSpan(
                             text: ' / ${freezer.targetFormatted}',
-                            style: TextStyle(
+                            style: const TextStyle(
                               fontFamily: AppTheme.fontBody,
                               fontSize: 16,
                               fontWeight: FontWeight.w700,
                               color: AppTheme.textSecondary,
-                              fontFeatures: const [
+                              fontFeatures: [
                                 FontFeature.tabularFigures(),
                               ],
                             ),
@@ -410,8 +408,6 @@ class FreezerMonitoringCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-
-            // 2º MAIS IMPORTANTE: Temperatura Atual limpa (sem borda extra em volta)
             AnimatedValueText(
               value: isProbeOk
                   ? '${freezer.currentTemp.toStringAsFixed(1)} °C'
@@ -597,108 +593,171 @@ class FreezerMonitoringCard extends StatelessWidget {
     final targetMinController = TextEditingController(
       text: (freezer.calibratedBaseSeconds ~/ 60).toString(),
     );
+    String? selectedEquipmentId = freezer.equipmentId;
+
+    // Atualiza lista de equipamentos do Supabase ao abrir o diálogo
+    viewModel.refreshEquipmentsAndBindings();
 
     showDialog<void>(
       context: context,
       builder: (ctx) {
         final theme = Theme.of(ctx);
         final colorScheme = theme.colorScheme;
-        return AlertDialog(
-          title: Text(
-            'Tempos da Porta — ${freezer.name}',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          content: SizedBox(
-            width: 380,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Estes parâmetros definem como o sensor da porta identifica automaticamente verificação, retirada ou novo lote (também sincronizáveis pelo Supabase):',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return SignalBuilder(
+              builder: (_) {
+                final equipments = viewModel.availableEquipments.value;
+                final hasSelectedInList =
+                    selectedEquipmentId != null &&
+                    equipments.any((e) => e.id == selectedEquipmentId);
+                final effectiveEquipmentId = hasSelectedInList
+                    ? selectedEquipmentId
+                    : null;
+
+                return AlertDialog(
+                  title: Text(
+                    'Sensor ${freezer.sensorIndex} (${freezer.freezerId.toUpperCase()}) — ${freezer.name}',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.sm),
-                  TextField(
-                    key: const ValueKey('input_unload_seconds'),
-                    controller: unloadController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Tempo mín. Só Retirada (segundos)',
-                      helperText:
-                          'Abaixo disso com lote pronto = "Verificação / Ainda Mole"',
-                      isDense: true,
+                  content: SizedBox(
+                    width: 400,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            'Vincule este sensor físico do ESP32 a um equipamento (Freezer) cadastrado no Supabase e configure os tempos de porta:',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          DropdownButtonFormField<String?>(
+                            key: ValueKey(
+                              'freezer_equipment_dropdown_${freezer.freezerId}',
+                            ),
+                            initialValue: effectiveEquipmentId,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              labelText:
+                                  'Equipamento Vinculado (Supabase / Centros de Custo)',
+                              isDense: true,
+                              filled: true,
+                              fillColor: colorScheme.surfaceContainerHighest,
+                              border: const OutlineInputBorder(),
+                            ),
+                            items: [
+                              const DropdownMenuItem<String?>(
+                                value: null,
+                                child: Text('Sem equipamento vinculado'),
+                              ),
+                              for (final eq in equipments)
+                                DropdownMenuItem<String?>(
+                                  value: eq.id,
+                                  child: Text(
+                                    eq.name,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                            ],
+                            onChanged: (val) {
+                              setDialogState(() {
+                                selectedEquipmentId = val;
+                              });
+                            },
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          TextField(
+                            key: const ValueKey('input_unload_seconds'),
+                            controller: unloadController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Tempo mín. Só Retirada (segundos)',
+                              helperText:
+                                  'Abaixo disso com lote pronto = "Verificação / Ainda Mole"',
+                              isDense: true,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          TextField(
+                            key: const ValueKey('input_reload_seconds'),
+                            controller: reloadController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText:
+                                  'Tempo mín. Retirou + Abasteceu (segundos)',
+                              helperText:
+                                  'Acima disso = encerra o lote atual e já inicia nova contagem',
+                              isDense: true,
+                            ),
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                          TextField(
+                            key: const ValueKey('input_target_minutes'),
+                            controller: targetMinController,
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Tempo Alvo Base (minutos)',
+                              isDense: true,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(height: AppSpacing.sm),
-                  TextField(
-                    key: const ValueKey('input_reload_seconds'),
-                    controller: reloadController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Tempo mín. Retirou + Abasteceu (segundos)',
-                      helperText:
-                          'Acima disso = encerra o lote atual e já inicia nova contagem',
-                      isDense: true,
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(),
+                      child: const Text('Cancelar'),
                     ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  TextField(
-                    key: const ValueKey('input_target_minutes'),
-                    controller: targetMinController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Tempo Alvo Base (minutos)',
-                      isDense: true,
+                    FilledButton(
+                      key: const ValueKey('save_door_timing_btn'),
+                      onPressed: () {
+                        final unload =
+                            int.tryParse(unloadController.text.trim()) ??
+                            freezer.unloadMinSeconds;
+                        final reload =
+                            int.tryParse(reloadController.text.trim()) ??
+                            freezer.reloadMinSeconds;
+                        final targetMin =
+                            int.tryParse(targetMinController.text.trim()) ??
+                            (freezer.calibratedBaseSeconds ~/ 60);
+
+                        EquipmentModel? chosenEq;
+                        if (selectedEquipmentId != null) {
+                          chosenEq = equipments
+                              .where((e) => e.id == selectedEquipmentId)
+                              .firstOrNull;
+                        }
+
+                        viewModel.updateDoorTimingConfig(
+                          freezer.freezerId,
+                          unloadMinSeconds: unload,
+                          reloadMinSeconds: reload,
+                          targetDurationSeconds: targetMin * 60,
+                          linkedEquipment: chosenEq,
+                          updateEquipmentBinding: true,
+                        );
+                        Navigator.of(ctx).pop();
+                      },
+                      child: const Text('Salvar'),
                     ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancelar'),
-            ),
-            FilledButton(
-              key: const ValueKey('save_door_timing_btn'),
-              onPressed: () {
-                final unload =
-                    int.tryParse(unloadController.text.trim()) ??
-                    freezer.unloadMinSeconds;
-                final reload =
-                    int.tryParse(reloadController.text.trim()) ??
-                    freezer.reloadMinSeconds;
-                final targetMin =
-                    int.tryParse(targetMinController.text.trim()) ??
-                    (freezer.calibratedBaseSeconds ~/ 60);
-                viewModel.updateDoorTimingConfig(
-                  freezer.freezerId,
-                  unloadMinSeconds: unload,
-                  reloadMinSeconds: reload,
-                  targetDurationSeconds: targetMin * 60,
+                  ],
                 );
-                Navigator.of(ctx).pop();
               },
-              child: const Text('Salvar'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
   }
 }
 
-/// Painel da Curva de Área com Tempo de Porta Aberta ao vivo e Perda de Temperatura:
-/// - Enquanto a porta estiver aberta: destaca o cronômetro ao vivo (ABERTA HÁ MM:SS)
-///   e a perda térmica (+X.X °C ▲) sobre o gráfico em vermelho/âmbar.
-/// - Quando fechada: retorna ao modo calmo exibindo a variação pós-porta (+X.X °C pós-porta).
+/// Painel da Curva de Área com Tempo de Porta Aberta ao vivo e Perda de Temperatura
 final class FreezerThermalCurvePanel extends StatelessWidget {
   final FreezerLiveState freezer;
   final bool expandGraph;
@@ -881,7 +940,6 @@ final class _ThermalCurvePainter extends CustomPainter {
       if (pt.temperature > maxT) maxT = pt.temperature;
     }
 
-    // Garante amplitude mínima de 2.0 °C para evitar ruído exagerado quando estável
     if ((maxT - minT) < 2.0) {
       final mid = (maxT + minT) / 2.0;
       minT = mid - 1.0;
@@ -897,7 +955,6 @@ final class _ThermalCurvePainter extends CustomPainter {
       return size.height - (norm * (size.height - 4)) - 2;
     }
 
-    // 1. Linha tracejada horizontal da Temperatura de Referência (antes de abrir a porta)
     final baseY = yForTemp(baselineTemp);
     final dashPaint = Paint()
       ..color = baselineColor.withValues(alpha: 0.5)
@@ -916,7 +973,6 @@ final class _ThermalCurvePainter extends CustomPainter {
       startX += dashWidth + dashSpace;
     }
 
-    // 2. Constrói pontos (x, y) da curva de temperatura
     final count = samples.length;
     final points = <Offset>[];
     if (count == 1) {
@@ -939,7 +995,6 @@ final class _ThermalCurvePainter extends CustomPainter {
       curvePath.cubicTo(midX, p0.dy, midX, p1.dy, p1.dx, p1.dy);
     }
 
-    // 3. Preenchimento em gradiente sob a curva
     final fillPath = Path.from(curvePath)
       ..lineTo(points.last.dx, size.height)
       ..lineTo(points.first.dx, size.height)
@@ -958,7 +1013,6 @@ final class _ThermalCurvePainter extends CustomPainter {
 
     canvas.drawPath(fillPath, fillPaint);
 
-    // 4. Traço principal da curva térmica
     final strokePaint = Paint()
       ..color = lineColor
       ..strokeWidth = 2.0
@@ -967,7 +1021,6 @@ final class _ThermalCurvePainter extends CustomPainter {
 
     canvas.drawPath(curvePath, strokePaint);
 
-    // 5. Marcadores de eventos de abertura/fechamento de porta na janela de tempo
     if (doorTransitions.isNotEmpty && samples.length >= 2) {
       final firstTs = samples.first.timestamp.millisecondsSinceEpoch;
       final lastTs = samples.last.timestamp.millisecondsSinceEpoch;
@@ -984,7 +1037,11 @@ final class _ThermalCurvePainter extends CustomPainter {
           final markerLinePaint = Paint()
             ..color = markerColor.withValues(alpha: 0.6)
             ..strokeWidth = 1.0;
-          canvas.drawLine(Offset(x, 0), Offset(x, size.height), markerLinePaint);
+          canvas.drawLine(
+            Offset(x, 0),
+            Offset(x, size.height),
+            markerLinePaint,
+          );
 
           final dotPaint = Paint()..color = markerColor;
           canvas.drawCircle(Offset(x, y), 2.8, dotPaint);
@@ -992,7 +1049,6 @@ final class _ThermalCurvePainter extends CustomPainter {
       }
     }
 
-    // 6. Ponto luminoso da temperatura atual (extremidade direita)
     final lastPt = points.last;
     canvas.drawCircle(
       lastPt,

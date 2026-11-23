@@ -27,61 +27,122 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
     with _$ProductionDaoMixin {
   ProductionDao(super.db);
 
-  /// Catálogo inicial padrão da fábrica G&M Chocolates
-  static final List<ProductModel> defaultProducts = [
-    ProductModel(
-      id: 'prod_ovo_250',
-      name: 'Ovo de Páscoa 250g',
-      unitWeightGrams: 250,
-      defaultBoxCapacity: 50,
-    ),
-    ProductModel(
-      id: 'prod_casca_500',
-      name: 'Casca de Ovo 500g',
-      unitWeightGrams: 500,
-      defaultBoxCapacity: 40,
-    ),
-    ProductModel(
-      id: 'prod_mini_100',
-      name: 'Mini Ovo 100g',
-      unitWeightGrams: 100,
-      defaultBoxCapacity: 50,
-    ),
-  ];
+  static const Set<String> _legacyMockProductIds = {
+    'prod_ovo_250',
+    'prod_casca_500',
+    'prod_mini_100',
+  };
 
-  /// Garante que o catálogo básico exista no SQLite local no primeiro boot
-  Future<Result<List<ProductModel>>> ensureDefaultProducts() =>
-      Result.catchInAsync(
-        fn: () async {
-          final existing = await select(productsTable).get();
-          if (existing.isEmpty) {
-            await batch((b) {
-              b.insertAllOnConflictUpdate(
-                productsTable,
-                defaultProducts.map(
-                  (p) => ProductsTableCompanion.insert(
-                    id: p.id,
-                    name: p.name,
-                    unitWeightGrams: p.unitWeightGrams.toDouble(),
-                  ),
-                ),
-              );
-            });
+  ProductModel _rowToProductModel(Product r) {
+    final weight = r.unitWeightGrams.round() > 0
+        ? r.unitWeightGrams.round()
+        : ProductModel.inferWeightGramsFromName(r.name);
+    final boxCap = r.defaultBoxCapacity > 0
+        ? r.defaultBoxCapacity
+        : (weight >= 500 ? 40 : 50);
+    return ProductModel(
+      id: r.id,
+      name: r.name,
+      category: r.category,
+      eanCode: r.eanCode ?? '',
+      unitWeightGrams: weight,
+      defaultBoxCapacity: boxCap,
+      defaultCoolingSeconds: r.defaultCoolingSeconds > 0
+          ? r.defaultCoolingSeconds
+          : 1200,
+      isActive: r.isActive,
+    );
+  }
+
+  /// Retorna os produtos ativos salvos localmente (sem mocks).
+  Future<Result<List<ProductModel>>> getActiveProducts() => Result.catchInAsync(
+    fn: () async {
+      final rows = await (select(productsTable)
+            ..where(
+              (p) =>
+                  p.isActive.equals(true) &
+                  p.id.isNotIn(_legacyMockProductIds.toList()),
+            )
+            ..orderBy([(p) => OrderingTerm.asc(p.name)]))
+          .get();
+      return rows.map(_rowToProductModel).toList();
+    },
+    tag: 'ProductionDao.getActiveProducts',
+  );
+
+  /// Sincroniza a lista de produtos reais recebida do Supabase (`public.products`)
+  /// no SQLite local, removendo produtos mockados antigos e desativando itens que saíram do catálogo.
+  Future<Result<List<ProductModel>>> syncProductsFromSupabase(
+    List<ProductModel> remoteProducts,
+  ) => Result.catchInAsync(
+    fn: () async {
+      await transaction(() async {
+        // Remove qualquer mock legado que não esteja referenciado por um lote histórico
+        final batches = await select(productionBatchesTable).get();
+        final referencedProductIds = {for (final b in batches) b.productId};
+
+        for (final mockId in _legacyMockProductIds) {
+          if (!referencedProductIds.contains(mockId)) {
+            await (delete(
+              productsTable,
+            )..where((p) => p.id.equals(mockId))).go();
+          } else {
+            await (update(
+              productsTable,
+            )..where((p) => p.id.equals(mockId))).write(
+              const ProductsTableCompanion(isActive: Value(false)),
+            );
           }
-          final rows = await select(productsTable).get();
-          return rows
-              .map(
-                (r) => ProductModel(
-                  id: r.id,
-                  name: r.name,
-                  unitWeightGrams: r.unitWeightGrams.round(),
-                  defaultBoxCapacity: r.unitWeightGrams >= 500 ? 40 : 50,
+        }
+
+        final remoteIds = {for (final p in remoteProducts) p.id};
+
+        // Desativa produtos locais que não vieram mais como ativos no Supabase
+        final allLocal = await select(productsTable).get();
+        for (final local in allLocal) {
+          if (!remoteIds.contains(local.id)) {
+            if (!referencedProductIds.contains(local.id)) {
+              await (delete(
+                productsTable,
+              )..where((p) => p.id.equals(local.id))).go();
+            } else if (local.isActive) {
+              await (update(
+                productsTable,
+              )..where((p) => p.id.equals(local.id))).write(
+                const ProductsTableCompanion(isActive: Value(false)),
+              );
+            }
+          }
+        }
+
+        // Faz upsert dos produtos reais vindos do Supabase
+        if (remoteProducts.isNotEmpty) {
+          await batch((b) {
+            b.insertAllOnConflictUpdate(
+              productsTable,
+              remoteProducts.map(
+                (p) => ProductsTableCompanion.insert(
+                  id: p.id,
+                  name: p.name,
+                  unitWeightGrams: p.unitWeightGrams.toDouble(),
+                  category: Value(p.category),
+                  eanCode: Value(p.eanCode.isEmpty ? null : p.eanCode),
+                  defaultBoxCapacity: Value(p.defaultBoxCapacity),
+                  defaultCoolingSeconds: Value(p.defaultCoolingSeconds),
+                  isActive: Value(p.isActive),
+                  syncStatus: const Value(SyncStatusEnum.synced),
                 ),
-              )
-              .toList();
-        },
-        tag: 'ProductionDao.ensureDefaultProducts',
-      );
+              ),
+            );
+          });
+        }
+      });
+
+      final activeRes = await getActiveProducts();
+      return activeRes.valueOrThrow;
+    },
+    tag: 'ProductionDao.syncProductsFromSupabase',
+  );
 
   /// Inicia um novo lote de produção com a contagem atual do hardware
   Future<Result<ProductionBatchModel>> startBatch({
@@ -95,6 +156,11 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
           id: product.id,
           name: product.name,
           unitWeightGrams: product.unitWeightGrams.toDouble(),
+          category: Value(product.category),
+          eanCode: Value(product.eanCode.isEmpty ? null : product.eanCode),
+          defaultBoxCapacity: Value(product.defaultBoxCapacity),
+          defaultCoolingSeconds: Value(product.defaultCoolingSeconds),
+          isActive: Value(product.isActive),
         ),
       );
 
@@ -142,7 +208,8 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
                     expression: b.finishedAt,
                     mode: OrderingMode.desc,
                   ),
-                ]))
+                ])
+                ..limit(1))
               .getSingleOrNull();
         },
         tag: 'ProductionDao.getLastCompletedBatch',
@@ -168,11 +235,7 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
 
       return ProductionBatchModel(
         id: batch.id,
-        product: ProductModel(
-          id: product.id,
-          name: product.name,
-          unitWeightGrams: product.unitWeightGrams.round(),
-        ),
+        product: _rowToProductModel(product),
         initialQuantity: batch.initialHardwareCount,
         actualQuantity: batch.finalHardwareCount ?? batch.initialHardwareCount,
         startedAt: batch.startedAt,
@@ -198,11 +261,7 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
 
       return ProductionBatchModel(
         id: batch.id,
-        product: ProductModel(
-          id: product.id,
-          name: product.name,
-          unitWeightGrams: product.unitWeightGrams.round(),
-        ),
+        product: _rowToProductModel(product),
         initialQuantity: batch.initialHardwareCount,
         actualQuantity: batch.finalHardwareCount ?? batch.initialHardwareCount,
         startedAt: batch.startedAt,
@@ -257,7 +316,6 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
           final now = referenceTime ?? DateTime.now();
           final startOfToday = DateTime(now.year, now.month, now.day);
 
-          // Lotes abertos com data de início anterior ao início do dia de referência
           final expiredBatches = await (select(productionBatchesTable)..where(
             (b) =>
                 b.finishedAt.isNull() &
@@ -270,7 +328,6 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
 
           int closedCount = 0;
           for (final batch in expiredBatches) {
-            // Busca o último pulso registrado na timeline para este lote
             final lastHit = await (select(productionTimeLinesTable)
                   ..where((t) => t.batchId.equals(batch.id))
                   ..orderBy([
@@ -345,7 +402,6 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
         999,
       );
 
-      // 1. Busca todos os lotes que rodaram no dia com seus produtos
       final batchesQuery = select(productionBatchesTable).join([
         innerJoin(
           productsTable,
@@ -374,7 +430,6 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
         dailyGrossCount += batchGross;
       }
 
-      // 2. Busca todos os descartes/quebras (deltaQty < 0) e adições manuais (deltaQty > 0) do dia
       int dailyDiscards = 0;
       int dailyAdditions = 0;
       final Map<String, int> netDeltaByBatch = {};
@@ -409,7 +464,9 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
           0,
           99999999,
         );
-        final boxCap = p.unitWeightGrams >= 500 ? 40 : 50;
+        final boxCap = p.defaultBoxCapacity > 0
+            ? p.defaultBoxCapacity
+            : (p.unitWeightGrams >= 500 ? 40 : 50);
         completedBoxes += (batchNet ~/ boxCap);
       }
 
@@ -427,7 +484,7 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
     tag: 'ProductionDao.getDailyAccounting',
   );
 
-  /// Registra múltiplos pulsos de timeline em lote (Batch insert) para máxima performance sem engargalar o SQLite
+  /// Registra múltiplos pulsos de timeline em lote (Batch insert)
   Future<Result<Unit>> batchLogTimelineHits(
     List<({String batchId, int hardwareCount, DateTime timestamp})> hits,
   ) => Result.catchInAsync(

@@ -40,11 +40,36 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration {
     return MigrationStrategy(
+      onCreate: (m) async {
+        await m.createAll();
+      },
+      onUpgrade: (m, from, to) async {
+        if (from < 2) {
+          await m.addColumn(productsTable, productsTable.category);
+          await m.addColumn(productsTable, productsTable.eanCode);
+          await m.addColumn(productsTable, productsTable.defaultBoxCapacity);
+          await m.addColumn(productsTable, productsTable.defaultCoolingSeconds);
+          await m.addColumn(productsTable, productsTable.isActive);
+
+          await m.addColumn(freezersTable, freezersTable.equipmentId);
+          await m.addColumn(freezersTable, freezersTable.equipmentName);
+          await m.addColumn(freezersTable, freezersTable.targetTemperature);
+          await m.addColumn(freezersTable, freezersTable.defaultCoolingSeconds);
+          await m.addColumn(freezersTable, freezersTable.unloadMinSeconds);
+          await m.addColumn(freezersTable, freezersTable.reloadMinSeconds);
+
+          // Remove produtos mockados antigos caso não possuam lotes vinculados
+          await customStatement(
+            "DELETE FROM products_table WHERE id IN ('prod_ovo_250', 'prod_casca_500', 'prod_mini_100') "
+            "AND id NOT IN (SELECT DISTINCT product_id FROM production_batches_table)",
+          );
+        }
+      },
       beforeOpen: (details) async {
         await customStatement('PRAGMA foreign_keys = ON');
       },

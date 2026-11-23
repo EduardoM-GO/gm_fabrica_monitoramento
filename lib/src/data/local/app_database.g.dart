@@ -1961,8 +1961,78 @@ class $ProductsTableTable extends ProductsTable
     type: DriftSqlType.double,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _categoryMeta = const VerificationMeta(
+    'category',
+  );
   @override
-  List<GeneratedColumn> get $columns => [id, syncStatus, name, unitWeightGrams];
+  late final GeneratedColumn<String> category = GeneratedColumn<String>(
+    'category',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('geral'),
+  );
+  static const VerificationMeta _eanCodeMeta = const VerificationMeta(
+    'eanCode',
+  );
+  @override
+  late final GeneratedColumn<String> eanCode = GeneratedColumn<String>(
+    'ean_code',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _defaultBoxCapacityMeta =
+      const VerificationMeta('defaultBoxCapacity');
+  @override
+  late final GeneratedColumn<int> defaultBoxCapacity = GeneratedColumn<int>(
+    'default_box_capacity',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(50),
+  );
+  static const VerificationMeta _defaultCoolingSecondsMeta =
+      const VerificationMeta('defaultCoolingSeconds');
+  @override
+  late final GeneratedColumn<int> defaultCoolingSeconds = GeneratedColumn<int>(
+    'default_cooling_seconds',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1200),
+  );
+  static const VerificationMeta _isActiveMeta = const VerificationMeta(
+    'isActive',
+  );
+  @override
+  late final GeneratedColumn<bool> isActive = GeneratedColumn<bool>(
+    'is_active',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_active" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    syncStatus,
+    name,
+    unitWeightGrams,
+    category,
+    eanCode,
+    defaultBoxCapacity,
+    defaultCoolingSeconds,
+    isActive,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -1999,6 +2069,42 @@ class $ProductsTableTable extends ProductsTable
     } else if (isInserting) {
       context.missing(_unitWeightGramsMeta);
     }
+    if (data.containsKey('category')) {
+      context.handle(
+        _categoryMeta,
+        category.isAcceptableOrUnknown(data['category']!, _categoryMeta),
+      );
+    }
+    if (data.containsKey('ean_code')) {
+      context.handle(
+        _eanCodeMeta,
+        eanCode.isAcceptableOrUnknown(data['ean_code']!, _eanCodeMeta),
+      );
+    }
+    if (data.containsKey('default_box_capacity')) {
+      context.handle(
+        _defaultBoxCapacityMeta,
+        defaultBoxCapacity.isAcceptableOrUnknown(
+          data['default_box_capacity']!,
+          _defaultBoxCapacityMeta,
+        ),
+      );
+    }
+    if (data.containsKey('default_cooling_seconds')) {
+      context.handle(
+        _defaultCoolingSecondsMeta,
+        defaultCoolingSeconds.isAcceptableOrUnknown(
+          data['default_cooling_seconds']!,
+          _defaultCoolingSecondsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_active')) {
+      context.handle(
+        _isActiveMeta,
+        isActive.isAcceptableOrUnknown(data['is_active']!, _isActiveMeta),
+      );
+    }
     return context;
   }
 
@@ -2026,6 +2132,26 @@ class $ProductsTableTable extends ProductsTable
         DriftSqlType.double,
         data['${effectivePrefix}unit_weight_grams'],
       )!,
+      category: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}category'],
+      )!,
+      eanCode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}ean_code'],
+      ),
+      defaultBoxCapacity: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}default_box_capacity'],
+      )!,
+      defaultCoolingSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}default_cooling_seconds'],
+      )!,
+      isActive: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_active'],
+      )!,
     );
   }
 
@@ -2043,11 +2169,21 @@ class Product extends DataClass implements Insertable<Product> {
   final SyncStatusEnum syncStatus;
   final String name;
   final double unitWeightGrams;
+  final String category;
+  final String? eanCode;
+  final int defaultBoxCapacity;
+  final int defaultCoolingSeconds;
+  final bool isActive;
   const Product({
     required this.id,
     required this.syncStatus,
     required this.name,
     required this.unitWeightGrams,
+    required this.category,
+    this.eanCode,
+    required this.defaultBoxCapacity,
+    required this.defaultCoolingSeconds,
+    required this.isActive,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2060,6 +2196,13 @@ class Product extends DataClass implements Insertable<Product> {
     }
     map['name'] = Variable<String>(name);
     map['unit_weight_grams'] = Variable<double>(unitWeightGrams);
+    map['category'] = Variable<String>(category);
+    if (!nullToAbsent || eanCode != null) {
+      map['ean_code'] = Variable<String>(eanCode);
+    }
+    map['default_box_capacity'] = Variable<int>(defaultBoxCapacity);
+    map['default_cooling_seconds'] = Variable<int>(defaultCoolingSeconds);
+    map['is_active'] = Variable<bool>(isActive);
     return map;
   }
 
@@ -2069,6 +2212,13 @@ class Product extends DataClass implements Insertable<Product> {
       syncStatus: Value(syncStatus),
       name: Value(name),
       unitWeightGrams: Value(unitWeightGrams),
+      category: Value(category),
+      eanCode: eanCode == null && nullToAbsent
+          ? const Value.absent()
+          : Value(eanCode),
+      defaultBoxCapacity: Value(defaultBoxCapacity),
+      defaultCoolingSeconds: Value(defaultCoolingSeconds),
+      isActive: Value(isActive),
     );
   }
 
@@ -2084,6 +2234,13 @@ class Product extends DataClass implements Insertable<Product> {
       ),
       name: serializer.fromJson<String>(json['name']),
       unitWeightGrams: serializer.fromJson<double>(json['unitWeightGrams']),
+      category: serializer.fromJson<String>(json['category']),
+      eanCode: serializer.fromJson<String?>(json['eanCode']),
+      defaultBoxCapacity: serializer.fromJson<int>(json['defaultBoxCapacity']),
+      defaultCoolingSeconds: serializer.fromJson<int>(
+        json['defaultCoolingSeconds'],
+      ),
+      isActive: serializer.fromJson<bool>(json['isActive']),
     );
   }
   @override
@@ -2096,6 +2253,11 @@ class Product extends DataClass implements Insertable<Product> {
       ),
       'name': serializer.toJson<String>(name),
       'unitWeightGrams': serializer.toJson<double>(unitWeightGrams),
+      'category': serializer.toJson<String>(category),
+      'eanCode': serializer.toJson<String?>(eanCode),
+      'defaultBoxCapacity': serializer.toJson<int>(defaultBoxCapacity),
+      'defaultCoolingSeconds': serializer.toJson<int>(defaultCoolingSeconds),
+      'isActive': serializer.toJson<bool>(isActive),
     };
   }
 
@@ -2104,11 +2266,21 @@ class Product extends DataClass implements Insertable<Product> {
     SyncStatusEnum? syncStatus,
     String? name,
     double? unitWeightGrams,
+    String? category,
+    Value<String?> eanCode = const Value.absent(),
+    int? defaultBoxCapacity,
+    int? defaultCoolingSeconds,
+    bool? isActive,
   }) => Product(
     id: id ?? this.id,
     syncStatus: syncStatus ?? this.syncStatus,
     name: name ?? this.name,
     unitWeightGrams: unitWeightGrams ?? this.unitWeightGrams,
+    category: category ?? this.category,
+    eanCode: eanCode.present ? eanCode.value : this.eanCode,
+    defaultBoxCapacity: defaultBoxCapacity ?? this.defaultBoxCapacity,
+    defaultCoolingSeconds: defaultCoolingSeconds ?? this.defaultCoolingSeconds,
+    isActive: isActive ?? this.isActive,
   );
   Product copyWithCompanion(ProductsTableCompanion data) {
     return Product(
@@ -2120,6 +2292,15 @@ class Product extends DataClass implements Insertable<Product> {
       unitWeightGrams: data.unitWeightGrams.present
           ? data.unitWeightGrams.value
           : this.unitWeightGrams,
+      category: data.category.present ? data.category.value : this.category,
+      eanCode: data.eanCode.present ? data.eanCode.value : this.eanCode,
+      defaultBoxCapacity: data.defaultBoxCapacity.present
+          ? data.defaultBoxCapacity.value
+          : this.defaultBoxCapacity,
+      defaultCoolingSeconds: data.defaultCoolingSeconds.present
+          ? data.defaultCoolingSeconds.value
+          : this.defaultCoolingSeconds,
+      isActive: data.isActive.present ? data.isActive.value : this.isActive,
     );
   }
 
@@ -2129,13 +2310,28 @@ class Product extends DataClass implements Insertable<Product> {
           ..write('id: $id, ')
           ..write('syncStatus: $syncStatus, ')
           ..write('name: $name, ')
-          ..write('unitWeightGrams: $unitWeightGrams')
+          ..write('unitWeightGrams: $unitWeightGrams, ')
+          ..write('category: $category, ')
+          ..write('eanCode: $eanCode, ')
+          ..write('defaultBoxCapacity: $defaultBoxCapacity, ')
+          ..write('defaultCoolingSeconds: $defaultCoolingSeconds, ')
+          ..write('isActive: $isActive')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, syncStatus, name, unitWeightGrams);
+  int get hashCode => Object.hash(
+    id,
+    syncStatus,
+    name,
+    unitWeightGrams,
+    category,
+    eanCode,
+    defaultBoxCapacity,
+    defaultCoolingSeconds,
+    isActive,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2143,7 +2339,12 @@ class Product extends DataClass implements Insertable<Product> {
           other.id == this.id &&
           other.syncStatus == this.syncStatus &&
           other.name == this.name &&
-          other.unitWeightGrams == this.unitWeightGrams);
+          other.unitWeightGrams == this.unitWeightGrams &&
+          other.category == this.category &&
+          other.eanCode == this.eanCode &&
+          other.defaultBoxCapacity == this.defaultBoxCapacity &&
+          other.defaultCoolingSeconds == this.defaultCoolingSeconds &&
+          other.isActive == this.isActive);
 }
 
 class ProductsTableCompanion extends UpdateCompanion<Product> {
@@ -2151,12 +2352,22 @@ class ProductsTableCompanion extends UpdateCompanion<Product> {
   final Value<SyncStatusEnum> syncStatus;
   final Value<String> name;
   final Value<double> unitWeightGrams;
+  final Value<String> category;
+  final Value<String?> eanCode;
+  final Value<int> defaultBoxCapacity;
+  final Value<int> defaultCoolingSeconds;
+  final Value<bool> isActive;
   final Value<int> rowid;
   const ProductsTableCompanion({
     this.id = const Value.absent(),
     this.syncStatus = const Value.absent(),
     this.name = const Value.absent(),
     this.unitWeightGrams = const Value.absent(),
+    this.category = const Value.absent(),
+    this.eanCode = const Value.absent(),
+    this.defaultBoxCapacity = const Value.absent(),
+    this.defaultCoolingSeconds = const Value.absent(),
+    this.isActive = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ProductsTableCompanion.insert({
@@ -2164,6 +2375,11 @@ class ProductsTableCompanion extends UpdateCompanion<Product> {
     this.syncStatus = const Value.absent(),
     required String name,
     required double unitWeightGrams,
+    this.category = const Value.absent(),
+    this.eanCode = const Value.absent(),
+    this.defaultBoxCapacity = const Value.absent(),
+    this.defaultCoolingSeconds = const Value.absent(),
+    this.isActive = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        name = Value(name),
@@ -2173,6 +2389,11 @@ class ProductsTableCompanion extends UpdateCompanion<Product> {
     Expression<int>? syncStatus,
     Expression<String>? name,
     Expression<double>? unitWeightGrams,
+    Expression<String>? category,
+    Expression<String>? eanCode,
+    Expression<int>? defaultBoxCapacity,
+    Expression<int>? defaultCoolingSeconds,
+    Expression<bool>? isActive,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2180,6 +2401,13 @@ class ProductsTableCompanion extends UpdateCompanion<Product> {
       if (syncStatus != null) 'sync_status': syncStatus,
       if (name != null) 'name': name,
       if (unitWeightGrams != null) 'unit_weight_grams': unitWeightGrams,
+      if (category != null) 'category': category,
+      if (eanCode != null) 'ean_code': eanCode,
+      if (defaultBoxCapacity != null)
+        'default_box_capacity': defaultBoxCapacity,
+      if (defaultCoolingSeconds != null)
+        'default_cooling_seconds': defaultCoolingSeconds,
+      if (isActive != null) 'is_active': isActive,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2189,6 +2417,11 @@ class ProductsTableCompanion extends UpdateCompanion<Product> {
     Value<SyncStatusEnum>? syncStatus,
     Value<String>? name,
     Value<double>? unitWeightGrams,
+    Value<String>? category,
+    Value<String?>? eanCode,
+    Value<int>? defaultBoxCapacity,
+    Value<int>? defaultCoolingSeconds,
+    Value<bool>? isActive,
     Value<int>? rowid,
   }) {
     return ProductsTableCompanion(
@@ -2196,6 +2429,12 @@ class ProductsTableCompanion extends UpdateCompanion<Product> {
       syncStatus: syncStatus ?? this.syncStatus,
       name: name ?? this.name,
       unitWeightGrams: unitWeightGrams ?? this.unitWeightGrams,
+      category: category ?? this.category,
+      eanCode: eanCode ?? this.eanCode,
+      defaultBoxCapacity: defaultBoxCapacity ?? this.defaultBoxCapacity,
+      defaultCoolingSeconds:
+          defaultCoolingSeconds ?? this.defaultCoolingSeconds,
+      isActive: isActive ?? this.isActive,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2217,6 +2456,23 @@ class ProductsTableCompanion extends UpdateCompanion<Product> {
     if (unitWeightGrams.present) {
       map['unit_weight_grams'] = Variable<double>(unitWeightGrams.value);
     }
+    if (category.present) {
+      map['category'] = Variable<String>(category.value);
+    }
+    if (eanCode.present) {
+      map['ean_code'] = Variable<String>(eanCode.value);
+    }
+    if (defaultBoxCapacity.present) {
+      map['default_box_capacity'] = Variable<int>(defaultBoxCapacity.value);
+    }
+    if (defaultCoolingSeconds.present) {
+      map['default_cooling_seconds'] = Variable<int>(
+        defaultCoolingSeconds.value,
+      );
+    }
+    if (isActive.present) {
+      map['is_active'] = Variable<bool>(isActive.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2230,6 +2486,11 @@ class ProductsTableCompanion extends UpdateCompanion<Product> {
           ..write('syncStatus: $syncStatus, ')
           ..write('name: $name, ')
           ..write('unitWeightGrams: $unitWeightGrams, ')
+          ..write('category: $category, ')
+          ..write('eanCode: $eanCode, ')
+          ..write('defaultBoxCapacity: $defaultBoxCapacity, ')
+          ..write('defaultCoolingSeconds: $defaultCoolingSeconds, ')
+          ..write('isActive: $isActive, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3729,6 +3990,76 @@ class $FreezersTableTable extends FreezersTable
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _equipmentIdMeta = const VerificationMeta(
+    'equipmentId',
+  );
+  @override
+  late final GeneratedColumn<String> equipmentId = GeneratedColumn<String>(
+    'equipment_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _equipmentNameMeta = const VerificationMeta(
+    'equipmentName',
+  );
+  @override
+  late final GeneratedColumn<String> equipmentName = GeneratedColumn<String>(
+    'equipment_name',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _targetTemperatureMeta = const VerificationMeta(
+    'targetTemperature',
+  );
+  @override
+  late final GeneratedColumn<double> targetTemperature =
+      GeneratedColumn<double>(
+        'target_temperature',
+        aliasedName,
+        false,
+        type: DriftSqlType.double,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(4.0),
+      );
+  static const VerificationMeta _defaultCoolingSecondsMeta =
+      const VerificationMeta('defaultCoolingSeconds');
+  @override
+  late final GeneratedColumn<int> defaultCoolingSeconds = GeneratedColumn<int>(
+    'default_cooling_seconds',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1200),
+  );
+  static const VerificationMeta _unloadMinSecondsMeta = const VerificationMeta(
+    'unloadMinSeconds',
+  );
+  @override
+  late final GeneratedColumn<int> unloadMinSeconds = GeneratedColumn<int>(
+    'unload_min_seconds',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(30),
+  );
+  static const VerificationMeta _reloadMinSecondsMeta = const VerificationMeta(
+    'reloadMinSeconds',
+  );
+  @override
+  late final GeneratedColumn<int> reloadMinSeconds = GeneratedColumn<int>(
+    'reload_min_seconds',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(60),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -3736,6 +4067,12 @@ class $FreezersTableTable extends FreezersTable
     idSensor,
     name,
     description,
+    equipmentId,
+    equipmentName,
+    targetTemperature,
+    defaultCoolingSeconds,
+    unloadMinSeconds,
+    reloadMinSeconds,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -3779,6 +4116,60 @@ class $FreezersTableTable extends FreezersTable
         ),
       );
     }
+    if (data.containsKey('equipment_id')) {
+      context.handle(
+        _equipmentIdMeta,
+        equipmentId.isAcceptableOrUnknown(
+          data['equipment_id']!,
+          _equipmentIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('equipment_name')) {
+      context.handle(
+        _equipmentNameMeta,
+        equipmentName.isAcceptableOrUnknown(
+          data['equipment_name']!,
+          _equipmentNameMeta,
+        ),
+      );
+    }
+    if (data.containsKey('target_temperature')) {
+      context.handle(
+        _targetTemperatureMeta,
+        targetTemperature.isAcceptableOrUnknown(
+          data['target_temperature']!,
+          _targetTemperatureMeta,
+        ),
+      );
+    }
+    if (data.containsKey('default_cooling_seconds')) {
+      context.handle(
+        _defaultCoolingSecondsMeta,
+        defaultCoolingSeconds.isAcceptableOrUnknown(
+          data['default_cooling_seconds']!,
+          _defaultCoolingSecondsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('unload_min_seconds')) {
+      context.handle(
+        _unloadMinSecondsMeta,
+        unloadMinSeconds.isAcceptableOrUnknown(
+          data['unload_min_seconds']!,
+          _unloadMinSecondsMeta,
+        ),
+      );
+    }
+    if (data.containsKey('reload_min_seconds')) {
+      context.handle(
+        _reloadMinSecondsMeta,
+        reloadMinSeconds.isAcceptableOrUnknown(
+          data['reload_min_seconds']!,
+          _reloadMinSecondsMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -3810,6 +4201,30 @@ class $FreezersTableTable extends FreezersTable
         DriftSqlType.string,
         data['${effectivePrefix}description'],
       ),
+      equipmentId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}equipment_id'],
+      ),
+      equipmentName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}equipment_name'],
+      ),
+      targetTemperature: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}target_temperature'],
+      )!,
+      defaultCoolingSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}default_cooling_seconds'],
+      )!,
+      unloadMinSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}unload_min_seconds'],
+      )!,
+      reloadMinSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}reload_min_seconds'],
+      )!,
     );
   }
 
@@ -3828,12 +4243,28 @@ class Freezer extends DataClass implements Insertable<Freezer> {
   final int idSensor;
   final String name;
   final String? description;
+
+  /// UUID do equipamento vinculado na tabela `public.cost_centers` do Supabase.
+  final String? equipmentId;
+
+  /// Nome do equipamento vinculado na tabela `public.cost_centers` do Supabase.
+  final String? equipmentName;
+  final double targetTemperature;
+  final int defaultCoolingSeconds;
+  final int unloadMinSeconds;
+  final int reloadMinSeconds;
   const Freezer({
     required this.id,
     required this.syncStatus,
     required this.idSensor,
     required this.name,
     this.description,
+    this.equipmentId,
+    this.equipmentName,
+    required this.targetTemperature,
+    required this.defaultCoolingSeconds,
+    required this.unloadMinSeconds,
+    required this.reloadMinSeconds,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -3849,6 +4280,16 @@ class Freezer extends DataClass implements Insertable<Freezer> {
     if (!nullToAbsent || description != null) {
       map['description'] = Variable<String>(description);
     }
+    if (!nullToAbsent || equipmentId != null) {
+      map['equipment_id'] = Variable<String>(equipmentId);
+    }
+    if (!nullToAbsent || equipmentName != null) {
+      map['equipment_name'] = Variable<String>(equipmentName);
+    }
+    map['target_temperature'] = Variable<double>(targetTemperature);
+    map['default_cooling_seconds'] = Variable<int>(defaultCoolingSeconds);
+    map['unload_min_seconds'] = Variable<int>(unloadMinSeconds);
+    map['reload_min_seconds'] = Variable<int>(reloadMinSeconds);
     return map;
   }
 
@@ -3861,6 +4302,16 @@ class Freezer extends DataClass implements Insertable<Freezer> {
       description: description == null && nullToAbsent
           ? const Value.absent()
           : Value(description),
+      equipmentId: equipmentId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(equipmentId),
+      equipmentName: equipmentName == null && nullToAbsent
+          ? const Value.absent()
+          : Value(equipmentName),
+      targetTemperature: Value(targetTemperature),
+      defaultCoolingSeconds: Value(defaultCoolingSeconds),
+      unloadMinSeconds: Value(unloadMinSeconds),
+      reloadMinSeconds: Value(reloadMinSeconds),
     );
   }
 
@@ -3877,6 +4328,14 @@ class Freezer extends DataClass implements Insertable<Freezer> {
       idSensor: serializer.fromJson<int>(json['idSensor']),
       name: serializer.fromJson<String>(json['name']),
       description: serializer.fromJson<String?>(json['description']),
+      equipmentId: serializer.fromJson<String?>(json['equipmentId']),
+      equipmentName: serializer.fromJson<String?>(json['equipmentName']),
+      targetTemperature: serializer.fromJson<double>(json['targetTemperature']),
+      defaultCoolingSeconds: serializer.fromJson<int>(
+        json['defaultCoolingSeconds'],
+      ),
+      unloadMinSeconds: serializer.fromJson<int>(json['unloadMinSeconds']),
+      reloadMinSeconds: serializer.fromJson<int>(json['reloadMinSeconds']),
     );
   }
   @override
@@ -3890,6 +4349,12 @@ class Freezer extends DataClass implements Insertable<Freezer> {
       'idSensor': serializer.toJson<int>(idSensor),
       'name': serializer.toJson<String>(name),
       'description': serializer.toJson<String?>(description),
+      'equipmentId': serializer.toJson<String?>(equipmentId),
+      'equipmentName': serializer.toJson<String?>(equipmentName),
+      'targetTemperature': serializer.toJson<double>(targetTemperature),
+      'defaultCoolingSeconds': serializer.toJson<int>(defaultCoolingSeconds),
+      'unloadMinSeconds': serializer.toJson<int>(unloadMinSeconds),
+      'reloadMinSeconds': serializer.toJson<int>(reloadMinSeconds),
     };
   }
 
@@ -3899,12 +4364,26 @@ class Freezer extends DataClass implements Insertable<Freezer> {
     int? idSensor,
     String? name,
     Value<String?> description = const Value.absent(),
+    Value<String?> equipmentId = const Value.absent(),
+    Value<String?> equipmentName = const Value.absent(),
+    double? targetTemperature,
+    int? defaultCoolingSeconds,
+    int? unloadMinSeconds,
+    int? reloadMinSeconds,
   }) => Freezer(
     id: id ?? this.id,
     syncStatus: syncStatus ?? this.syncStatus,
     idSensor: idSensor ?? this.idSensor,
     name: name ?? this.name,
     description: description.present ? description.value : this.description,
+    equipmentId: equipmentId.present ? equipmentId.value : this.equipmentId,
+    equipmentName: equipmentName.present
+        ? equipmentName.value
+        : this.equipmentName,
+    targetTemperature: targetTemperature ?? this.targetTemperature,
+    defaultCoolingSeconds: defaultCoolingSeconds ?? this.defaultCoolingSeconds,
+    unloadMinSeconds: unloadMinSeconds ?? this.unloadMinSeconds,
+    reloadMinSeconds: reloadMinSeconds ?? this.reloadMinSeconds,
   );
   Freezer copyWithCompanion(FreezersTableCompanion data) {
     return Freezer(
@@ -3917,6 +4396,24 @@ class Freezer extends DataClass implements Insertable<Freezer> {
       description: data.description.present
           ? data.description.value
           : this.description,
+      equipmentId: data.equipmentId.present
+          ? data.equipmentId.value
+          : this.equipmentId,
+      equipmentName: data.equipmentName.present
+          ? data.equipmentName.value
+          : this.equipmentName,
+      targetTemperature: data.targetTemperature.present
+          ? data.targetTemperature.value
+          : this.targetTemperature,
+      defaultCoolingSeconds: data.defaultCoolingSeconds.present
+          ? data.defaultCoolingSeconds.value
+          : this.defaultCoolingSeconds,
+      unloadMinSeconds: data.unloadMinSeconds.present
+          ? data.unloadMinSeconds.value
+          : this.unloadMinSeconds,
+      reloadMinSeconds: data.reloadMinSeconds.present
+          ? data.reloadMinSeconds.value
+          : this.reloadMinSeconds,
     );
   }
 
@@ -3927,13 +4424,31 @@ class Freezer extends DataClass implements Insertable<Freezer> {
           ..write('syncStatus: $syncStatus, ')
           ..write('idSensor: $idSensor, ')
           ..write('name: $name, ')
-          ..write('description: $description')
+          ..write('description: $description, ')
+          ..write('equipmentId: $equipmentId, ')
+          ..write('equipmentName: $equipmentName, ')
+          ..write('targetTemperature: $targetTemperature, ')
+          ..write('defaultCoolingSeconds: $defaultCoolingSeconds, ')
+          ..write('unloadMinSeconds: $unloadMinSeconds, ')
+          ..write('reloadMinSeconds: $reloadMinSeconds')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, syncStatus, idSensor, name, description);
+  int get hashCode => Object.hash(
+    id,
+    syncStatus,
+    idSensor,
+    name,
+    description,
+    equipmentId,
+    equipmentName,
+    targetTemperature,
+    defaultCoolingSeconds,
+    unloadMinSeconds,
+    reloadMinSeconds,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -3942,7 +4457,13 @@ class Freezer extends DataClass implements Insertable<Freezer> {
           other.syncStatus == this.syncStatus &&
           other.idSensor == this.idSensor &&
           other.name == this.name &&
-          other.description == this.description);
+          other.description == this.description &&
+          other.equipmentId == this.equipmentId &&
+          other.equipmentName == this.equipmentName &&
+          other.targetTemperature == this.targetTemperature &&
+          other.defaultCoolingSeconds == this.defaultCoolingSeconds &&
+          other.unloadMinSeconds == this.unloadMinSeconds &&
+          other.reloadMinSeconds == this.reloadMinSeconds);
 }
 
 class FreezersTableCompanion extends UpdateCompanion<Freezer> {
@@ -3951,6 +4472,12 @@ class FreezersTableCompanion extends UpdateCompanion<Freezer> {
   final Value<int> idSensor;
   final Value<String> name;
   final Value<String?> description;
+  final Value<String?> equipmentId;
+  final Value<String?> equipmentName;
+  final Value<double> targetTemperature;
+  final Value<int> defaultCoolingSeconds;
+  final Value<int> unloadMinSeconds;
+  final Value<int> reloadMinSeconds;
   final Value<int> rowid;
   const FreezersTableCompanion({
     this.id = const Value.absent(),
@@ -3958,6 +4485,12 @@ class FreezersTableCompanion extends UpdateCompanion<Freezer> {
     this.idSensor = const Value.absent(),
     this.name = const Value.absent(),
     this.description = const Value.absent(),
+    this.equipmentId = const Value.absent(),
+    this.equipmentName = const Value.absent(),
+    this.targetTemperature = const Value.absent(),
+    this.defaultCoolingSeconds = const Value.absent(),
+    this.unloadMinSeconds = const Value.absent(),
+    this.reloadMinSeconds = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   FreezersTableCompanion.insert({
@@ -3966,6 +4499,12 @@ class FreezersTableCompanion extends UpdateCompanion<Freezer> {
     required int idSensor,
     required String name,
     this.description = const Value.absent(),
+    this.equipmentId = const Value.absent(),
+    this.equipmentName = const Value.absent(),
+    this.targetTemperature = const Value.absent(),
+    this.defaultCoolingSeconds = const Value.absent(),
+    this.unloadMinSeconds = const Value.absent(),
+    this.reloadMinSeconds = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        idSensor = Value(idSensor),
@@ -3976,6 +4515,12 @@ class FreezersTableCompanion extends UpdateCompanion<Freezer> {
     Expression<int>? idSensor,
     Expression<String>? name,
     Expression<String>? description,
+    Expression<String>? equipmentId,
+    Expression<String>? equipmentName,
+    Expression<double>? targetTemperature,
+    Expression<int>? defaultCoolingSeconds,
+    Expression<int>? unloadMinSeconds,
+    Expression<int>? reloadMinSeconds,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -3984,6 +4529,13 @@ class FreezersTableCompanion extends UpdateCompanion<Freezer> {
       if (idSensor != null) 'id_sensor': idSensor,
       if (name != null) 'name': name,
       if (description != null) 'description': description,
+      if (equipmentId != null) 'equipment_id': equipmentId,
+      if (equipmentName != null) 'equipment_name': equipmentName,
+      if (targetTemperature != null) 'target_temperature': targetTemperature,
+      if (defaultCoolingSeconds != null)
+        'default_cooling_seconds': defaultCoolingSeconds,
+      if (unloadMinSeconds != null) 'unload_min_seconds': unloadMinSeconds,
+      if (reloadMinSeconds != null) 'reload_min_seconds': reloadMinSeconds,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -3994,6 +4546,12 @@ class FreezersTableCompanion extends UpdateCompanion<Freezer> {
     Value<int>? idSensor,
     Value<String>? name,
     Value<String?>? description,
+    Value<String?>? equipmentId,
+    Value<String?>? equipmentName,
+    Value<double>? targetTemperature,
+    Value<int>? defaultCoolingSeconds,
+    Value<int>? unloadMinSeconds,
+    Value<int>? reloadMinSeconds,
     Value<int>? rowid,
   }) {
     return FreezersTableCompanion(
@@ -4002,6 +4560,13 @@ class FreezersTableCompanion extends UpdateCompanion<Freezer> {
       idSensor: idSensor ?? this.idSensor,
       name: name ?? this.name,
       description: description ?? this.description,
+      equipmentId: equipmentId ?? this.equipmentId,
+      equipmentName: equipmentName ?? this.equipmentName,
+      targetTemperature: targetTemperature ?? this.targetTemperature,
+      defaultCoolingSeconds:
+          defaultCoolingSeconds ?? this.defaultCoolingSeconds,
+      unloadMinSeconds: unloadMinSeconds ?? this.unloadMinSeconds,
+      reloadMinSeconds: reloadMinSeconds ?? this.reloadMinSeconds,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -4026,6 +4591,26 @@ class FreezersTableCompanion extends UpdateCompanion<Freezer> {
     if (description.present) {
       map['description'] = Variable<String>(description.value);
     }
+    if (equipmentId.present) {
+      map['equipment_id'] = Variable<String>(equipmentId.value);
+    }
+    if (equipmentName.present) {
+      map['equipment_name'] = Variable<String>(equipmentName.value);
+    }
+    if (targetTemperature.present) {
+      map['target_temperature'] = Variable<double>(targetTemperature.value);
+    }
+    if (defaultCoolingSeconds.present) {
+      map['default_cooling_seconds'] = Variable<int>(
+        defaultCoolingSeconds.value,
+      );
+    }
+    if (unloadMinSeconds.present) {
+      map['unload_min_seconds'] = Variable<int>(unloadMinSeconds.value);
+    }
+    if (reloadMinSeconds.present) {
+      map['reload_min_seconds'] = Variable<int>(reloadMinSeconds.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -4040,6 +4625,12 @@ class FreezersTableCompanion extends UpdateCompanion<Freezer> {
           ..write('idSensor: $idSensor, ')
           ..write('name: $name, ')
           ..write('description: $description, ')
+          ..write('equipmentId: $equipmentId, ')
+          ..write('equipmentName: $equipmentName, ')
+          ..write('targetTemperature: $targetTemperature, ')
+          ..write('defaultCoolingSeconds: $defaultCoolingSeconds, ')
+          ..write('unloadMinSeconds: $unloadMinSeconds, ')
+          ..write('reloadMinSeconds: $reloadMinSeconds, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -5557,6 +6148,11 @@ typedef $$ProductsTableTableCreateCompanionBuilder =
       Value<SyncStatusEnum> syncStatus,
       required String name,
       required double unitWeightGrams,
+      Value<String> category,
+      Value<String?> eanCode,
+      Value<int> defaultBoxCapacity,
+      Value<int> defaultCoolingSeconds,
+      Value<bool> isActive,
       Value<int> rowid,
     });
 typedef $$ProductsTableTableUpdateCompanionBuilder =
@@ -5565,6 +6161,11 @@ typedef $$ProductsTableTableUpdateCompanionBuilder =
       Value<SyncStatusEnum> syncStatus,
       Value<String> name,
       Value<double> unitWeightGrams,
+      Value<String> category,
+      Value<String?> eanCode,
+      Value<int> defaultBoxCapacity,
+      Value<int> defaultCoolingSeconds,
+      Value<bool> isActive,
       Value<int> rowid,
     });
 
@@ -5597,6 +6198,31 @@ class $$ProductsTableTableFilterComposer
     column: $table.unitWeightGrams,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<String> get category => $composableBuilder(
+    column: $table.category,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get eanCode => $composableBuilder(
+    column: $table.eanCode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get defaultBoxCapacity => $composableBuilder(
+    column: $table.defaultBoxCapacity,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get defaultCoolingSeconds => $composableBuilder(
+    column: $table.defaultCoolingSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isActive => $composableBuilder(
+    column: $table.isActive,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$ProductsTableTableOrderingComposer
@@ -5627,6 +6253,31 @@ class $$ProductsTableTableOrderingComposer
     column: $table.unitWeightGrams,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get category => $composableBuilder(
+    column: $table.category,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get eanCode => $composableBuilder(
+    column: $table.eanCode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get defaultBoxCapacity => $composableBuilder(
+    column: $table.defaultBoxCapacity,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get defaultCoolingSeconds => $composableBuilder(
+    column: $table.defaultCoolingSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isActive => $composableBuilder(
+    column: $table.isActive,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ProductsTableTableAnnotationComposer
@@ -5654,6 +6305,25 @@ class $$ProductsTableTableAnnotationComposer
     column: $table.unitWeightGrams,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get category =>
+      $composableBuilder(column: $table.category, builder: (column) => column);
+
+  GeneratedColumn<String> get eanCode =>
+      $composableBuilder(column: $table.eanCode, builder: (column) => column);
+
+  GeneratedColumn<int> get defaultBoxCapacity => $composableBuilder(
+    column: $table.defaultBoxCapacity,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get defaultCoolingSeconds => $composableBuilder(
+    column: $table.defaultCoolingSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isActive =>
+      $composableBuilder(column: $table.isActive, builder: (column) => column);
 }
 
 class $$ProductsTableTableTableManager
@@ -5691,12 +6361,22 @@ class $$ProductsTableTableTableManager
                 Value<SyncStatusEnum> syncStatus = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<double> unitWeightGrams = const Value.absent(),
+                Value<String> category = const Value.absent(),
+                Value<String?> eanCode = const Value.absent(),
+                Value<int> defaultBoxCapacity = const Value.absent(),
+                Value<int> defaultCoolingSeconds = const Value.absent(),
+                Value<bool> isActive = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ProductsTableCompanion(
                 id: id,
                 syncStatus: syncStatus,
                 name: name,
                 unitWeightGrams: unitWeightGrams,
+                category: category,
+                eanCode: eanCode,
+                defaultBoxCapacity: defaultBoxCapacity,
+                defaultCoolingSeconds: defaultCoolingSeconds,
+                isActive: isActive,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -5705,12 +6385,22 @@ class $$ProductsTableTableTableManager
                 Value<SyncStatusEnum> syncStatus = const Value.absent(),
                 required String name,
                 required double unitWeightGrams,
+                Value<String> category = const Value.absent(),
+                Value<String?> eanCode = const Value.absent(),
+                Value<int> defaultBoxCapacity = const Value.absent(),
+                Value<int> defaultCoolingSeconds = const Value.absent(),
+                Value<bool> isActive = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ProductsTableCompanion.insert(
                 id: id,
                 syncStatus: syncStatus,
                 name: name,
                 unitWeightGrams: unitWeightGrams,
+                category: category,
+                eanCode: eanCode,
+                defaultBoxCapacity: defaultBoxCapacity,
+                defaultCoolingSeconds: defaultCoolingSeconds,
+                isActive: isActive,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -6428,6 +7118,12 @@ typedef $$FreezersTableTableCreateCompanionBuilder =
       required int idSensor,
       required String name,
       Value<String?> description,
+      Value<String?> equipmentId,
+      Value<String?> equipmentName,
+      Value<double> targetTemperature,
+      Value<int> defaultCoolingSeconds,
+      Value<int> unloadMinSeconds,
+      Value<int> reloadMinSeconds,
       Value<int> rowid,
     });
 typedef $$FreezersTableTableUpdateCompanionBuilder =
@@ -6437,6 +7133,12 @@ typedef $$FreezersTableTableUpdateCompanionBuilder =
       Value<int> idSensor,
       Value<String> name,
       Value<String?> description,
+      Value<String?> equipmentId,
+      Value<String?> equipmentName,
+      Value<double> targetTemperature,
+      Value<int> defaultCoolingSeconds,
+      Value<int> unloadMinSeconds,
+      Value<int> reloadMinSeconds,
       Value<int> rowid,
     });
 
@@ -6474,6 +7176,36 @@ class $$FreezersTableTableFilterComposer
     column: $table.description,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<String> get equipmentId => $composableBuilder(
+    column: $table.equipmentId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get equipmentName => $composableBuilder(
+    column: $table.equipmentName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get targetTemperature => $composableBuilder(
+    column: $table.targetTemperature,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get defaultCoolingSeconds => $composableBuilder(
+    column: $table.defaultCoolingSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get unloadMinSeconds => $composableBuilder(
+    column: $table.unloadMinSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get reloadMinSeconds => $composableBuilder(
+    column: $table.reloadMinSeconds,
+    builder: (column) => ColumnFilters(column),
+  );
 }
 
 class $$FreezersTableTableOrderingComposer
@@ -6509,6 +7241,36 @@ class $$FreezersTableTableOrderingComposer
     column: $table.description,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get equipmentId => $composableBuilder(
+    column: $table.equipmentId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get equipmentName => $composableBuilder(
+    column: $table.equipmentName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get targetTemperature => $composableBuilder(
+    column: $table.targetTemperature,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get defaultCoolingSeconds => $composableBuilder(
+    column: $table.defaultCoolingSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get unloadMinSeconds => $composableBuilder(
+    column: $table.unloadMinSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get reloadMinSeconds => $composableBuilder(
+    column: $table.reloadMinSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$FreezersTableTableAnnotationComposer
@@ -6537,6 +7299,36 @@ class $$FreezersTableTableAnnotationComposer
 
   GeneratedColumn<String> get description => $composableBuilder(
     column: $table.description,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get equipmentId => $composableBuilder(
+    column: $table.equipmentId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get equipmentName => $composableBuilder(
+    column: $table.equipmentName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get targetTemperature => $composableBuilder(
+    column: $table.targetTemperature,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get defaultCoolingSeconds => $composableBuilder(
+    column: $table.defaultCoolingSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get unloadMinSeconds => $composableBuilder(
+    column: $table.unloadMinSeconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get reloadMinSeconds => $composableBuilder(
+    column: $table.reloadMinSeconds,
     builder: (column) => column,
   );
 }
@@ -6577,6 +7369,12 @@ class $$FreezersTableTableTableManager
                 Value<int> idSensor = const Value.absent(),
                 Value<String> name = const Value.absent(),
                 Value<String?> description = const Value.absent(),
+                Value<String?> equipmentId = const Value.absent(),
+                Value<String?> equipmentName = const Value.absent(),
+                Value<double> targetTemperature = const Value.absent(),
+                Value<int> defaultCoolingSeconds = const Value.absent(),
+                Value<int> unloadMinSeconds = const Value.absent(),
+                Value<int> reloadMinSeconds = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FreezersTableCompanion(
                 id: id,
@@ -6584,6 +7382,12 @@ class $$FreezersTableTableTableManager
                 idSensor: idSensor,
                 name: name,
                 description: description,
+                equipmentId: equipmentId,
+                equipmentName: equipmentName,
+                targetTemperature: targetTemperature,
+                defaultCoolingSeconds: defaultCoolingSeconds,
+                unloadMinSeconds: unloadMinSeconds,
+                reloadMinSeconds: reloadMinSeconds,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -6593,6 +7397,12 @@ class $$FreezersTableTableTableManager
                 required int idSensor,
                 required String name,
                 Value<String?> description = const Value.absent(),
+                Value<String?> equipmentId = const Value.absent(),
+                Value<String?> equipmentName = const Value.absent(),
+                Value<double> targetTemperature = const Value.absent(),
+                Value<int> defaultCoolingSeconds = const Value.absent(),
+                Value<int> unloadMinSeconds = const Value.absent(),
+                Value<int> reloadMinSeconds = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => FreezersTableCompanion.insert(
                 id: id,
@@ -6600,6 +7410,12 @@ class $$FreezersTableTableTableManager
                 idSensor: idSensor,
                 name: name,
                 description: description,
+                equipmentId: equipmentId,
+                equipmentName: equipmentName,
+                targetTemperature: targetTemperature,
+                defaultCoolingSeconds: defaultCoolingSeconds,
+                unloadMinSeconds: unloadMinSeconds,
+                reloadMinSeconds: reloadMinSeconds,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

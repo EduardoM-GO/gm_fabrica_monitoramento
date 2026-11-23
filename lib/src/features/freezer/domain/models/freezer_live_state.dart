@@ -5,7 +5,10 @@ import 'freezer_status_enum.dart';
 
 final class FreezerLiveState {
   final String freezerId;
+  final int sensorIndex;
   final String name;
+  final String? equipmentId;
+  final String? equipmentName;
   final double currentTemp;
   final bool isDoorOpen;
   final bool isSensorOk;
@@ -38,7 +41,10 @@ final class FreezerLiveState {
 
   const FreezerLiveState({
     required this.freezerId,
+    int? sensorIndex,
     required this.name,
+    this.equipmentId,
+    this.equipmentName,
     required this.currentTemp,
     required this.isDoorOpen,
     required this.isSensorOk,
@@ -63,11 +69,26 @@ final class FreezerLiveState {
     this.calibratedBaseSeconds = 1200,
     this.unloadMinSeconds = 30,
     this.reloadMinSeconds = 60,
-  }) : elapsedSeconds =
+  }) : sensorIndex =
+           sensorIndex ?? (freezerId == 'f2' ? 2 : 1),
+       elapsedSeconds =
            elapsedSeconds ??
            (status == FreezerStatusEnum.idle
                ? 0
                : (expectedDurationSeconds - remainingSeconds));
+
+  /// Indica se este sensor do ESP32 está vinculado a um equipamento real do Supabase (`cost_centers`).
+  bool get hasLinkedEquipment =>
+      equipmentId != null && equipmentId!.trim().isNotEmpty;
+
+  /// Rótulo do cabeçalho exibindo o equipamento vinculado ou o identificador do sensor.
+  String get displayHeaderName {
+    final eq = equipmentName?.trim();
+    if (eq != null && eq.isNotEmpty) {
+      return '$eq • S$sensorIndex';
+    }
+    return name;
+  }
 
   /// Segundos corridos a mais do que o planejado (tempo extra necessário para finalizar os ovos).
   int get overtimeSeconds {
@@ -159,7 +180,11 @@ final class FreezerLiveState {
 
   FreezerLiveState copyWith({
     String? freezerId,
+    int? sensorIndex,
     String? name,
+    String? equipmentId,
+    bool clearEquipment = false,
+    String? equipmentName,
     double? currentTemp,
     bool? isDoorOpen,
     bool? isSensorOk,
@@ -202,7 +227,12 @@ final class FreezerLiveState {
 
     return FreezerLiveState(
       freezerId: freezerId ?? this.freezerId,
+      sensorIndex: sensorIndex ?? this.sensorIndex,
       name: name ?? this.name,
+      equipmentId: clearEquipment ? null : (equipmentId ?? this.equipmentId),
+      equipmentName: clearEquipment
+          ? null
+          : (equipmentName ?? this.equipmentName),
       currentTemp: currentTemp ?? this.currentTemp,
       isDoorOpen: isDoorOpen ?? this.isDoorOpen,
       isSensorOk: isSensorOk ?? this.isSensorOk,
@@ -241,5 +271,5 @@ final class FreezerLiveState {
 
   @override
   String toString() =>
-      'FreezerLiveState(name: $name, status: $status, currentTemp: $currentTemp, isDoorOpen: $isDoorOpen, isSensorOk: $isSensorOk, baselineTemp: $baselineTemp, peakTemp: $peakTemp, lastDoorOpenTemp: $lastDoorOpenTemp, lastDoorCloseTemp: $lastDoorCloseTemp, expectedDurationSeconds: $expectedDurationSeconds, remainingSeconds: $remainingSeconds, accumulatedPenaltySeconds: $accumulatedPenaltySeconds, accumulatedDoorOpenSeconds: $accumulatedDoorOpenSeconds, doorOpenCount: $doorOpenCount, feedbackCountdownSeconds: $feedbackCountdownSeconds, lastFeedback: $lastFeedback, activeCycleId: $activeCycleId, temperatureHistory: $temperatureHistory, isCalibrated: $isCalibrated, calibratedBaseSeconds: $calibratedBaseSeconds)';
+      'FreezerLiveState(name: $name, equipmentId: $equipmentId, equipmentName: $equipmentName, status: $status, currentTemp: $currentTemp, isDoorOpen: $isDoorOpen, isSensorOk: $isSensorOk, baselineTemp: $baselineTemp, peakTemp: $peakTemp, lastDoorOpenTemp: $lastDoorOpenTemp, lastDoorCloseTemp: $lastDoorCloseTemp, expectedDurationSeconds: $expectedDurationSeconds, remainingSeconds: $remainingSeconds, accumulatedPenaltySeconds: $accumulatedPenaltySeconds, accumulatedDoorOpenSeconds: $accumulatedDoorOpenSeconds, doorOpenCount: $doorOpenCount, feedbackCountdownSeconds: $feedbackCountdownSeconds, lastFeedback: $lastFeedback, activeCycleId: $activeCycleId, temperatureHistory: $temperatureHistory, isCalibrated: $isCalibrated, calibratedBaseSeconds: $calibratedBaseSeconds)';
 }
