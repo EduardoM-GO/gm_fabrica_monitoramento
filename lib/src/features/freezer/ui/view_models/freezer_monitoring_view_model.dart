@@ -219,6 +219,8 @@ final class FreezerItemSignals {
 final class FreezerMonitoringViewModel {
   final FreezerRepository _repository;
   final AudioService? _audioService;
+  final Duration readyChimeInterval;
+  static const int maxReadyChimes = 3;
 
   // --- Signals Reativos ---
   late final Signal<Map<String, FreezerLiveState>> freezers;
@@ -232,6 +234,9 @@ final class FreezerMonitoringViewModel {
   /// Micro-states dedicados por freezer (`f1`, `f2`) para atualização cirúrgica por campo
   final Map<String, FreezerItemSignals> _itemSignals = {};
 
+  /// Timers dos 3 toques de "Lote Pronto" por freezer (`f1`, `f2`), cancelados se abrir a porta ou confirmar
+  final Map<String, Timer> _readyChimeTimers = {};
+
   StreamSubscription? _freezersSub;
   StreamSubscription? _equipmentsSub;
   StreamSubscription? _equipmentsLoadingSub;
@@ -243,6 +248,7 @@ final class FreezerMonitoringViewModel {
   FreezerMonitoringViewModel(
     this._repository, {
     this._audioService,
+    this.readyChimeInterval = const Duration(seconds: 2),
   }) {
     _initSignals();
     _bindRepositoryStreams();
@@ -296,6 +302,10 @@ final class FreezerMonitoringViewModel {
           } else {
             _itemSignals[entry.key] = FreezerItemSignals(entry.value);
           }
+          if (entry.value.isDoorOpen ||
+              entry.value.status != FreezerStatusEnum.ready) {
+            _cancelReadyChimeSequence(entry.key);
+          }
         }
         final nextAlarm = _computeDoorAlarm(data);
         if (hasDoorAlarm.value != nextAlarm) {
@@ -315,15 +325,17 @@ final class FreezerMonitoringViewModel {
     });
 
     _startedSub = _repository.cycleStartedStream.listen((freezerId) {
+      _cancelReadyChimeSequence(freezerId);
       _audioService?.playFreezerStarted(freezerId: freezerId);
     });
 
     _readySub = _repository.cycleReadyStream.listen((freezerId) {
-      _audioService?.playFreezerReady(freezerId: freezerId);
+      _startReadyChimeSequence(freezerId);
     });
 
     _doorToggleSub = _repository.doorToggleStream.listen((event) {
       if (event.isOpen) {
+        _cancelReadyChimeSequence(event.freezerId);
         _audioService?.playDoorOpened();
       } else {
         _audioService?.playDoorClosed();
@@ -333,6 +345,34 @@ final class FreezerMonitoringViewModel {
     _alarmSub = _repository.doorAlarmStream.listen((freezerId) {
       _audioService?.playDoorAlarm();
     });
+  }
+
+  /// Toca o alerta de lote pronto até 3 vezes (0s, 2s e 4s), interrompendo
+  /// imediatamente caso a porta seja aberta ou o lote seja finalizado/reiniciado.
+  void _startReadyChimeSequence(String freezerId) {
+    _cancelReadyChimeSequence(freezerId);
+    _audioService?.playFreezerReady(freezerId: freezerId);
+
+    var chimesPlayed = 1;
+    _readyChimeTimers[freezerId] = Timer.periodic(readyChimeInterval, (timer) {
+      final current = freezers.value[freezerId];
+      if (current == null ||
+          current.isDoorOpen ||
+          current.status != FreezerStatusEnum.ready) {
+        _cancelReadyChimeSequence(freezerId);
+        return;
+      }
+
+      _audioService?.playFreezerReady(freezerId: freezerId);
+      chimesPlayed++;
+      if (chimesPlayed >= maxReadyChimes) {
+        _cancelReadyChimeSequence(freezerId);
+      }
+    });
+  }
+
+  void _cancelReadyChimeSequence(String freezerId) {
+    _readyChimeTimers.remove(freezerId)?.cancel();
   }
 
   /// Sincroniza sob demanda a lista de equipamentos (`cost_centers`) e vínculos do Supabase
@@ -356,26 +396,31 @@ final class FreezerMonitoringViewModel {
     String freezerId,
     FreezerFeedbackEnum feedback,
   ) async {
+    _cancelReadyChimeSequence(freezerId);
     await _repository.recordFeedback(freezerId, feedback);
   }
 
   /// Inicia manualmente um ciclo para o freezer especificado
   Future<void> startManualCycle(String freezerId) async {
+    _cancelReadyChimeSequence(freezerId);
     await _repository.startManualCycle(freezerId);
   }
 
   /// Cancela o ciclo em andamento
   void cancelCycle(String freezerId) {
+    _cancelReadyChimeSequence(freezerId);
     _repository.cancelCycle(freezerId);
   }
 
   /// Reinicia manualmente a contagem do ciclo (caso o sensor de porta falhe)
   Future<void> restartCycle(String freezerId) async {
+    _cancelReadyChimeSequence(freezerId);
     await _repository.restartCycle(freezerId);
   }
 
   /// Marca que os ovos já estão prontos, encerrando o ciclo atual e calibrando o próximo ciclo com o tempo real corrido
   Future<void> markBatchReadyAndCalibrate(String freezerId) async {
+    _cancelReadyChimeSequence(freezerId);
     await _repository.markBatchReadyAndCalibrate(freezerId);
   }
 
@@ -412,6 +457,10 @@ final class FreezerMonitoringViewModel {
   }
 
   void dispose() {
+    for (final timer in _readyChimeTimers.values) {
+      timer.cancel();
+    }
+    _readyChimeTimers.clear();
     _freezersSub?.cancel();
     _equipmentsSub?.cancel();
     _equipmentsLoadingSub?.cancel();

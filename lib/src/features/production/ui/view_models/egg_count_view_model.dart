@@ -43,6 +43,12 @@ final class EggCountViewModel {
   // --- Signals de Telemetria, Sala e Alertas em Tempo Real (Micro-States) ---
   late final Signal<bool> isConveyorRunningWithoutBatch;
   late final Signal<bool> isHitAnimating;
+  late final Signal<DateTime?> lastHitAt;
+  late final Signal<int> lastHitSecondsAgo;
+  late final Signal<int> lastHitDelta;
+  late final Signal<String?> lastHitTransitionLabel;
+  late final Computed<bool> isRecentHitHighlight;
+  late final Computed<String?> lastHitConfirmationText;
   late final Signal<double> eggsPerMinute;
   late final Signal<RoomRawData?> roomTelemetry;
   late final Signal<String> roomSummaryText;
@@ -125,6 +131,33 @@ final class EggCountViewModel {
     // Alertas e telemetria
     isConveyorRunningWithoutBatch = signal<bool>(false);
     isHitAnimating = signal<bool>(false);
+    lastHitAt = signal<DateTime?>(null);
+    lastHitSecondsAgo = signal<int>(0);
+    lastHitDelta = signal<int>(1);
+    lastHitTransitionLabel = signal<String?>(null);
+    isRecentHitHighlight = computed<bool>(
+      () => lastHitAt.value != null && lastHitSecondsAgo.value <= 5,
+    );
+    lastHitConfirmationText = computed<String?>(() {
+      final hitAt = lastHitAt.value;
+      final transition = lastHitTransitionLabel.value;
+      if (hitAt == null || transition == null || !hasActiveBatch.value) {
+        return null;
+      }
+      final secs = lastHitSecondsAgo.value;
+      final delta = lastHitDelta.value;
+      if (secs <= 1) {
+        return '✓ +$delta CONTADO • AGORA ($transition)';
+      }
+      if (secs <= 5) {
+        return '✓ +$delta CONTADO • há ${secs}s ($transition)';
+      }
+      if (secs < 60) {
+        return 'Último: há ${secs}s ($transition)';
+      }
+      final mins = secs ~/ 60;
+      return 'Último: há ${mins}m ($transition)';
+    });
     eggsPerMinute = signal<double>(0.0);
     roomTelemetry = signal<RoomRawData?>(_repository.currentRoom);
     roomSummaryText = signal<String>(_formatRoom(_repository.currentRoom));
@@ -159,14 +192,7 @@ final class EggCountViewModel {
 
       _audioService?.playEggHit();
 
-      // Trigger de animação de hit
-      isHitAnimating.value = true;
-      _hitAnimationTimer?.cancel();
-      _hitAnimationTimer = Timer(const Duration(milliseconds: 250), () {
-        if (!_isDisposed) {
-          isHitAnimating.value = false;
-        }
-      });
+      _recordVisualHitConfirmation(delta: event.delta, now: now);
     });
 
     // 3. Alerta de esteira rodando sem lote aberto
@@ -219,15 +245,61 @@ final class EggCountViewModel {
     });
   }
 
+  void _recordVisualHitConfirmation({
+    required int delta,
+    required DateTime now,
+  }) {
+    final safeDelta = max(1, delta);
+    final cap = defaultBoxCapacity.value > 0 ? defaultBoxCapacity.value : 50;
+    final afterNet = dailyNetCount.value;
+    final beforeNet = max(0, afterNet - safeDelta);
+    final beforeBox = beforeNet % cap;
+    final afterBox =
+        (afterNet > 0 && afterNet % cap == 0) ? cap : (afterNet % cap);
+
+    batch(() {
+      lastHitDelta.value = safeDelta;
+      lastHitTransitionLabel.value = '$beforeBox → $afterBox';
+      lastHitSecondsAgo.value = 0;
+      lastHitAt.value = now;
+      isHitAnimating.value = true;
+    });
+
+    _hitAnimationTimer?.cancel();
+    _hitAnimationTimer = Timer(const Duration(milliseconds: 1200), () {
+      if (!_isDisposed) {
+        isHitAnimating.value = false;
+      }
+    });
+  }
+
+  void _clearVisualHitConfirmation() {
+    _hitAnimationTimer?.cancel();
+    batch(() {
+      isHitAnimating.value = false;
+      lastHitAt.value = null;
+      lastHitSecondsAgo.value = 0;
+      lastHitTransitionLabel.value = null;
+    });
+  }
+
   void _startSpeedTicker() {
     _speedTickerTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      final now = DateTime.now();
+      final hitAt = lastHitAt.value;
+      if (hitAt != null) {
+        final elapsedSec = max(0, now.difference(hitAt).inSeconds);
+        if (lastHitSecondsAgo.value != elapsedSec) {
+          lastHitSecondsAgo.value = elapsedSec;
+        }
+      }
+
       if (_recentHitTimestamps.isEmpty) {
         if (eggsPerMinute.value != 0.0) {
           eggsPerMinute.value = 0.0;
         }
         return;
       }
-      final now = DateTime.now();
       _cleanupOldHits(now);
       final newSpeed = _calculateSpeed(now);
       if (eggsPerMinute.value != newSpeed) {
@@ -262,6 +334,7 @@ final class EggCountViewModel {
       batchNetAdjustment.value = 0;
       defaultBoxCapacity.value = product.defaultBoxCapacity;
       _lastCompletedBoxes = batchCompletedBoxes.value;
+      _clearVisualHitConfirmation();
     }
     return result;
   }
@@ -279,6 +352,7 @@ final class EggCountViewModel {
       batchNetAdjustment.value = 0;
       defaultBoxCapacity.value = newProduct.defaultBoxCapacity;
       _lastCompletedBoxes = batchCompletedBoxes.value;
+      _clearVisualHitConfirmation();
     }
     return result;
   }
@@ -291,6 +365,7 @@ final class EggCountViewModel {
     if (res.isOk) {
       batchManualAdditions.value = 0;
       batchNetAdjustment.value = 0;
+      _clearVisualHitConfirmation();
     }
     return res;
   }
@@ -327,6 +402,7 @@ final class EggCountViewModel {
         dailyCompletedBoxes.value = newNet ~/ boxCap;
       });
       _audioService?.playEggHit();
+      _recordVisualHitConfirmation(delta: absQty, now: DateTime.now());
     } else {
       batchNetAdjustment.value = max(
         -rawProduced,

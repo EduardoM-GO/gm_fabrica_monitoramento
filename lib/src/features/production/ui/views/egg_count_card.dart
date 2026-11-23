@@ -38,11 +38,12 @@ final class EggCountCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.baseline,
                     textBaseline: TextBaseline.alphabetic,
                     children: [
-                      // Micro-state 1: Apenas o número da caixa atual
+                      // Micro-state 1: Apenas o número da caixa atual (com flash verde ao registrar ovo)
                       SignalBuilder(
                         builder: (context) {
                           final currentBox = viewModel.currentBoxCount.value;
                           final active = viewModel.hasActiveBatch.value;
+                          final isFlashing = viewModel.isHitAnimating.value;
                           return SlidingCounterText(
                             value: currentBox,
                             style: theme.textTheme.displayLarge?.copyWith(
@@ -53,9 +54,11 @@ final class EggCountCard extends StatelessWidget {
                               fontFeatures: const [
                                 FontFeature.tabularFigures(),
                               ],
-                              color: active
-                                  ? colorScheme.primary
-                                  : AppTheme.textMuted,
+                              color: isFlashing
+                                  ? AppTheme.successGreen
+                                  : (active
+                                        ? colorScheme.primary
+                                        : AppTheme.textMuted),
                             ),
                           );
                         },
@@ -83,7 +86,80 @@ final class EggCountCard extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            // Micro-state 2.5: Selo de confirmação do último ovo contado ("✓ +1 CONTADO • AGORA (23 → 24)")
+            SignalBuilder(
+              builder: (context) {
+                final text = viewModel.lastHitConfirmationText.value;
+                if (text == null) {
+                  return const SizedBox(height: 6);
+                }
+                final isVibrant = viewModel.isRecentHitHighlight.value;
+                final fgColor = isVibrant
+                    ? AppTheme.successGreen
+                    : AppTheme.textSecondary;
+                final bgColor = isVibrant
+                    ? AppTheme.successGreen.withValues(alpha: 0.20)
+                    : colorScheme.surfaceContainerHighest.withValues(
+                        alpha: 0.65,
+                      );
+                final borderColor = isVibrant
+                    ? AppTheme.successGreen.withValues(alpha: 0.65)
+                    : colorScheme.outlineVariant;
+
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4, bottom: 6),
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: AnimatedContainer(
+                        key: const ValueKey('egg_last_hit_confirmation_badge'),
+                        duration: AppMotion.durationFast,
+                        curve: AppMotion.easeOut,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: bgColor,
+                          borderRadius: AppSpacing.borderRadiusSm,
+                          border: Border.all(
+                            color: borderColor,
+                            width: isVibrant ? 1.4 : 1.0,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              isVibrant
+                                  ? Icons.check_circle_rounded
+                                  : Icons.history_rounded,
+                              size: 13,
+                              color: fgColor,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              text,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontSize: 11,
+                                fontWeight: isVibrant
+                                    ? FontWeight.w900
+                                    : FontWeight.w700,
+                                letterSpacing: 0.3,
+                                color: fgColor,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
             // Micro-state 3: Barra de progresso da caixa
             SignalBuilder(
               builder: (context) {
@@ -361,23 +437,38 @@ final class EggCountCard extends StatelessWidget {
           ),
         );
 
-        // Micro-state da casca do Card: só reconstrói quando `isConveyorRunningWithoutBatch` muda,
+        // Micro-state da casca do Card: só reconstrói quando `isConveyorRunningWithoutBatch` ou `isHitAnimating` mudam,
         // mantendo `cardBody` intacto.
         return SignalBuilder(
           builder: (context) {
             final isConveyorAlert =
                 viewModel.isConveyorRunningWithoutBatch.value;
+            final isHitFlashing = viewModel.isHitAnimating.value;
+            final Color cardColor;
+            final Color borderColor;
+            final double borderWidth;
+
+            if (isConveyorAlert) {
+              cardColor = colorScheme.errorContainer.withValues(alpha: 0.28);
+              borderColor = colorScheme.error;
+              borderWidth = 1.8;
+            } else if (isHitFlashing) {
+              cardColor = AppTheme.successGreen.withValues(alpha: 0.12);
+              borderColor = AppTheme.successGreen;
+              borderWidth = 2.2;
+            } else {
+              cardColor = colorScheme.surfaceContainer;
+              borderColor = colorScheme.outlineVariant;
+              borderWidth = 1.5;
+            }
+
             return Card.outlined(
-              color: isConveyorAlert
-                  ? colorScheme.errorContainer.withValues(alpha: 0.28)
-                  : colorScheme.surfaceContainer,
+              color: cardColor,
               shape: RoundedRectangleBorder(
                 borderRadius: AppSpacing.borderRadiusXl,
                 side: BorderSide(
-                  color: isConveyorAlert
-                      ? colorScheme.error
-                      : colorScheme.outlineVariant,
-                  width: 1.5,
+                  color: borderColor,
+                  width: borderWidth,
                 ),
               ),
               child: cardBody,

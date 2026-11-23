@@ -312,6 +312,14 @@ void main() {
       await tester.tap(find.text('+2 Ovos'));
       await tester.pumpAndSettle();
       expect(eggViewModel.currentBoxCount.value, 2);
+      expect(
+        find.byKey(const ValueKey('egg_last_hit_confirmation_badge')),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('✓ +2 CONTADO • AGORA (0 → 2)'),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
 
       // 2.b Verifica troca de produto com confirmação e encerramento com confirmação
