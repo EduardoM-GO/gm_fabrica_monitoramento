@@ -298,12 +298,13 @@ final class _TopKioskStatusStrip extends StatelessWidget {
   }
 
   void _openSettings(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (_) => SettingsDialog(
-        settingsViewModel: settingsViewModel,
-        freezerViewModel: freezerViewModel,
-        eggViewModel: eggViewModel,
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => SettingsDialog(
+          settingsViewModel: settingsViewModel,
+          freezerViewModel: freezerViewModel,
+          eggViewModel: eggViewModel,
+        ),
       ),
     );
   }

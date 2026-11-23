@@ -1,7 +1,9 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:gm_fabrica_monitoramento/src/core/supabase/supabase_bootstrap.dart';
+import 'package:gm_fabrica_monitoramento/src/core/themes/app_breakpoints.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_spacing.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_theme.dart';
+import 'package:gm_fabrica_monitoramento/src/core/widgets/kiosk_subpage_header.dart';
 import 'package:gm_fabrica_monitoramento/src/core/widgets/status_badge.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/enum/ws_connection_state_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/domain/models/freezer_model.dart';
@@ -10,6 +12,10 @@ import 'package:gm_fabrica_monitoramento/src/features/production/ui/view_models/
 import 'package:gm_fabrica_monitoramento/src/features/settings/ui/view_models/settings_view_model.dart';
 import 'package:signals/signals_flutter.dart';
 
+/// Tela Completa de Configurações do Kiosk, Freezers (Supabase) e Hardware ESP32.
+/// Substitui o antigo AlertDialog por um layout em 2 colunas de alta densidade para Kiosk Landscape:
+/// - Coluna Esquerda: Vínculo de Freezers (Supabase) ↔ Sensores ESP32 + Conexão WebSocket / Auto-Discovery.
+/// - Coluna Direita: Avisos Sonoros da Sala (cada Switch isolado em micro-state) + Reset de Calibração.
 final class SettingsDialog extends StatefulWidget {
   final SettingsViewModel settingsViewModel;
   final FreezerMonitoringViewModel? freezerViewModel;
@@ -26,6 +32,8 @@ final class SettingsDialog extends StatefulWidget {
   State<SettingsDialog> createState() => _SettingsDialogState();
 }
 
+typedef SettingsView = SettingsDialog;
+
 class _SettingsDialogState extends State<SettingsDialog> {
   late final TextEditingController _hostController;
   late final TextEditingController _portController;
@@ -40,7 +48,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
       text: widget.settingsViewModel.espPort.value.toString(),
     );
 
-    // Sincroniza equipamentos e produtos do Supabase ao abrir configurações
+    // Sincroniza equipamentos e produtos do Supabase ao abrir a tela de configurações
     widget.freezerViewModel?.refreshEquipmentsAndBindings();
     widget.eggViewModel?.refreshProducts();
   }
@@ -50,6 +58,13 @@ class _SettingsDialogState extends State<SettingsDialog> {
     _hostController.dispose();
     _portController.dispose();
     super.dispose();
+  }
+
+  Future<void> _saveAndConnect() async {
+    final host = _hostController.text.trim();
+    final port = int.tryParse(_portController.text.trim()) ?? 81;
+    await widget.settingsViewModel.updateEndpointAndConnect(host, port);
+    if (mounted) Navigator.pop(context);
   }
 
   @override
@@ -62,324 +77,395 @@ class _SettingsDialogState extends State<SettingsDialog> {
     final supabaseClient = supabaseOrNull;
     final currentUserEmail = supabaseClient?.auth.currentUser?.email;
 
-    return AlertDialog(
-      backgroundColor: colorScheme.surfaceContainerHigh,
-      title: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: colorScheme.primaryContainer,
-              borderRadius: AppSpacing.borderRadiusXs,
-            ),
-            child: Icon(
-              Icons.settings_rounded,
-              color: colorScheme.onPrimaryContainer,
-              size: 18,
-            ),
+    return Scaffold(
+      backgroundColor: colorScheme.surface,
+      body: SafeArea(
+        top: false,
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm,
+            vertical: 6,
           ),
-          const SizedBox(width: AppSpacing.xs),
-          Expanded(
-            child: Text(
-              'Configurações do Kiosk, Freezers & ESP32',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontFamily: AppTheme.fontHeading,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
-      ),
-      content: SizedBox(
-        width: 480,
-        child: SingleChildScrollView(
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // --- 1. Card Tonal: Vínculo Freezers (Supabase) <-> Sensores ESP32 ---
-              if (freezerVm != null) ...[
-                _FreezerSensorBindingsCard(
-                  freezerViewModel: freezerVm,
-                  eggViewModel: eggVm,
-                  currentUserEmail: currentUserEmail,
-                ),
-                const SizedBox(height: AppSpacing.sm),
-              ],
-
-              // --- 2. Card Tonal: Status e Auto-Discovery do Hardware ---
-              Card.filled(
-                color: colorScheme.surfaceContainer,
-                shape: RoundedRectangleBorder(
-                  borderRadius: AppSpacing.borderRadiusMd,
-                  side: BorderSide(color: colorScheme.outlineVariant),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(AppSpacing.sm),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          // Micro-state: Status da conexão WebSocket
-                          Flexible(
-                            child: SignalBuilder(
-                              builder: (context) {
-                                final state = vm.connectionState.value;
-                                final (Color statusColor, String statusText) =
-                                    switch (state) {
-                                      WsConnectionStateEnum.connected => (
-                                        AppTheme.successGreen,
-                                        'Conectado (Online)',
-                                      ),
-                                      WsConnectionStateEnum.connecting => (
-                                        AppTheme.warningAmber,
-                                        'Conectando...',
-                                      ),
-                                      WsConnectionStateEnum.reconnecting => (
-                                        AppTheme.warningAmber,
-                                        'Reconectando...',
-                                      ),
-                                      WsConnectionStateEnum.disconnected => (
-                                        AppTheme.dangerRed,
-                                        'Desconectado (Offline)',
-                                      ),
-                                    };
-                                return StatusBadge(
-                                  label: statusText,
-                                  color: statusColor,
-                                  showDot: true,
-                                );
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.xs),
-                          // Micro-state: Botão Auto-Descobrir ESP32
-                          Flexible(
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              child: SignalBuilder(
-                                builder: (context) {
-                                  final isDiscovering = vm.isDiscovering.value;
-                                  return FilledButton.tonalIcon(
-                                    onPressed: isDiscovering
-                                        ? null
-                                        : () async {
-                                            final found = await vm
-                                                .discoverEsp32OnNetwork();
-                                            if (found && mounted) {
-                                              _hostController.text =
-                                                  vm.espHost.value;
-                                            }
-                                          },
-                                    icon: isDiscovering
-                                        ? const SizedBox(
-                                            width: 14,
-                                            height: 14,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                            ),
-                                          )
-                                        : const Icon(
-                                            Icons.radar_rounded,
-                                            size: 16,
-                                          ),
-                                    label: Text(
-                                      isDiscovering
-                                          ? 'Buscando...'
-                                          : 'Auto-Descobrir ESP32',
-                                      style: const TextStyle(fontSize: 12),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        ],
+              KioskSubpageHeader(
+                title: 'Configurações do Kiosk, Freezers & ESP32',
+                subtitle:
+                    'Conexão WebSocket, Vínculo de Sensores com Centros de Custo e Avisos Sonoros',
+                icon: Icons.settings_rounded,
+                eggViewModel: eggVm,
+                freezerViewModel: freezerVm,
+                backLabel: 'Fechar',
+                actions: [
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      minimumSize: const Size(0, 36),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 6,
                       ),
-                      const SizedBox(height: AppSpacing.sm),
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: TextField(
-                              controller: _hostController,
-                              style: const TextStyle(
-                                fontFeatures: [FontFeature.tabularFigures()],
-                              ),
-                              decoration: const InputDecoration(
-                                labelText: 'IP / Host do ESP32',
-                                hintText: '192.168.0.58 ou esp32.local',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: AppSpacing.xs),
-                          Expanded(
-                            flex: 1,
-                            child: TextField(
-                              controller: _portController,
-                              keyboardType: TextInputType.number,
-                              style: const TextStyle(
-                                fontFeatures: [FontFeature.tabularFigures()],
-                              ),
-                              decoration: const InputDecoration(
-                                labelText: 'Porta',
-                                hintText: '81',
-                                border: OutlineInputBorder(),
-                                isDense: true,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: AppSpacing.sm),
-
-              // --- 3. Card Tonal: Avisos Sonoros Únicos (Cada Switch isolado em seu próprio Micro-State) ---
-              Card.filled(
-                color: colorScheme.surfaceContainer,
-                shape: RoundedRectangleBorder(
-                  borderRadius: AppSpacing.borderRadiusMd,
-                  side: BorderSide(color: colorScheme.outlineVariant),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: AppSpacing.xs,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        'AVISOS SONOROS DA SALA (TOQUE EM TESTAR PARA OUVIR)',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.4,
-                          color: AppTheme.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      _SoundSettingRow(
-                        title: 'Bip de Ovo Contado',
-                        signalValue: vm.eggHitSoundEnabled,
-                        onChanged: vm.toggleEggHitSound,
-                        onTestPrimary: vm.testEggHitSound,
-                        testPrimaryLabel: 'Testar',
-                      ),
-                      const Divider(height: 1),
-                      _SoundSettingRow(
-                        title: 'Caixa Fechada (Completa)',
-                        signalValue: vm.boxCompletedSoundEnabled,
-                        onChanged: vm.toggleBoxCompletedSound,
-                        onTestPrimary: vm.testBoxCompletedSound,
-                        testPrimaryLabel: 'Testar',
-                      ),
-                      const Divider(height: 1),
-                      _SoundSettingRow(
-                        title: 'Alerta: Esteira Sem Lote Aberto',
-                        signalValue: vm.conveyorAlertSoundEnabled,
-                        onChanged: vm.toggleConveyorAlertSound,
-                        onTestPrimary: vm.testConveyorAlertSound,
-                        testPrimaryLabel: 'Testar',
-                      ),
-                      const Divider(height: 1),
-                      _SoundSettingRow(
-                        title: 'Freezer Iniciando Ciclo (F1 vs F2)',
-                        signalValue: vm.freezerStartSoundEnabled,
-                        onChanged: vm.toggleFreezerStartSound,
-                        onTestPrimary: () => vm.testFreezerStartSound('f1'),
-                        testPrimaryLabel: 'F1',
-                        onTestSecondary: () => vm.testFreezerStartSound('f2'),
-                        testSecondaryLabel: 'F2',
-                      ),
-                      const Divider(height: 1),
-                      _SoundSettingRow(
-                        title: 'Freezer Pronto para Retirada (F1 vs F2)',
-                        signalValue: vm.freezerReadySoundEnabled,
-                        onChanged: vm.toggleFreezerReadySound,
-                        onTestPrimary: () => vm.testFreezerReadySound('f1'),
-                        testPrimaryLabel: 'F1',
-                        onTestSecondary: () => vm.testFreezerReadySound('f2'),
-                        testSecondaryLabel: 'F2',
-                      ),
-                      const Divider(height: 1),
-                      _SoundSettingRow(
-                        title: 'Clique de Porta (Abriu / Fechou)',
-                        signalValue: vm.doorToggleSoundEnabled,
-                        onChanged: vm.toggleDoorToggleSound,
-                        onTestPrimary: vm.testDoorToggleSound,
-                        testPrimaryLabel: 'Testar',
-                      ),
-                      const Divider(height: 1),
-                      _SoundSettingRow(
-                        title: 'Alarme: Porta Esquecida Aberta',
-                        signalValue: vm.doorAlarmSoundEnabled,
-                        onChanged: vm.toggleDoorAlarmSound,
-                        onTestPrimary: vm.testDoorAlarmSound,
-                        testPrimaryLabel: 'Testar',
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              if (freezerVm != null) ...[
-                const SizedBox(height: AppSpacing.xs),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: TextButton.icon(
-                      onPressed: () async {
-                        await freezerVm.resetCalibration('f1');
-                        await freezerVm.resetCalibration('f2');
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Calibração adaptativa dos freezers restaurada para o padrão.',
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                      icon: const Icon(Icons.restore_rounded, size: 18),
-                      label: const Text(
-                        'Resetar Calibração Adaptativa dos Freezers',
+                    ),
+                    onPressed: _saveAndConnect,
+                    icon: const Icon(Icons.check_rounded, size: 16),
+                    label: const Text(
+                      'Salvar e Conectar',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final isWide =
+                        constraints.maxWidth >= AppBreakpoints.compactMax;
+
+                    final leftColumn = Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (freezerVm != null) ...[
+                          _FreezerSensorBindingsCard(
+                            freezerViewModel: freezerVm,
+                            eggViewModel: eggVm,
+                            currentUserEmail: currentUserEmail,
+                          ),
+                          const SizedBox(height: AppSpacing.sm),
+                        ],
+                        _buildHardwareConnectionCard(
+                          context,
+                          theme,
+                          colorScheme,
+                          vm,
+                        ),
+                      ],
+                    );
+
+                    final rightColumn = Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _buildSoundSettingsCard(
+                          context,
+                          theme,
+                          colorScheme,
+                          vm,
+                        ),
+                        if (freezerVm != null) ...[
+                          const SizedBox(height: AppSpacing.xs),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: TextButton.icon(
+                                onPressed: () async {
+                                  await freezerVm.resetCalibration('f1');
+                                  await freezerVm.resetCalibration('f2');
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Calibração adaptativa dos freezers restaurada para o padrão.',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                                icon: const Icon(
+                                  Icons.restore_rounded,
+                                  size: 18,
+                                ),
+                                label: const Text(
+                                  'Resetar Calibração Adaptativa dos Freezers',
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    );
+
+                    if (isWide) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            flex: 48,
+                            child: SingleChildScrollView(child: leftColumn),
+                          ),
+                          const SizedBox(width: AppSpacing.sm),
+                          Expanded(
+                            flex: 52,
+                            child: SingleChildScrollView(child: rightColumn),
+                          ),
+                        ],
+                      );
+                    }
+
+                    return SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          leftColumn,
+                          const SizedBox(height: AppSpacing.sm),
+                          rightColumn,
+                        ],
+                      ),
+                    );
+                  },
                 ),
-              ],
+              ),
             ],
           ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Fechar'),
+    );
+  }
+
+  Widget _buildHardwareConnectionCard(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme colorScheme,
+    SettingsViewModel vm,
+  ) {
+    return Card.filled(
+      color: colorScheme.surfaceContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.borderRadiusMd,
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'CONEXÃO WEBSOCKET & DESCOBERTA AUTOMÁTICA ESP32',
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.4,
+                color: colorScheme.secondary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                // Micro-state: Status da conexão WebSocket
+                Flexible(
+                  child: SignalBuilder(
+                    builder: (context) {
+                      final state = vm.connectionState.value;
+                      final (
+                        Color statusColor,
+                        String statusText,
+                      ) = switch (state) {
+                        WsConnectionStateEnum.connected => (
+                          AppTheme.successGreen,
+                          'Conectado (Online)',
+                        ),
+                        WsConnectionStateEnum.connecting => (
+                          AppTheme.warningAmber,
+                          'Conectando...',
+                        ),
+                        WsConnectionStateEnum.reconnecting => (
+                          AppTheme.warningAmber,
+                          'Reconectando...',
+                        ),
+                        WsConnectionStateEnum.disconnected => (
+                          AppTheme.dangerRed,
+                          'Desconectado (Offline)',
+                        ),
+                      };
+                      return StatusBadge(
+                        label: statusText,
+                        color: statusColor,
+                        showDot: true,
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                // Micro-state: Botão Auto-Descobrir ESP32
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: SignalBuilder(
+                      builder: (context) {
+                        final isDiscovering = vm.isDiscovering.value;
+                        return FilledButton.tonalIcon(
+                          onPressed: isDiscovering
+                              ? null
+                              : () async {
+                                  final found = await vm
+                                      .discoverEsp32OnNetwork();
+                                  if (found && mounted) {
+                                    _hostController.text = vm.espHost.value;
+                                  }
+                                },
+                          icon: isDiscovering
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.radar_rounded, size: 16),
+                          label: Text(
+                            isDiscovering
+                                ? 'Buscando...'
+                                : 'Auto-Descobrir ESP32',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: TextField(
+                    controller: _hostController,
+                    style: const TextStyle(
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'IP / Host do ESP32',
+                      hintText: '192.168.0.58 ou esp32.local',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Expanded(
+                  flex: 1,
+                  child: TextField(
+                    controller: _portController,
+                    keyboardType: TextInputType.number,
+                    style: const TextStyle(
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Porta',
+                      hintText: '81',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
-        FilledButton.icon(
-          onPressed: () async {
-            final host = _hostController.text.trim();
-            final port = int.tryParse(_portController.text.trim()) ?? 81;
-            await vm.updateEndpointAndConnect(host, port);
-            if (context.mounted) Navigator.pop(context);
-          },
-          icon: const Icon(Icons.check_rounded, size: 18),
-          label: const Text('Salvar e Conectar'),
+      ),
+    );
+  }
+
+  Widget _buildSoundSettingsCard(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme colorScheme,
+    SettingsViewModel vm,
+  ) {
+    return Card.filled(
+      color: colorScheme.surfaceContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.borderRadiusMd,
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm,
+          vertical: AppSpacing.xs,
         ),
-      ],
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'AVISOS SONOROS DA SALA (TOQUE EM TESTAR PARA OUVIR)',
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.4,
+                color: AppTheme.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            _SoundSettingRow(
+              title: 'Bip de Ovo Contado',
+              signalValue: vm.eggHitSoundEnabled,
+              onChanged: vm.toggleEggHitSound,
+              onTestPrimary: vm.testEggHitSound,
+              testPrimaryLabel: 'Testar',
+            ),
+            const Divider(height: 1),
+            _SoundSettingRow(
+              title: 'Caixa Fechada (Completa)',
+              signalValue: vm.boxCompletedSoundEnabled,
+              onChanged: vm.toggleBoxCompletedSound,
+              onTestPrimary: vm.testBoxCompletedSound,
+              testPrimaryLabel: 'Testar',
+            ),
+            const Divider(height: 1),
+            _SoundSettingRow(
+              title: 'Alerta: Esteira Sem Lote Aberto',
+              signalValue: vm.conveyorAlertSoundEnabled,
+              onChanged: vm.toggleConveyorAlertSound,
+              onTestPrimary: vm.testConveyorAlertSound,
+              testPrimaryLabel: 'Testar',
+            ),
+            const Divider(height: 1),
+            _SoundSettingRow(
+              title: 'Freezer Iniciando Ciclo (F1 vs F2)',
+              signalValue: vm.freezerStartSoundEnabled,
+              onChanged: vm.toggleFreezerStartSound,
+              onTestPrimary: () => vm.testFreezerStartSound('f1'),
+              testPrimaryLabel: 'F1',
+              onTestSecondary: () => vm.testFreezerStartSound('f2'),
+              testSecondaryLabel: 'F2',
+            ),
+            const Divider(height: 1),
+            _SoundSettingRow(
+              title: 'Freezer Pronto para Retirada (F1 vs F2)',
+              signalValue: vm.freezerReadySoundEnabled,
+              onChanged: vm.toggleFreezerReadySound,
+              onTestPrimary: () => vm.testFreezerReadySound('f1'),
+              testPrimaryLabel: 'F1',
+              onTestSecondary: () => vm.testFreezerReadySound('f2'),
+              testSecondaryLabel: 'F2',
+            ),
+            const Divider(height: 1),
+            _SoundSettingRow(
+              title: 'Clique de Porta (Abriu / Fechou)',
+              signalValue: vm.doorToggleSoundEnabled,
+              onChanged: vm.toggleDoorToggleSound,
+              onTestPrimary: vm.testDoorToggleSound,
+              testPrimaryLabel: 'Testar',
+            ),
+            const Divider(height: 1),
+            _SoundSettingRow(
+              title: 'Alarme: Porta Esquecida Aberta',
+              signalValue: vm.doorAlarmSoundEnabled,
+              onChanged: vm.toggleDoorAlarmSound,
+              onTestPrimary: vm.testDoorAlarmSound,
+              testPrimaryLabel: 'Testar',
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

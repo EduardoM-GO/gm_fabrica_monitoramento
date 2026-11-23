@@ -7,11 +7,11 @@ import 'package:gm_fabrica_monitoramento/src/core/themes/app_spacing.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_theme.dart';
 import 'package:gm_fabrica_monitoramento/src/core/widgets/app_states.dart';
 import 'package:gm_fabrica_monitoramento/src/core/widgets/status_badge.dart';
-import 'package:gm_fabrica_monitoramento/src/domain/models/freezer_model.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/domain/models/freezer_feedback_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/domain/models/freezer_live_state.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/domain/models/freezer_status_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/ui/view_models/freezer_monitoring_view_model.dart';
+import 'package:gm_fabrica_monitoramento/src/features/freezer/ui/views/freezer_config_view.dart';
 
 /// Card de monitoramento do Freezer otimizado para Kiosk Horizontal (SM-A055M/DS)
 /// com arquitetura de **Micro-States (atualização direcionada por campo)**:
@@ -710,175 +710,13 @@ class FreezerMonitoringCard extends StatelessWidget {
     BuildContext context,
     FreezerItemSignals item,
   ) {
-    final unloadController = TextEditingController(
-      text: item.unloadMinSeconds.value.toString(),
-    );
-    final reloadController = TextEditingController(
-      text: item.reloadMinSeconds.value.toString(),
-    );
-    final targetMinController = TextEditingController(
-      text: (item.calibratedBaseSeconds.value ~/ 60).toString(),
-    );
-    String? selectedEquipmentId = item.equipmentId.value;
-
-    // Atualiza lista de equipamentos do Supabase ao abrir o diálogo
-    viewModel.refreshEquipmentsAndBindings();
-
-    showDialog<void>(
-      context: context,
-      builder: (ctx) {
-        final theme = Theme.of(ctx);
-        final colorScheme = theme.colorScheme;
-        return StatefulBuilder(
-          builder: (ctx, setDialogState) {
-            return SignalBuilder(
-              builder: (_) {
-                final equipments = viewModel.availableEquipments.value;
-                final hasSelectedInList =
-                    selectedEquipmentId != null &&
-                    equipments.any((e) => e.id == selectedEquipmentId);
-                final effectiveEquipmentId = hasSelectedInList
-                    ? selectedEquipmentId
-                    : null;
-
-                return AlertDialog(
-                  title: Text(
-                    'Sensor ${item.sensorIndex.value} (${item.freezerId.toUpperCase()}) — ${item.name.value}',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  content: SizedBox(
-                    width: 400,
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            'Vincule este sensor físico do ESP32 a um equipamento (Freezer) cadastrado no Supabase e configure os tempos de porta:',
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          DropdownButtonFormField<String?>(
-                            key: ValueKey(
-                              'freezer_equipment_dropdown_${item.freezerId}',
-                            ),
-                            initialValue: effectiveEquipmentId,
-                            isExpanded: true,
-                            decoration: InputDecoration(
-                              labelText:
-                                  'Equipamento Vinculado (Supabase / Centros de Custo)',
-                              isDense: true,
-                              filled: true,
-                              fillColor: colorScheme.surfaceContainerHighest,
-                              border: const OutlineInputBorder(),
-                            ),
-                            items: [
-                              const DropdownMenuItem<String?>(
-                                value: null,
-                                child: Text('Sem equipamento vinculado'),
-                              ),
-                              for (final eq in equipments)
-                                DropdownMenuItem<String?>(
-                                  value: eq.id,
-                                  child: Text(
-                                    eq.name,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                            ],
-                            onChanged: (val) {
-                              setDialogState(() {
-                                selectedEquipmentId = val;
-                              });
-                            },
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          TextField(
-                            key: const ValueKey('input_unload_seconds'),
-                            controller: unloadController,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Tempo mín. Só Retirada (segundos)',
-                              helperText:
-                                  'Abaixo disso com lote pronto = "Verificação / Ainda Mole"',
-                              isDense: true,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          TextField(
-                            key: const ValueKey('input_reload_seconds'),
-                            controller: reloadController,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText:
-                                  'Tempo mín. Retirou + Abasteceu (segundos)',
-                              helperText:
-                                  'Acima disso = encerra o lote atual e já inicia nova contagem',
-                              isDense: true,
-                            ),
-                          ),
-                          const SizedBox(height: AppSpacing.sm),
-                          TextField(
-                            key: const ValueKey('input_target_minutes'),
-                            controller: targetMinController,
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Tempo Alvo Base (minutos)',
-                              isDense: true,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(ctx).pop(),
-                      child: const Text('Cancelar'),
-                    ),
-                    FilledButton(
-                      key: const ValueKey('save_door_timing_btn'),
-                      onPressed: () {
-                        final unload =
-                            int.tryParse(unloadController.text.trim()) ??
-                            item.unloadMinSeconds.value;
-                        final reload =
-                            int.tryParse(reloadController.text.trim()) ??
-                            item.reloadMinSeconds.value;
-                        final targetMin =
-                            int.tryParse(targetMinController.text.trim()) ??
-                            (item.calibratedBaseSeconds.value ~/ 60);
-
-                        EquipmentModel? chosenEq;
-                        if (selectedEquipmentId != null) {
-                          chosenEq = equipments
-                              .where((e) => e.id == selectedEquipmentId)
-                              .firstOrNull;
-                        }
-
-                        viewModel.updateDoorTimingConfig(
-                          item.freezerId,
-                          unloadMinSeconds: unload,
-                          reloadMinSeconds: reload,
-                          targetDurationSeconds: targetMin * 60,
-                          linkedEquipment: chosenEq,
-                          updateEquipmentBinding: true,
-                        );
-                        Navigator.of(ctx).pop();
-                      },
-                      child: const Text('Salvar'),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-        );
-      },
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => FreezerConfigView(
+          viewModel: viewModel,
+          item: item,
+        ),
+      ),
     );
   }
 }

@@ -392,9 +392,10 @@ void main() {
       expect(find.text('00:00 / 12:00'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
-      // 4. Abre o diálogo de Configurações e valida os dropdowns de vínculo de Sensores <-> Freezers
-      await tester.tap(find.byIcon(Icons.settings_rounded));
-      await tester.pump(const Duration(milliseconds: 250));
+      // 4. Abre a tela completa de Configurações e valida os dropdowns de vínculo de Sensores <-> Freezers
+      await tester.tap(find.byIcon(Icons.settings_rounded), warnIfMissed: false);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
       expect(find.byType(SettingsDialog), findsOneWidget);
       expect(
         find.byKey(const ValueKey('settings_sensor_binding_f1')),
@@ -407,7 +408,8 @@ void main() {
       expect(tester.takeException(), isNull);
 
       await tester.tap(find.text('Fechar'));
-      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
 
       eggViewModel.dispose();
       freezerViewModel.dispose();
