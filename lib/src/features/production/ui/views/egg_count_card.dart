@@ -214,7 +214,7 @@ final class EggCountCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  // Micro-state: Botão Encerrar Lote (só reconstrói quando `hasActiveBatch` muda)
+                  // Micro-state: Botão Trocar Produto / Gerenciar Lote (só reconstrói quando `hasActiveBatch` muda)
                   SignalBuilder(
                     builder: (context) {
                       final hasBatch = viewModel.hasActiveBatch.value;
@@ -222,6 +222,7 @@ final class EggCountCard extends StatelessWidget {
                       return Material(
                         color: Colors.transparent,
                         child: InkWell(
+                          key: const ValueKey('manage_active_batch_btn'),
                           borderRadius: AppSpacing.borderRadiusXs,
                           onTap: () => _showProductSelectorSheet(context),
                           child: Padding(
@@ -233,7 +234,7 @@ final class EggCountCard extends StatelessWidget {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  Icons.stop_circle_outlined,
+                                  Icons.swap_horiz_rounded,
                                   size: 14,
                                   color: AppTheme.textMuted.withValues(
                                     alpha: 0.9,
@@ -241,7 +242,7 @@ final class EggCountCard extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 4),
                                 const Text(
-                                  'ENCERRAR LOTE',
+                                  'TROCAR / LOTE',
                                   style: TextStyle(
                                     fontWeight: FontWeight.w800,
                                     fontSize: 10.5,

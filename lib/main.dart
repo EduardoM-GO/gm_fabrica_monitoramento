@@ -97,6 +97,9 @@ void main() async {
     wsService,
     remoteDatasource: catalogRemote,
   );
+  // Aguarda restauração do lote ativo do dia no SQLite local para que o app
+  // abra diretamente na produção em andamento (sem exibir como pausado/em repouso)
+  await productionRepo.ready;
 
   final freezerRepo = FreezerRepository(
     freezerDao: database.freezerDao,
@@ -149,33 +152,73 @@ void main() async {
           value: freezerMonitoringViewModel,
         ),
       ],
-      child: FactoryMonitoringApp(requireSupabaseAuth: isSupabaseReady),
+      child: FactoryMonitoringApp(
+        requireSupabaseAuth: isSupabaseReady,
+        skipSplashIfActiveBatch: productionRepo.currentActiveBatch != null,
+      ),
     ),
   );
 }
 
-class FactoryMonitoringApp extends StatelessWidget {
+class FactoryMonitoringApp extends StatefulWidget {
   final bool requireSupabaseAuth;
+  final bool skipSplashIfActiveBatch;
   final Duration splashDuration;
 
   const FactoryMonitoringApp({
     super.key,
     this.requireSupabaseAuth = false,
+    this.skipSplashIfActiveBatch = false,
     this.splashDuration = const Duration(milliseconds: 1800),
   });
 
   @override
+  State<FactoryMonitoringApp> createState() => _FactoryMonitoringAppState();
+}
+
+class _FactoryMonitoringAppState extends State<FactoryMonitoringApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final prodRepo = context.read<ProductionRepository>();
+    if (state == AppLifecycleState.resumed) {
+      KioskWakeLockService.ensureAlwaysAwake();
+      prodRepo.onAppLifecycleStateChanged(isResumed: true);
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      prodRepo.onAppLifecycleStateChanged(isResumed: false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final targetScreen = requireSupabaseAuth
+    final targetScreen = widget.requireSupabaseAuth
         ? const _KioskAuthGate()
         : const DashboardView();
+
+    final effectiveSplashDuration = widget.skipSplashIfActiveBatch
+        ? Duration.zero
+        : widget.splashDuration;
 
     return MaterialApp(
       title: 'G&M Fábrica - Monitoramento',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
       home: KioskSplashView(
-        duration: splashDuration,
+        duration: effectiveSplashDuration,
         nextChild: targetScreen,
       ),
     );

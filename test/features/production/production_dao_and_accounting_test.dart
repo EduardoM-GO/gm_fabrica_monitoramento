@@ -343,6 +343,65 @@ void main() {
       viewModel.dispose();
     });
 
+    test('Sair e voltar no mesmo dia restaura lote ativo imediatamente e reconcilia pulsos do ESP32; na virada do dia encerra', () async {
+      await repository.ready;
+      final viewModel = EggCountViewModel(repository);
+
+      // Inicia lote hoje com contagem inicial 10
+      fakeWs.rawDataController.add(
+        HitRawData(type: TypeRawDataEnum.hit, totalCount: 10),
+      );
+      await Future.delayed(const Duration(milliseconds: 30));
+
+      final startRes = await viewModel.startBatch(testProduct);
+      expect(startRes.isOk, isTrue);
+
+      // Produz 15 ovos (totalCount vai de 10 para 25)
+      fakeWs.rawDataController.add(
+        HitRawData(type: TypeRawDataEnum.hit, totalCount: 25),
+      );
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(viewModel.dailyNetCount.value, 15);
+
+      // Simula fechamento abrupto do app (antes mesmo do timer de 1.5s do buffer)
+      viewModel.dispose();
+      repository.dispose();
+
+      // Reabre o app no mesmo dia (nova instância de ProductionRepository e EggCountViewModel)
+      final reopenedRepo = ProductionRepository(db.productionDao, fakeWs);
+      await reopenedRepo.ready;
+      final reopenedVm = EggCountViewModel(reopenedRepo);
+
+      // Deve restaurar como LOTE ATIVO imediatamente, com os 15 ovos produzidos!
+      expect(reopenedVm.hasActiveBatch.value, isTrue);
+      expect(reopenedVm.activeBatch.value?.product.id, testProduct.id);
+      expect(reopenedVm.dailyNetCount.value, 15);
+
+      // Enquanto o app estava fechado, o ESP32 avançou de 25 para 40 (+15 ovos)
+      fakeWs.rawDataController.add(
+        HitRawData(type: TypeRawDataEnum.hit, totalCount: 40),
+      );
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(reopenedVm.dailyNetCount.value, 30);
+
+      // Troca de produto durante o mesmo dia via switchProduct
+      final secondProduct = ProductModel(
+        id: 'prod_2',
+        name: 'Ovo Trufado 400g',
+        category: 'ovos',
+        unitWeightGrams: 400,
+        defaultBoxCapacity: 30,
+      );
+      final switchRes = await reopenedVm.switchProduct(secondProduct);
+      expect(switchRes.isOk, isTrue);
+      expect(reopenedVm.hasActiveBatch.value, isTrue);
+      expect(reopenedVm.activeBatch.value?.product.id, 'prod_2');
+      expect(reopenedVm.dailyNetCount.value, 30);
+
+      reopenedVm.dispose();
+      reopenedRepo.dispose();
+    });
+
     test('Sincroniza produtos do Supabase sem manter nenhum mock local', () async {
       final synced = await db.productionDao.syncProductsFromSupabase([
         ProductModel.fromSupabaseMap({

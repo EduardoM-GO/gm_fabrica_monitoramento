@@ -21,9 +21,11 @@ final class ProductSelectorView extends StatefulWidget {
 }
 
 class _ProductSelectorViewState extends State<ProductSelectorView> {
+  static const String _eggFilterKey = '__eggs__';
+
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  String? _selectedCategory;
+  String? _selectedCategory = _eggFilterKey;
 
   @override
   void initState() {
@@ -37,11 +39,18 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
     super.dispose();
   }
 
-  List<String> _extractCategories(List<ProductModel> all) {
+  bool _isEggCategoryName(String cat) {
+    final lower = cat.trim().toLowerCase();
+    return lower == 'ovo' || lower == 'ovos' || lower.contains('ovo');
+  }
+
+  List<String> _extractNonEggCategories(List<ProductModel> all) {
     final set = <String>{};
     for (final p in all) {
       final cat = p.category.trim();
-      if (cat.isNotEmpty) set.add(cat);
+      if (cat.isNotEmpty && !_isEggCategoryName(cat)) {
+        set.add(cat);
+      }
     }
     final list = set.toList()..sort();
     return list;
@@ -49,9 +58,19 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
 
   List<ProductModel> _filterProducts(List<ProductModel> all) {
     final q = _searchQuery.trim().toLowerCase();
-    return [
+    final hasAnyEggs = all.any((p) => p.isEgg);
+    final effectiveCategory =
+        (_selectedCategory == _eggFilterKey && !hasAnyEggs)
+        ? null
+        : _selectedCategory;
+
+    final filtered = <ProductModel>[
       for (final p in all)
-        if ((_selectedCategory == null || p.category == _selectedCategory) &&
+        if ((effectiveCategory == null ||
+                (effectiveCategory == _eggFilterKey
+                    ? p.isEgg
+                    : p.category.toLowerCase() ==
+                          effectiveCategory.toLowerCase())) &&
             (q.isEmpty ||
                 p.name.toLowerCase().contains(q) ||
                 p.category.toLowerCase().contains(q) ||
@@ -59,6 +78,154 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                 '${p.unitWeightGrams}g'.contains(q)))
           p,
     ];
+
+    // Ordena priorizando Ovos no topo e depois ordem alfabética
+    filtered.sort((a, b) {
+      if (a.isEgg != b.isEgg) {
+        return a.isEgg ? -1 : 1;
+      }
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+
+    return filtered;
+  }
+
+  Future<void> _confirmAndCloseBatch(BuildContext context) async {
+    final activeBatch = widget.viewModel.activeBatch.value;
+    if (activeBatch == null) return;
+
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: colorScheme.surfaceContainerHigh,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppSpacing.borderRadiusLg,
+          side: BorderSide(color: colorScheme.outlineVariant),
+        ),
+        title: Row(
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              color: colorScheme.error,
+              size: 22,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: Text(
+                'Encerrar Produção do Dia?',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'A produção de "${activeBatch.product.name}" permanece aberta automaticamente até o final do dia (00:00).\n\nDeseja realmente encerrar o lote atual agora ou prefere apenas selecionar outro produto?',
+          style: theme.textTheme.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Manter Produção Aberta'),
+          ),
+          FilledButton.tonalIcon(
+            key: const ValueKey('confirm_finish_active_batch_btn'),
+            style: FilledButton.styleFrom(
+              backgroundColor: colorScheme.errorContainer,
+              foregroundColor: colorScheme.onErrorContainer,
+            ),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.stop_circle_outlined, size: 18),
+            label: const Text(
+              'Confirmar Encerramento',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      await widget.viewModel.finishActiveBatch();
+      if (context.mounted) Navigator.pop(context);
+    }
+  }
+
+  Future<void> _confirmAndSwitchProduct(
+    BuildContext context,
+    ProductModel newProduct,
+  ) async {
+    final activeBatch = widget.viewModel.activeBatch.value;
+    if (activeBatch == null) {
+      await widget.viewModel.startBatch(newProduct);
+      if (context.mounted) Navigator.pop(context);
+      return;
+    }
+
+    if (activeBatch.product.id == newProduct.id) {
+      if (context.mounted) Navigator.pop(context);
+      return;
+    }
+
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: colorScheme.surfaceContainerHigh,
+        shape: RoundedRectangleBorder(
+          borderRadius: AppSpacing.borderRadiusLg,
+          side: BorderSide(color: colorScheme.outlineVariant),
+        ),
+        title: Row(
+          children: [
+            Icon(
+              Icons.swap_horiz_rounded,
+              color: colorScheme.primary,
+              size: 22,
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Expanded(
+              child: Text(
+                'Trocar Produto em Produção?',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          'Produto atual: ${activeBatch.product.name}\nNovo produto: ${newProduct.name} (${newProduct.unitWeightGrams}g • Caixa: ${newProduct.defaultBoxCapacity} un)\n\nO lote anterior será salvo com a contagem atual e a produção continuará aberta até o final do dia com o novo produto.',
+          style: theme.textTheme.bodyMedium,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            key: const ValueKey('confirm_switch_product_btn'),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+            label: const Text(
+              'Confirmar Troca de Produto',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      await widget.viewModel.switchProduct(newProduct);
+      if (context.mounted) Navigator.pop(context);
+    }
   }
 
   @override
@@ -74,12 +241,17 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
         child: SignalBuilder(
           builder: (context) {
             final allProducts = widget.viewModel.availableProducts.value;
-            final categories = _extractCategories(allProducts);
+            final hasAnyEggs = allProducts.any((p) => p.isEgg);
+            final nonEggCategories = _extractNonEggCategories(allProducts);
             final filteredProducts = _filterProducts(allProducts);
             final isSyncing = widget.viewModel.isSyncingProducts.value;
             final syncError = widget.viewModel.productsSyncError.value;
             final activeBatch = widget.viewModel.activeBatch.value;
             final isLocked = activeBatch != null;
+            final effectiveCategory =
+                (_selectedCategory == _eggFilterKey && !hasAnyEggs)
+                ? null
+                : _selectedCategory;
 
             return Padding(
               padding: const EdgeInsets.symmetric(
@@ -94,8 +266,8 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                         ? 'LOTE EM ANDAMENTO'
                         : 'SELECIONAR PRODUTO DO LOTE',
                     subtitle: isLocked
-                        ? 'Encerre o lote atual antes de iniciar outro produto na esteira'
-                        : 'Produtos sincronizados do catálogo Supabase (sem mock)',
+                        ? 'A produção permanece aberta até o final do dia (00:00). Toque em outro produto para trocar.'
+                        : 'Filtrado primeiramente por Ovos • Produção permanece ativa até o final do dia',
                     icon: isLocked
                         ? Icons.inventory_rounded
                         : Icons.play_circle_fill_rounded,
@@ -128,10 +300,7 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                             backgroundColor: colorScheme.errorContainer,
                             foregroundColor: colorScheme.onErrorContainer,
                           ),
-                          onPressed: () async {
-                            await widget.viewModel.finishActiveBatch();
-                            if (context.mounted) Navigator.pop(context);
-                          },
+                          onPressed: () => _confirmAndCloseBatch(context),
                           icon: const Icon(
                             Icons.stop_circle_outlined,
                             size: 16,
@@ -165,14 +334,14 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                       child: Row(
                         children: [
                           Icon(
-                            Icons.lock_clock_rounded,
+                            Icons.verified_rounded,
                             size: 18,
                             color: colorScheme.primary,
                           ),
                           const SizedBox(width: AppSpacing.xs),
                           Expanded(
                             child: Text(
-                              'Produto ativo na esteira: ${activeBatch.product.name} (${activeBatch.product.unitWeightGrams}g • Caixa: ${activeBatch.product.defaultBoxCapacity} un)',
+                              'Ativo hoje até 23:59: ${activeBatch.product.name} (${activeBatch.product.unitWeightGrams}g • Caixa: ${activeBatch.product.defaultBoxCapacity} un)',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodySmall?.copyWith(
@@ -197,7 +366,7 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                     const SizedBox(height: 6),
                   ],
 
-                  // Barra de Busca + Chips de Categoria na mesma linha
+                  // Barra de Busca + Chips de Categoria (Ovos selecionado por padrão em 1º lugar)
                   if (allProducts.isNotEmpty) ...[
                     Row(
                       children: [
@@ -213,7 +382,7 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                               style: const TextStyle(fontSize: 12.5),
                               decoration: InputDecoration(
                                 hintText:
-                                    'Buscar produto por nome, categoria ou gramas...',
+                                    'Buscar ovo ou produto por nome, categoria ou gramas...',
                                 prefixIcon: const Icon(
                                   Icons.search_rounded,
                                   size: 16,
@@ -245,52 +414,71 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                             ),
                           ),
                         ),
-                        if (categories.length > 1) ...[
-                          const SizedBox(width: AppSpacing.sm),
-                          Expanded(
-                            flex: 5,
-                            child: SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: [
+                        const SizedBox(width: AppSpacing.sm),
+                        Expanded(
+                          flex: 5,
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                if (hasAnyEggs) ...[
                                   FilterChip(
+                                    key: const ValueKey('filter_chip_ovos'),
                                     label: const Text(
-                                      'Todos',
+                                      'OVOS',
                                       style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    selected:
+                                        effectiveCategory == _eggFilterKey,
+                                    visualDensity: VisualDensity.compact,
+                                    onSelected: (_) => setState(
+                                      () => _selectedCategory = _eggFilterKey,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                ],
+                                FilterChip(
+                                  key: const ValueKey('filter_chip_todos'),
+                                  label: const Text(
+                                    'Todos',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  selected: effectiveCategory == null,
+                                  visualDensity: VisualDensity.compact,
+                                  onSelected: (_) => setState(
+                                    () => _selectedCategory = null,
+                                  ),
+                                ),
+                                for (final cat in nonEggCategories) ...[
+                                  const SizedBox(width: 6),
+                                  FilterChip(
+                                    key: ValueKey('filter_chip_$cat'),
+                                    label: Text(
+                                      cat.toUpperCase(),
+                                      style: const TextStyle(
                                         fontSize: 11,
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
-                                    selected: _selectedCategory == null,
+                                    selected: effectiveCategory == cat,
                                     visualDensity: VisualDensity.compact,
-                                    onSelected: (_) => setState(
-                                      () => _selectedCategory = null,
+                                    onSelected: (sel) => setState(
+                                      () => _selectedCategory = sel
+                                          ? cat
+                                          : (hasAnyEggs ? _eggFilterKey : null),
                                     ),
                                   ),
-                                  for (final cat in categories) ...[
-                                    const SizedBox(width: 6),
-                                    FilterChip(
-                                      label: Text(
-                                        cat.toUpperCase(),
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                      selected: _selectedCategory == cat,
-                                      visualDensity: VisualDensity.compact,
-                                      onSelected: (sel) => setState(
-                                        () => _selectedCategory = sel
-                                            ? cat
-                                            : null,
-                                      ),
-                                    ),
-                                  ],
                                 ],
-                              ),
+                              ],
                             ),
                           ),
-                        ],
+                        ),
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -360,152 +548,138 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                                 final isCurrent =
                                     activeBatch?.product.id == product.id;
 
-                                return Opacity(
-                                  opacity: (!isLocked || isCurrent)
-                                      ? 1.0
-                                      : 0.45,
-                                  child: Card.outlined(
-                                    margin: EdgeInsets.zero,
-                                    color: isCurrent
-                                        ? colorScheme.primaryContainer
-                                        : colorScheme.surfaceContainerHighest,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: AppSpacing.borderRadiusMd,
-                                      side: BorderSide(
-                                        color: isCurrent
-                                            ? colorScheme.primary
-                                            : colorScheme.outlineVariant,
-                                        width: isCurrent ? 2.0 : 1.0,
-                                      ),
+                                return Card.outlined(
+                                  margin: EdgeInsets.zero,
+                                  color: isCurrent
+                                      ? colorScheme.primaryContainer
+                                      : colorScheme.surfaceContainerHighest,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: AppSpacing.borderRadiusMd,
+                                    side: BorderSide(
+                                      color: isCurrent
+                                          ? colorScheme.primary
+                                          : colorScheme.outlineVariant,
+                                      width: isCurrent ? 2.0 : 1.0,
                                     ),
-                                    child: InkWell(
-                                      borderRadius: AppSpacing.borderRadiusMd,
-                                      onTap: isLocked
-                                          ? null
-                                          : () async {
-                                              await widget.viewModel.startBatch(
-                                                product,
-                                              );
-                                              if (context.mounted) {
-                                                Navigator.pop(context);
-                                              }
-                                            },
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: AppSpacing.sm,
-                                          vertical: 8,
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceBetween,
-                                          children: [
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: Text(
-                                                    product.name,
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: theme
-                                                        .textTheme
-                                                        .titleSmall
-                                                        ?.copyWith(
-                                                          fontWeight:
-                                                              FontWeight.w900,
-                                                          fontSize: 13,
-                                                          color: isCurrent
-                                                              ? colorScheme
-                                                                    .onPrimaryContainer
-                                                              : colorScheme
-                                                                    .onSurface,
-                                                        ),
-                                                  ),
+                                  ),
+                                  child: InkWell(
+                                    borderRadius: AppSpacing.borderRadiusMd,
+                                    onTap: () => _confirmAndSwitchProduct(
+                                      context,
+                                      product,
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: AppSpacing.sm,
+                                        vertical: 8,
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  product.name,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: theme
+                                                      .textTheme
+                                                      .titleSmall
+                                                      ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.w900,
+                                                        fontSize: 13,
+                                                        color: isCurrent
+                                                            ? colorScheme
+                                                                  .onPrimaryContainer
+                                                            : colorScheme
+                                                                  .onSurface,
+                                                      ),
                                                 ),
-                                                if (isCurrent)
-                                                  Icon(
-                                                    Icons.check_circle_rounded,
-                                                    size: 16,
-                                                    color: colorScheme.primary,
-                                                  )
-                                                else if (isLocked)
-                                                  Icon(
-                                                    Icons.lock_outline_rounded,
-                                                    size: 15,
+                                              ),
+                                              if (isCurrent)
+                                                Icon(
+                                                  Icons.check_circle_rounded,
+                                                  size: 16,
+                                                  color: colorScheme.primary,
+                                                )
+                                              else if (isLocked)
+                                                Icon(
+                                                  Icons.swap_horiz_rounded,
+                                                  size: 16,
+                                                  color: colorScheme.primary,
+                                                )
+                                              else
+                                                Icon(
+                                                  Icons
+                                                      .play_circle_outline_rounded,
+                                                  size: 16,
+                                                  color: colorScheme.primary,
+                                                ),
+                                            ],
+                                          ),
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  '${product.unitWeightGrams}g • Caixa: ${product.defaultBoxCapacity} un',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: theme
+                                                      .textTheme
+                                                      .bodySmall
+                                                      ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        color: isCurrent
+                                                            ? colorScheme
+                                                                  .onPrimaryContainer
+                                                                  .withValues(
+                                                                    alpha: 0.9,
+                                                                  )
+                                                            : colorScheme
+                                                                  .onSurfaceVariant,
+                                                        fontFeatures: const [
+                                                          FontFeature.tabularFigures(),
+                                                        ],
+                                                      ),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: colorScheme
+                                                      .surfaceContainer,
+                                                  borderRadius: AppSpacing
+                                                      .borderRadiusXs,
+                                                ),
+                                                child: Text(
+                                                  product.category
+                                                      .toUpperCase(),
+                                                  style: TextStyle(
+                                                    fontSize: 9.5,
+                                                    fontWeight: FontWeight.w800,
                                                     color: colorScheme
                                                         .onSurfaceVariant,
-                                                  )
-                                                else
-                                                  Icon(
-                                                    Icons
-                                                        .play_circle_outline_rounded,
-                                                    size: 16,
-                                                    color: colorScheme.primary,
-                                                  ),
-                                              ],
-                                            ),
-                                            Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment
-                                                      .spaceBetween,
-                                              children: [
-                                                Flexible(
-                                                  child: Text(
-                                                    '${product.unitWeightGrams}g • Caixa: ${product.defaultBoxCapacity} un',
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: theme
-                                                        .textTheme
-                                                        .bodySmall
-                                                        ?.copyWith(
-                                                          fontWeight:
-                                                              FontWeight.w700,
-                                                          color: isCurrent
-                                                              ? colorScheme
-                                                                    .onPrimaryContainer
-                                                                    .withValues(
-                                                                      alpha: 0.9,
-                                                                    )
-                                                              : colorScheme
-                                                                    .onSurfaceVariant,
-                                                          fontFeatures: const [
-                                                            FontFeature.tabularFigures(),
-                                                          ],
-                                                        ),
                                                   ),
                                                 ),
-                                                const SizedBox(width: 4),
-                                                Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 6,
-                                                        vertical: 2,
-                                                      ),
-                                                  decoration: BoxDecoration(
-                                                    color: colorScheme
-                                                        .surfaceContainer,
-                                                    borderRadius: AppSpacing
-                                                        .borderRadiusXs,
-                                                  ),
-                                                  child: Text(
-                                                    product.category
-                                                        .toUpperCase(),
-                                                    style: TextStyle(
-                                                      fontSize: 9.5,
-                                                      fontWeight:
-                                                          FontWeight.w800,
-                                                      color: colorScheme
-                                                          .onSurfaceVariant,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
-                                        ),
+                                              ),
+                                            ],
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),

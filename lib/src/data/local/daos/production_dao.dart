@@ -188,6 +188,7 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
           id: batch.id,
           productId: batch.product.id,
           initialHardwareCount: batch.initialQuantity,
+          finalHardwareCount: Value(batch.actualQuantity),
           startedAt: Value(batch.startedAt),
         ),
       );
@@ -223,7 +224,15 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
           productsTable,
           productsTable.id.equalsExp(productionBatchesTable.productId),
         ),
-      ])..where(productionBatchesTable.finishedAt.isNull());
+      ])
+        ..where(productionBatchesTable.finishedAt.isNull())
+        ..orderBy([
+          OrderingTerm(
+            expression: productionBatchesTable.startedAt,
+            mode: OrderingMode.desc,
+          ),
+        ])
+        ..limit(1);
 
       final row = await query.getSingleOrNull();
       if (row == null) {
@@ -233,11 +242,38 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
       final batch = row.readTable(productionBatchesTable);
       final product = row.readTable(productsTable);
 
+      // Reconcilia a última contagem gravada na timeline caso tenha ficado no meio de um flush
+      final lastTimelineHit = await (select(productionTimeLinesTable)
+            ..where((t) => t.batchId.equals(batch.id))
+            ..orderBy([
+              (t) => OrderingTerm(
+                expression: t.recordedAt,
+                mode: OrderingMode.desc,
+              ),
+            ])
+            ..limit(1))
+          .getSingleOrNull();
+
+      final persistedFinal =
+          batch.finalHardwareCount ?? batch.initialHardwareCount;
+      final resolvedActual =
+          (lastTimelineHit != null &&
+              lastTimelineHit.currentHardwareCount > persistedFinal)
+          ? lastTimelineHit.currentHardwareCount
+          : persistedFinal;
+
+      if (resolvedActual != batch.finalHardwareCount) {
+        await updateBatchProgress(
+          batchId: batch.id,
+          actualHardwareCount: resolvedActual,
+        );
+      }
+
       return ProductionBatchModel(
         id: batch.id,
         product: _rowToProductModel(product),
         initialQuantity: batch.initialHardwareCount,
-        actualQuantity: batch.finalHardwareCount ?? batch.initialHardwareCount,
+        actualQuantity: resolvedActual,
         startedAt: batch.startedAt,
         finishedAt: batch.finishedAt,
       );
@@ -252,7 +288,15 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
         productsTable,
         productsTable.id.equalsExp(productionBatchesTable.productId),
       ),
-    ])..where(productionBatchesTable.finishedAt.isNull());
+    ])
+      ..where(productionBatchesTable.finishedAt.isNull())
+      ..orderBy([
+        OrderingTerm(
+          expression: productionBatchesTable.startedAt,
+          mode: OrderingMode.desc,
+        ),
+      ])
+      ..limit(1);
 
     return query.watchSingleOrNull().map((row) {
       if (row == null) return null;

@@ -22,6 +22,7 @@ final class ProductionRepository {
   StreamSubscription? _wsSubscription;
   Timer? _midnightTimer;
   Timer? _bufferFlushTimer;
+  late final Future<void> _readyFuture;
 
   ProductionBatchModel? _activeBatch;
   DailyProductionAccountingModel _currentAccounting =
@@ -61,8 +62,11 @@ final class ProductionRepository {
     this.remoteDatasource,
   }) {
     _startHardwareListener();
-    _init();
+    _readyFuture = _init();
   }
+
+  /// Aguarda a restauração do estado local (lote ativo do dia, produtos em cache e contabilidade)
+  Future<void> get ready => _readyFuture;
 
   Stream<ProductionBatchModel?> get activeBatchStream =>
       _activeBatchController.stream;
@@ -104,9 +108,26 @@ final class ProductionRepository {
     // 3. Carrega lote ativo atual (se houver para o dia de hoje)
     final activeResult = await _dao.getActiveBatch();
     if (activeResult.isOk) {
-      _activeBatch = activeResult.valueOrThrow;
-      if (_activeBatch != null) {
-        _lastHardwareCount = _activeBatch!.actualQuantity;
+      final restored = activeResult.valueOrThrow;
+      if (restored != null) {
+        // Caso já tenha chegado algum frame de telemetria do ESP32 durante o _init(),
+        // reconcilia a diferença entre o hardware e a última quantidade persistida
+        if (_lastHardwareCount != null &&
+            _lastHardwareCount! > restored.actualQuantity) {
+          _activeBatch = restored.copyWith(actualQuantity: _lastHardwareCount!);
+          await _dao.updateBatchProgress(
+            batchId: restored.id,
+            actualHardwareCount: _lastHardwareCount!,
+          );
+        } else {
+          _activeBatch = restored;
+          _lastHardwareCount ??= _activeBatch!.actualQuantity;
+        }
+        if (!_conveyorWithoutBatchController.isClosed) {
+          _conveyorWithoutBatchController.add(false);
+        }
+      } else {
+        _activeBatch = null;
       }
       if (!_activeBatchController.isClosed) {
         _activeBatchController.add(_activeBatch);
@@ -119,8 +140,39 @@ final class ProductionRepository {
     // 5. Agenda timer para a virada da meia-noite (00:00:00)
     _scheduleMidnightTimer();
 
-    // 6. Busca produtos reais do Supabase (e escuta atualizações se disponível)
-    await refreshProductsFromSupabase();
+    // 6. Busca produtos reais do Supabase em background (sem bloquear a inicialização)
+    unawaited(refreshProductsFromSupabase());
+  }
+
+  /// Sincroniza e garante que o lote ativo do dia continue aberto ao voltar para o app (onResume),
+  /// ou seja fechado automaticamente caso tenha virado o dia (00:00).
+  Future<void> onAppLifecycleStateChanged({required bool isResumed}) async {
+    if (!isResumed) {
+      await _flushBuffer();
+      return;
+    }
+
+    await checkAndCloseExpiredBatches();
+    final activeResult = await _dao.getActiveBatch();
+    if (activeResult.isOk) {
+      final restored = activeResult.valueOrThrow;
+      if (restored != null) {
+        final mergedActual = max(
+          restored.actualQuantity,
+          _activeBatch?.id == restored.id
+              ? _activeBatch!.actualQuantity
+              : restored.actualQuantity,
+        );
+        _activeBatch = restored.copyWith(actualQuantity: mergedActual);
+        _lastHardwareCount ??= _activeBatch!.actualQuantity;
+      } else {
+        _activeBatch = null;
+      }
+      if (!_activeBatchController.isClosed) {
+        _activeBatchController.add(_activeBatch);
+      }
+    }
+    await refreshDailyAccounting();
   }
 
   /// Busca os produtos ativos da tabela `public.products` no Supabase e
@@ -335,6 +387,14 @@ final class ProductionRepository {
     if (_hitBuffer.length >= 10) {
       _flushBuffer();
     } else {
+      // Atualiza imediatamente o progresso parcial no SQLite para que qualquer
+      // saída abrupta do app antes do flush do buffer preserve a contagem exata
+      unawaited(
+        _dao.updateBatchProgress(
+          batchId: batchId,
+          actualHardwareCount: hardwareCount,
+        ),
+      );
       _bufferFlushTimer ??= Timer(
         const Duration(milliseconds: 1500),
         _flushBuffer,
@@ -346,7 +406,15 @@ final class ProductionRepository {
     _bufferFlushTimer?.cancel();
     _bufferFlushTimer = null;
 
-    if (_hitBuffer.isEmpty) return;
+    if (_hitBuffer.isEmpty) {
+      if (_activeBatch != null) {
+        await _dao.updateBatchProgress(
+          batchId: _activeBatch!.id,
+          actualHardwareCount: _activeBatch!.actualQuantity,
+        );
+      }
+      return;
+    }
 
     final hitsToWrite =
         List<({String batchId, int hardwareCount, DateTime timestamp})>.from(
@@ -355,10 +423,15 @@ final class ProductionRepository {
     _hitBuffer.clear();
 
     final lastHit = hitsToWrite.last;
+    final resolvedCount =
+        (_activeBatch != null && _activeBatch!.id == lastHit.batchId)
+        ? max(lastHit.hardwareCount, _activeBatch!.actualQuantity)
+        : lastHit.hardwareCount;
+
     await _dao.batchLogTimelineHits(hitsToWrite);
     await _dao.updateBatchProgress(
       batchId: lastHit.batchId,
-      actualHardwareCount: lastHit.hardwareCount,
+      actualHardwareCount: resolvedCount,
     );
   }
 
@@ -410,6 +483,35 @@ final class ProductionRepository {
       return _activeBatch!;
     },
     tag: 'ProductionRepository.startProductionBatch',
+  );
+
+  /// Troca o produto ativo do dia: fecha o lote do produto anterior com a contagem até
+  /// o momento e abre imediatamente o novo lote com o produto selecionado, mantendo
+  /// a produção do dia contínua até 23:59:59.
+  Future<Result<ProductionBatchModel>> switchActiveBatchProduct({
+    required ProductModel newProduct,
+  }) => Result.catchInAsync(
+    fn: () async {
+      await checkAndCloseExpiredBatches();
+
+      final current = _activeBatch ?? (await _dao.getActiveBatch()).valueOrNull;
+      if (current != null) {
+        if (current.product.id == newProduct.id) {
+          return current;
+        }
+        final closeRes = await closeActiveBatch(batch: current);
+        if (closeRes.isError) {
+          throw closeRes.errorOrThrow;
+        }
+      }
+
+      final startRes = await startProductionBatch(product: newProduct);
+      if (startRes.isError) {
+        throw startRes.errorOrThrow;
+      }
+      return startRes.valueOrThrow;
+    },
+    tag: 'ProductionRepository.switchActiveBatchProduct',
   );
 
   /// Fecha manualmente o lote ativo

@@ -261,7 +261,24 @@ final class EggCountViewModel {
       batchManualAdditions.value = 0;
       batchNetAdjustment.value = 0;
       defaultBoxCapacity.value = product.defaultBoxCapacity;
-      _lastCompletedBoxes = 0;
+      _lastCompletedBoxes = batchCompletedBoxes.value;
+    }
+    return result;
+  }
+
+  /// Troca o produto ativo do dia (fecha o lote anterior com a contagem atual e abre
+  /// o novo produto imediatamente, mantendo a produção aberta até o final do dia)
+  Future<Result<ProductionBatchModel>> switchProduct(
+    ProductModel newProduct,
+  ) async {
+    final result = await _repository.switchActiveBatchProduct(
+      newProduct: newProduct,
+    );
+    if (result.isOk) {
+      batchManualAdditions.value = 0;
+      batchNetAdjustment.value = 0;
+      defaultBoxCapacity.value = newProduct.defaultBoxCapacity;
+      _lastCompletedBoxes = batchCompletedBoxes.value;
     }
     return result;
   }

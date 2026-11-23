@@ -23,6 +23,16 @@ final class ProductModel extends BaseModel {
            ? defaultBoxCapacity
            : (unitWeightGrams >= 500 ? 40 : 50);
 
+  /// Verifica se o produto pertence à família de Ovos (pela categoria ou pelo nome).
+  bool get isEgg {
+    final cat = category.trim().toLowerCase();
+    final nm = name.trim().toLowerCase();
+    return cat == 'ovo' ||
+        cat == 'ovos' ||
+        cat.contains('ovo') ||
+        RegExp(r'\bovos?\b', caseSensitive: false).hasMatch(nm);
+  }
+
   /// Extrai gramatura a partir do nome (ex: "Ovo Ao Leite 250g" -> 250, "Barra 1kg" -> 1000).
   static int inferWeightGramsFromName(String name, {int fallback = 250}) {
     final gramsMatch = RegExp(

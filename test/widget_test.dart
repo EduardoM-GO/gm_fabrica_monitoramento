@@ -253,18 +253,22 @@ void main() {
       expect(find.textContaining('-18.4 °C'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
-      // 1. Abre o seletor de produto e inicia um lote com o produto vindo do Supabase
+      // 1. Abre o seletor de produto: verifica que filtra primeiramente pelos Ovos (OVOS selecionado por padrão)
       await tester.tap(find.text('INICIAR LOTE DE PRODUÇÃO'));
       await tester.pumpAndSettle();
       expect(find.text('SELECIONAR PRODUTO DO LOTE'), findsOneWidget);
+      expect(find.byKey(const ValueKey('filter_chip_ovos')), findsOneWidget);
+      expect(find.text('Ovo Ao Leite 250g'), findsOneWidget);
+      expect(find.text('Casca Trufada 500g'), findsNothing);
       expect(tester.takeException(), isNull);
 
-      final firstProduct = eggViewModel.availableProducts.value.first;
-      expect(firstProduct.name, 'Casca Trufada 500g');
-      expect(firstProduct.unitWeightGrams, 500);
-      expect(firstProduct.defaultBoxCapacity, 40);
+      final eggProduct = eggViewModel.availableProducts.value
+          .firstWhere((p) => p.isEgg);
+      expect(eggProduct.name, 'Ovo Ao Leite 250g');
+      expect(eggProduct.unitWeightGrams, 250);
+      expect(eggProduct.defaultBoxCapacity, 50);
 
-      await tester.tap(find.text(firstProduct.name));
+      await tester.tap(find.text(eggProduct.name));
       await tester.pumpAndSettle();
       expect(find.text('LOTE ATIVO'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -310,18 +314,35 @@ void main() {
       expect(eggViewModel.currentBoxCount.value, 2);
       expect(tester.takeException(), isNull);
 
-      // 2.b Verifica bloqueio de troca de produto sem encerrar o lote atual
-      final secondProduct = eggViewModel.availableProducts.value[1];
-      await tester.tap(find.text('ENCERRAR LOTE'));
+      // 2.b Verifica troca de produto com confirmação e encerramento com confirmação
+      final cascaProduct = eggViewModel.availableProducts.value
+          .firstWhere((p) => !p.isEgg);
+      await tester.tap(find.byKey(const ValueKey('manage_active_batch_btn')));
       await tester.pumpAndSettle();
       expect(find.text('LOTE EM ANDAMENTO'), findsOneWidget);
 
-      await tester.tap(find.text(secondProduct.name));
+      // Troca filtro para 'Todos' para visualizar produtos que não são ovos
+      await tester.tap(find.byKey(const ValueKey('filter_chip_todos')));
       await tester.pumpAndSettle();
-      expect(eggViewModel.activeBatch.value?.product.id, firstProduct.id);
+      expect(find.text(cascaProduct.name), findsOneWidget);
 
-      // Encerra o lote atual pelo botão dedicado
+      // Toca em outro produto -> abre modal de confirmação de troca
+      await tester.tap(find.text(cascaProduct.name));
+      await tester.pumpAndSettle();
+      expect(find.text('Trocar Produto em Produção?'), findsOneWidget);
+
+      // Cancela troca -> mantém o ovo ativo
+      await tester.tap(find.text('Cancelar'));
+      await tester.pumpAndSettle();
+      expect(eggViewModel.activeBatch.value?.product.id, eggProduct.id);
+
+      // Encerra o lote atual pelo botão dedicado com confirmação
       await tester.tap(find.byKey(const ValueKey('finish_active_batch_btn')));
+      await tester.pumpAndSettle();
+      expect(find.text('Encerrar Produção do Dia?'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('confirm_finish_active_batch_btn')),
+      );
       await tester.pumpAndSettle();
       expect(eggViewModel.hasActiveBatch.value, isFalse);
       expect(find.text('INICIAR LOTE DE PRODUÇÃO'), findsOneWidget);
