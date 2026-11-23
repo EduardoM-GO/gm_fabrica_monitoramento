@@ -360,8 +360,6 @@ final class ProductionRepository {
       batchId: lastHit.batchId,
       actualHardwareCount: lastHit.hardwareCount,
     );
-
-    await refreshDailyAccounting();
   }
 
   /// Inicia um novo lote de produção para um produto real.

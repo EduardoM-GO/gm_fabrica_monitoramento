@@ -20,317 +20,370 @@ final class EggCountCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return SignalBuilder(
-      builder: (context) {
-        final isAnimating = viewModel.isHitAnimating.value;
-        final isConveyorAlert = viewModel.isConveyorRunningWithoutBatch.value;
-        final hasBatch = viewModel.hasActiveBatch.value;
-        final currentBox = viewModel.currentBoxCount.value;
-        final boxCap = viewModel.defaultBoxCapacity.value;
-        final progress = viewModel.boxProgress.value;
+    return LayoutBuilder(
+      builder: (context, cardConstraints) {
+        final hasBoundedHeight = cardConstraints.maxHeight.isFinite;
 
-        return Card.outlined(
-          color: isConveyorAlert
-              ? colorScheme.errorContainer.withValues(alpha: 0.28)
-              : colorScheme.surfaceContainer,
-          shape: RoundedRectangleBorder(
-            borderRadius: AppSpacing.borderRadiusXl,
-            side: BorderSide(
-              color: isConveyorAlert
-                  ? colorScheme.error
-                  : isAnimating
-                      ? colorScheme.primary
-                      : colorScheme.outlineVariant,
-              width: 1.5,
+        // Seção Hero da Caixa Atual: cada campo (Contador, Capacidade e Barra de Progresso)
+        // possui seu próprio SignalBuilder (micro-state).
+        final heroCurrentBoxSection = Column(
+          mainAxisSize: hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Flexible(
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.baseline,
+                    textBaseline: TextBaseline.alphabetic,
+                    children: [
+                      // Micro-state 1: Apenas o número da caixa atual
+                      SignalBuilder(
+                        builder: (context) {
+                          final currentBox = viewModel.currentBoxCount.value;
+                          final active = viewModel.hasActiveBatch.value;
+                          return SlidingCounterText(
+                            value: currentBox,
+                            style: theme.textTheme.displayLarge?.copyWith(
+                              fontFamily: AppTheme.fontHeading,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 96,
+                              height: 1.0,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                              color: active
+                                  ? colorScheme.primary
+                                  : AppTheme.textMuted,
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                      // Micro-state 2: Capacidade da caixa (só muda quando troca de produto)
+                      SignalBuilder(
+                        builder: (context) {
+                          final boxCap = viewModel.defaultBoxCapacity.value;
+                          return Text(
+                            '/ $boxCap',
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              color: AppTheme.textSecondary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 26,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ),
-          child: LayoutBuilder(
-            builder: (context, cardConstraints) {
-              final hasBoundedHeight = cardConstraints.maxHeight.isFinite;
+            const SizedBox(height: 8),
+            // Micro-state 3: Barra de progresso da caixa
+            SignalBuilder(
+              builder: (context) {
+                final progress = viewModel.boxProgress.value;
+                return SmoothProgressBar(
+                  value: progress,
+                  minHeight: 8,
+                  progressColor: progress >= 1.0
+                      ? AppTheme.successGreen
+                      : colorScheme.primary,
+                  backgroundColor: colorScheme.surfaceContainerHighest,
+                  borderRadius: AppSpacing.borderRadiusXs,
+                );
+              },
+            ),
+          ],
+        );
 
-              final heroCurrentBoxSection = Column(
-                mainAxisSize:
-                    hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Flexible(
-                    child: Center(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.baseline,
-                          textBaseline: TextBaseline.alphabetic,
-                          children: [
-                            SlidingCounterText(
-                              value: currentBox,
-                              style: theme.textTheme.displayLarge?.copyWith(
-                                fontFamily: AppTheme.fontHeading,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 96,
-                                height: 1.0,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                                color: hasBatch
-                                    ? colorScheme.primary
-                                    : AppTheme.textMuted,
-                              ),
+        final cardBody = Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.md,
+            vertical: 10,
+          ),
+          child: Column(
+            mainAxisSize:
+                hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // --- Micro-state: Alerta de Esteira Rodando Sem Lote Ativo ---
+              SignalBuilder(
+                builder: (context) {
+                  final isConveyorAlert =
+                      viewModel.isConveyorRunningWithoutBatch.value;
+                  if (!isConveyorAlert) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: BreathingGlow(
+                      isPulsing: true,
+                      child: Card.filled(
+                        color: colorScheme.errorContainer,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: AppSpacing.borderRadiusMd,
+                          side: BorderSide(color: colorScheme.error),
+                        ),
+                        child: InkWell(
+                          borderRadius: AppSpacing.borderRadiusMd,
+                          onTap: () => _showProductSelectorSheet(context),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: AppSpacing.sm,
+                              vertical: 6,
                             ),
-                            const SizedBox(width: AppSpacing.xs),
-                            Text(
-                              '/ $boxCap',
-                              style: theme.textTheme.headlineSmall?.copyWith(
-                                color: AppTheme.textSecondary,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 26,
-                                fontFeatures: const [
-                                  FontFeature.tabularFigures(),
-                                ],
-                              ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.warning_amber_rounded,
+                                  color: colorScheme.onErrorContainer,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: AppSpacing.xs),
+                                Expanded(
+                                  child: Text(
+                                    'Esteira em movimento sem lote aberto! Toque para selecionar o produto.',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall?.copyWith(
+                                      color: colorScheme.onErrorContainer,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
+                  );
+                },
+              ),
+
+              // --- Topo Super Clean: Produto + Status + Botão Encerrar Lote ---
+              Row(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        // Micro-state: Nome do Produto
+                        Flexible(
+                          child: SignalBuilder(
+                            builder: (context) {
+                              final prodName = viewModel.productName.value
+                                  .toUpperCase();
+                              final active = viewModel.hasActiveBatch.value;
+                              return Text(
+                                prodName,
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                  fontFamily: AppTheme.fontHeading,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: active ? 16 : 14,
+                                  letterSpacing: 0.4,
+                                  color: active
+                                      ? colorScheme.onSurface
+                                      : AppTheme.textSecondary,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // Micro-state: StatusBadge do lote (só muda quando abre/fecha lote)
+                        SignalBuilder(
+                          builder: (context) {
+                            final active = viewModel.hasActiveBatch.value;
+                            return StatusBadge(
+                              label: active ? 'LOTE ATIVO' : 'EM REPOUSO',
+                              color: active
+                                  ? AppTheme.successGreen
+                                  : AppTheme.textMuted,
+                              compact: true,
+                              subtle: !active,
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  SmoothProgressBar(
-                    value: progress,
-                    minHeight: 8,
-                    progressColor: progress >= 1.0
-                        ? AppTheme.successGreen
-                        : colorScheme.primary,
-                    backgroundColor: colorScheme.surfaceContainerHighest,
-                    borderRadius: AppSpacing.borderRadiusXs,
+                  // Micro-state: Botão Encerrar Lote (só reconstrói quando `hasActiveBatch` muda)
+                  SignalBuilder(
+                    builder: (context) {
+                      final hasBatch = viewModel.hasActiveBatch.value;
+                      if (!hasBatch) return const SizedBox.shrink();
+                      return Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: AppSpacing.borderRadiusXs,
+                          onTap: () => _showProductSelectorSheet(context),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.stop_circle_outlined,
+                                  size: 14,
+                                  color: AppTheme.textMuted.withValues(
+                                    alpha: 0.9,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Text(
+                                  'ENCERRAR LOTE',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 10.5,
+                                    color: AppTheme.textMuted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ],
-              );
+              ),
 
-              return Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.md,
-                  vertical: 10,
-                ),
-                child: Column(
-                  mainAxisSize:
-                      hasBoundedHeight ? MainAxisSize.max : MainAxisSize.min,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // --- Alerta de Esteira Rodando Sem Lote Ativo ---
-                    if (isConveyorAlert) ...[
-                      BreathingGlow(
-                        isPulsing: true,
-                        child: Card.filled(
-                          color: colorScheme.errorContainer,
+              const SizedBox(height: 6),
+
+              // --- 1º MAIS IMPORTANTE: Contagem Atual centralizada e limpa ---
+              if (hasBoundedHeight)
+                Expanded(child: heroCurrentBoxSection)
+              else
+                heroCurrentBoxSection,
+
+              const SizedBox(height: 8),
+
+              // --- 2º MAIS IMPORTANTE: Total e Caixas Fechadas com Micro-States separados ---
+              Row(
+                children: [
+                  Expanded(
+                    child: SignalBuilder(
+                      builder: (context) {
+                        return _StatItem(
+                          label: 'TOTAL',
+                          value: '${viewModel.dailyNetCount.value}',
+                          color: colorScheme.primary,
+                        );
+                      },
+                    ),
+                  ),
+                  Container(
+                    width: 1,
+                    height: 28,
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+                  ),
+                  Expanded(
+                    child: SignalBuilder(
+                      builder: (context) {
+                        return _StatItem(
+                          label: 'CAIXAS FECHADAS',
+                          value: '${viewModel.dailyCompletedBoxes.value}',
+                          color: colorScheme.secondary,
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+
+              // --- Micro-state: Único Botão Operacional na Base (só reconstrói quando `hasActiveBatch` muda) ---
+              SignalBuilder(
+                builder: (context) {
+                  final hasBatch = viewModel.hasActiveBatch.value;
+                  if (!hasBatch) {
+                    return PressableScale(
+                      child: FilledButton.icon(
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size.fromHeight(42),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
                           shape: RoundedRectangleBorder(
                             borderRadius: AppSpacing.borderRadiusMd,
-                            side: BorderSide(color: colorScheme.error),
                           ),
-                          child: InkWell(
-                            borderRadius: AppSpacing.borderRadiusMd,
-                            onTap: () => _showProductSelectorSheet(context),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: AppSpacing.sm,
-                                vertical: 4,
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.warning_amber_rounded,
-                                    color: colorScheme.onErrorContainer,
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: AppSpacing.xs),
-                                  Expanded(
-                                    child: Text(
-                                      'Esteira em movimento sem lote aberto! Toque para selecionar o produto.',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.bodySmall?.copyWith(
-                                        color: colorScheme.onErrorContainer,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
+                        ),
+                        onPressed: () => _showProductSelectorSheet(context),
+                        icon: const Icon(Icons.play_arrow_rounded, size: 20),
+                        label: const Text(
+                          'INICIAR LOTE DE PRODUÇÃO',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 13,
+                            letterSpacing: 0.5,
                           ),
                         ),
                       ),
-                      const SizedBox(height: 4),
-                    ],
-
-                    // --- Topo Super Clean: Produto + Status + Botão Discreto Encerrar Lote ---
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Row(
-                            children: [
-                              Flexible(
-                                child: Text(
-                                  viewModel.productName.value.toUpperCase(),
-                                  style: theme.textTheme.titleMedium?.copyWith(
-                                    fontFamily: AppTheme.fontHeading,
-                                    fontWeight: FontWeight.w900,
-                                    fontSize: hasBatch ? 16 : 14,
-                                    letterSpacing: 0.4,
-                                    color: hasBatch
-                                        ? colorScheme.onSurface
-                                        : AppTheme.textSecondary,
-                                  ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              StatusBadge(
-                                label: hasBatch ? 'LOTE ATIVO' : 'EM REPOUSO',
-                                color: hasBatch
-                                    ? AppTheme.successGreen
-                                    : AppTheme.textMuted,
-                                compact: true,
-                                subtle: !hasBatch,
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (hasBatch)
-                          InkWell(
-                            borderRadius: AppSpacing.borderRadiusXs,
-                            onTap: () => _showProductSelectorSheet(context),
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 4,
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.stop_circle_outlined,
-                                    size: 13,
-                                    color: AppTheme.textMuted.withValues(
-                                      alpha: 0.8,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  const Text(
-                                    'ENCERRAR LOTE',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 10,
-                                      color: AppTheme.textMuted,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 6),
-
-                    // --- 1º MAIS IMPORTANTE: Contagem Atual centralizada e limpa ---
-                    if (hasBoundedHeight)
-                      Expanded(child: heroCurrentBoxSection)
-                    else
-                      heroCurrentBoxSection,
-
-                    const SizedBox(height: 8),
-
-                    // --- 2º MAIS IMPORTANTE: Apenas Total e Caixas Fechadas limpos ---
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _StatItem(
-                            label: 'TOTAL',
-                            value: '${viewModel.dailyNetCount.value}',
-                            color: colorScheme.primary,
-                          ),
-                        ),
-                        Container(
-                          width: 1,
-                          height: 28,
-                          color: colorScheme.outlineVariant.withValues(
-                            alpha: 0.4,
-                          ),
-                        ),
-                        Expanded(
-                          child: _StatItem(
-                            label: 'CAIXAS FECHADAS',
-                            value: '${viewModel.dailyCompletedBoxes.value}',
-                            color: colorScheme.secondary,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    // --- Único Botão Operacional na Base ---
-                    if (!hasBatch)
-                      PressableScale(
-                        child: FilledButton.icon(
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(40),
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: AppSpacing.borderRadiusMd,
-                            ),
-                          ),
-                          onPressed: () => _showProductSelectorSheet(context),
-                          icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                          label: const Text(
-                            'INICIAR LOTE DE PRODUÇÃO',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 13,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                      )
-                    else
-                      PressableScale(
-                        child: FilledButton.tonalIcon(
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size.fromHeight(40),
-                            padding: const EdgeInsets.symmetric(vertical: 6),
-                            backgroundColor: colorScheme.surfaceContainerHighest,
-                            foregroundColor: colorScheme.onSurface,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: AppSpacing.borderRadiusMd,
-                              side: BorderSide(
-                                color: colorScheme.outlineVariant,
-                              ),
-                            ),
-                          ),
-                          onPressed: () => _showDiscardSheet(context),
-                          icon: const Icon(
-                            Icons.exposure_rounded,
-                            size: 18,
-                          ),
-                          label: const Text(
-                            'AJUSTAR CONTAGEM / QUEBRA',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 12.5,
-                              letterSpacing: 0.4,
-                            ),
-                          ),
+                    );
+                  }
+                  return PressableScale(
+                    child: FilledButton.tonalIcon(
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(42),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        backgroundColor: colorScheme.surfaceContainerHighest,
+                        foregroundColor: colorScheme.onSurface,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: AppSpacing.borderRadiusMd,
+                          side: BorderSide(color: colorScheme.outlineVariant),
                         ),
                       ),
-                  ],
-                ),
-              );
-            },
+                      onPressed: () => _showDiscardSheet(context),
+                      icon: const Icon(Icons.exposure_rounded, size: 18),
+                      label: const Text(
+                        'AJUSTAR CONTAGEM / QUEBRA',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12.5,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
+        );
+
+        // Micro-state da casca do Card: só reconstrói quando `isConveyorRunningWithoutBatch` muda,
+        // mantendo `cardBody` intacto.
+        return SignalBuilder(
+          builder: (context) {
+            final isConveyorAlert =
+                viewModel.isConveyorRunningWithoutBatch.value;
+            return Card.outlined(
+              color: isConveyorAlert
+                  ? colorScheme.errorContainer.withValues(alpha: 0.28)
+                  : colorScheme.surfaceContainer,
+              shape: RoundedRectangleBorder(
+                borderRadius: AppSpacing.borderRadiusXl,
+                side: BorderSide(
+                  color: isConveyorAlert
+                      ? colorScheme.error
+                      : colorScheme.outlineVariant,
+                  width: 1.5,
+                ),
+              ),
+              child: cardBody,
+            );
+          },
         );
       },
     );
@@ -758,33 +811,37 @@ class _DiscardBottomSheetState extends State<_DiscardBottomSheet> {
               ],
             ),
             const SizedBox(height: AppSpacing.xxs),
-            SignalBuilder(
-              builder: (context) {
-                final gross = widget.viewModel.dailyGrossCount.value;
-                final discards = widget.viewModel.dailyDiscardsCount.value;
-                final speed = widget.viewModel.eggsPerMinute.value;
-                return Container(
-                  margin: const EdgeInsets.only(top: 4, bottom: 6),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.sm,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: colorScheme.surfaceContainer,
-                    borderRadius: AppSpacing.borderRadiusSm,
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      Text(
+            Container(
+              margin: const EdgeInsets.only(top: 4, bottom: 6),
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.sm,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainer,
+                borderRadius: AppSpacing.borderRadiusSm,
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  SignalBuilder(
+                    builder: (context) {
+                      final gross = widget.viewModel.dailyGrossCount.value;
+                      return Text(
                         'Total Bruto: $gross',
                         style: theme.textTheme.labelMedium?.copyWith(
                           fontWeight: FontWeight.w700,
                           color: AppTheme.textSecondary,
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
-                      ),
-                      Text(
+                      );
+                    },
+                  ),
+                  SignalBuilder(
+                    builder: (context) {
+                      final discards =
+                          widget.viewModel.dailyDiscardsCount.value;
+                      return Text(
                         'Quebras/Desc.: $discards',
                         style: theme.textTheme.labelMedium?.copyWith(
                           fontWeight: FontWeight.w800,
@@ -793,19 +850,24 @@ class _DiscardBottomSheetState extends State<_DiscardBottomSheet> {
                               : AppTheme.textSecondary,
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
-                      ),
-                      Text(
+                      );
+                    },
+                  ),
+                  SignalBuilder(
+                    builder: (context) {
+                      final speed = widget.viewModel.eggsPerMinute.value;
+                      return Text(
                         'Cadência: ${speed.toStringAsFixed(0)} ovos/min',
                         style: theme.textTheme.labelMedium?.copyWith(
                           fontWeight: FontWeight.w700,
                           color: AppTheme.textMuted,
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
-                      ),
-                    ],
+                      );
+                    },
                   ),
-                );
-              },
+                ],
+              ),
             ),
             Text(
               isAddition

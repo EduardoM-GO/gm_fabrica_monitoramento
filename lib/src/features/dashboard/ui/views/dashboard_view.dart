@@ -122,33 +122,7 @@ final class _TopKioskStatusStrip extends StatelessWidget {
 
     return SignalBuilder(
       builder: (context) {
-        final room = eggViewModel.roomTelemetry.value;
-        final connState = settingsViewModel.connectionState.value;
-        final host = settingsViewModel.espHost.value;
-        final isDiscovering = settingsViewModel.isDiscovering.value;
         final hasDoorAlarm = freezerViewModel.hasDoorAlarm.value;
-
-        final (Color statusColor, String statusText) = switch (connState) {
-          WsConnectionStateEnum.connected => (
-            AppTheme.successGreen,
-            'Online',
-          ),
-          WsConnectionStateEnum.connecting => (
-            AppTheme.warningAmber,
-            'Conectando ($host)...',
-          ),
-          WsConnectionStateEnum.reconnecting => (
-            AppTheme.warningAmber,
-            isDiscovering ? 'Buscando ESP32...' : 'Reconectando...',
-          ),
-          WsConnectionStateEnum.disconnected => (
-            AppTheme.dangerRed,
-            'Offline ($host)',
-          ),
-        };
-
-        final isHealthy =
-            connState == WsConnectionStateEnum.connected && !hasDoorAlarm;
 
         return Container(
           padding: const EdgeInsets.symmetric(
@@ -207,7 +181,7 @@ final class _TopKioskStatusStrip extends StatelessWidget {
                 const SizedBox(width: AppSpacing.xs),
               ],
 
-              // Clima da Sala (Tier 3 — informação ambiental tímida)
+              // Clima da Sala isolado em seu próprio micro-state textual (`roomSummaryText`)
               Flexible(
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
@@ -220,16 +194,20 @@ final class _TopKioskStatusStrip extends StatelessWidget {
                         color: AppTheme.textMuted.withValues(alpha: 0.8),
                       ),
                       const SizedBox(width: 3),
-                      Text(
-                        room != null
-                            ? 'Sala: ${room.temp.toStringAsFixed(1)} °C • ${room.humidity.toStringAsFixed(0)}% UR'
-                            : 'Sala: --.- °C • --% UR',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                          color: AppTheme.textMuted,
-                        ),
+                      SignalBuilder(
+                        builder: (context) {
+                          return Text(
+                            eggViewModel.roomSummaryText.value,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                              color: AppTheme.textMuted,
+                            ),
+                          );
+                        },
                       ),
                     ],
                   ),
@@ -238,38 +216,77 @@ final class _TopKioskStatusStrip extends StatelessWidget {
 
               const SizedBox(width: AppSpacing.sm),
 
-              // Semáforo WebSocket + Ação Tímida de Configurações
+              // Semáforo WebSocket + Ação de Configurações (um único InkWell com hitbox amplo e sem IconButton aninhado competindo pelo toque)
               Flexible(
-                child: InkWell(
-                  borderRadius: AppSpacing.borderRadiusXs,
-                  onTap: () => _openSettings(context),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Flexible(
-                        child: StatusBadge(
-                          label: statusText,
-                          color: statusColor,
-                          showDot: true,
-                          compact: true,
-                          subtle: isHealthy,
-                        ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: AppSpacing.borderRadiusXs,
+                    onTap: () => _openSettings(context),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 4,
                       ),
-                      const SizedBox(width: 4),
-                      SizedBox(
-                        width: 24,
-                        height: 24,
-                        child: IconButton(
-                          visualDensity: VisualDensity.compact,
-                          padding: EdgeInsets.zero,
-                          iconSize: 14,
-                          color: AppTheme.textMuted.withValues(alpha: 0.7),
-                          tooltip: 'Configurações do Kiosk & ESP32',
-                          onPressed: () => _openSettings(context),
-                          icon: const Icon(Icons.settings_rounded),
-                        ),
+                      child: SignalBuilder(
+                        builder: (context) {
+                          final connState =
+                              settingsViewModel.connectionState.value;
+                          final host = settingsViewModel.espHost.value;
+                          final isDiscovering =
+                              settingsViewModel.isDiscovering.value;
+
+                          final (Color statusColor, String statusText) =
+                              switch (connState) {
+                                WsConnectionStateEnum.connected => (
+                                  AppTheme.successGreen,
+                                  'Online',
+                                ),
+                                WsConnectionStateEnum.connecting => (
+                                  AppTheme.warningAmber,
+                                  'Conectando ($host)...',
+                                ),
+                                WsConnectionStateEnum.reconnecting => (
+                                  AppTheme.warningAmber,
+                                  isDiscovering
+                                      ? 'Buscando ESP32...'
+                                      : 'Reconectando...',
+                                ),
+                                WsConnectionStateEnum.disconnected => (
+                                  AppTheme.dangerRed,
+                                  'Offline ($host)',
+                                ),
+                              };
+
+                          final isHealthy =
+                              connState == WsConnectionStateEnum.connected &&
+                              !hasDoorAlarm;
+
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: StatusBadge(
+                                  label: statusText,
+                                  color: statusColor,
+                                  showDot: true,
+                                  compact: true,
+                                  subtle: isHealthy,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Icon(
+                                Icons.settings_rounded,
+                                size: 16,
+                                color: AppTheme.textMuted.withValues(
+                                  alpha: 0.85,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ),

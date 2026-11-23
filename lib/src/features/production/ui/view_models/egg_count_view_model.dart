@@ -40,11 +40,12 @@ final class EggCountViewModel {
   late final Signal<int> dailyNetCount;
   late final Signal<int> dailyCompletedBoxes;
 
-  // --- Signals de Telemetria, Sala e Alertas em Tempo Real ---
+  // --- Signals de Telemetria, Sala e Alertas em Tempo Real (Micro-States) ---
   late final Signal<bool> isConveyorRunningWithoutBatch;
   late final Signal<bool> isHitAnimating;
   late final Signal<double> eggsPerMinute;
   late final Signal<RoomRawData?> roomTelemetry;
+  late final Signal<String> roomSummaryText;
 
   // Inscrições e Timers internos
   StreamSubscription? _activeBatchSub;
@@ -126,7 +127,12 @@ final class EggCountViewModel {
     isHitAnimating = signal<bool>(false);
     eggsPerMinute = signal<double>(0.0);
     roomTelemetry = signal<RoomRawData?>(_repository.currentRoom);
+    roomSummaryText = signal<String>(_formatRoom(_repository.currentRoom));
   }
+
+  static String _formatRoom(RoomRawData? room) => room != null
+      ? 'Sala: ${room.temp.toStringAsFixed(1)} °C • ${room.humidity.toStringAsFixed(0)}% UR'
+      : 'Sala: --.- °C • --% UR';
 
   void _bindRepositoryStreams() {
     // 1. Acompanhamento reativo do lote ativo
@@ -189,23 +195,44 @@ final class EggCountViewModel {
 
     _roomSub = _repository.roomStream.listen((room) {
       roomTelemetry.value = room;
+      final formatted = _formatRoom(room);
+      if (roomSummaryText.value != formatted) {
+        roomSummaryText.value = formatted;
+      }
     });
   }
 
   void _updateDailyAccounting(DailyProductionAccountingModel accounting) {
     batch(() {
-      dailyGrossCount.value = accounting.grossCount;
-      dailyDiscardsCount.value = accounting.discardsCount;
-      dailyNetCount.value = accounting.netCount;
-      dailyCompletedBoxes.value = accounting.completedBoxes;
+      if (dailyGrossCount.value != accounting.grossCount) {
+        dailyGrossCount.value = accounting.grossCount;
+      }
+      if (dailyDiscardsCount.value != accounting.discardsCount) {
+        dailyDiscardsCount.value = accounting.discardsCount;
+      }
+      if (dailyNetCount.value != accounting.netCount) {
+        dailyNetCount.value = accounting.netCount;
+      }
+      if (dailyCompletedBoxes.value != accounting.completedBoxes) {
+        dailyCompletedBoxes.value = accounting.completedBoxes;
+      }
     });
   }
 
   void _startSpeedTicker() {
     _speedTickerTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_recentHitTimestamps.isEmpty) {
+        if (eggsPerMinute.value != 0.0) {
+          eggsPerMinute.value = 0.0;
+        }
+        return;
+      }
       final now = DateTime.now();
       _cleanupOldHits(now);
-      eggsPerMinute.value = _calculateSpeed(now);
+      final newSpeed = _calculateSpeed(now);
+      if (eggsPerMinute.value != newSpeed) {
+        eggsPerMinute.value = newSpeed;
+      }
     });
   }
 

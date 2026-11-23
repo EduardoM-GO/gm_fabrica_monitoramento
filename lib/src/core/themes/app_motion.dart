@@ -94,10 +94,15 @@ class _PressableScaleState extends State<PressableScale> {
     );
 
     if (widget.onTap != null) {
-      content = GestureDetector(onTap: widget.onTap, child: content);
+      content = GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: content,
+      );
     }
 
     return Listener(
+      behavior: HitTestBehavior.translucent,
       onPointerDown: _onPointerDown,
       onPointerUp: _onPointerUp,
       onPointerCancel: _onPointerCancel,
@@ -133,6 +138,9 @@ class SlidingCounterText extends StatefulWidget {
 
 class _SlidingCounterTextState extends State<SlidingCounterText> {
   int _previousValue = 0;
+  double? _cachedDigitWidth;
+  TextStyle? _cachedStyle;
+  TextScaler? _cachedScaler;
 
   @override
   void initState() {
@@ -146,6 +154,23 @@ class _SlidingCounterTextState extends State<SlidingCounterText> {
     if (oldWidget.value != widget.value) {
       _previousValue = oldWidget.value;
     }
+  }
+
+  double _resolveDigitWidth(TextStyle effectiveStyle, TextScaler textScaler) {
+    if (_cachedDigitWidth != null &&
+        _cachedStyle == effectiveStyle &&
+        _cachedScaler == textScaler) {
+      return _cachedDigitWidth!;
+    }
+    final textPainter = TextPainter(
+      text: TextSpan(text: '0', style: effectiveStyle),
+      textDirection: TextDirection.ltr,
+      textScaler: textScaler,
+    )..layout();
+    _cachedDigitWidth = textPainter.width;
+    _cachedStyle = effectiveStyle;
+    _cachedScaler = textScaler;
+    return _cachedDigitWidth!;
   }
 
   @override
@@ -162,12 +187,7 @@ class _SlidingCounterTextState extends State<SlidingCounterText> {
 
     final textScaler =
         MediaQuery.maybeOf(context)?.textScaler ?? TextScaler.noScaling;
-    final textPainter = TextPainter(
-      text: TextSpan(text: '0', style: effectiveStyle),
-      textDirection: TextDirection.ltr,
-      textScaler: textScaler,
-    )..layout();
-    final digitWidth = textPainter.width;
+    final digitWidth = _resolveDigitWidth(effectiveStyle, textScaler);
 
     final isNegative = widget.value < 0;
     final str = widget.value.abs().toString();
@@ -220,23 +240,9 @@ class _SingleDigitRoll extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: digitWidth,
-      child: ShaderMask(
-        shaderCallback: (Rect bounds) {
-          return const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0x00FFFFFF),
-              Color(0xFFFFFFFF),
-              Color(0xFFFFFFFF),
-              Color(0x00FFFFFF),
-            ],
-            stops: [0.0, 0.12, 0.88, 1.0],
-          ).createShader(bounds);
-        },
-        blendMode: BlendMode.dstIn,
+    return RepaintBoundary(
+      child: SizedBox(
+        width: digitWidth,
         child: ClipRect(
           child: AnimatedSwitcher(
             duration: duration,

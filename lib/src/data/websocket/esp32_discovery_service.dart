@@ -119,9 +119,9 @@ final class Esp32DiscoveryService {
     required int port,
     required Duration timeout,
   }) async {
-    // 3 ondas paralelas de 85 IPs cobrem toda a sub-rede /24 em ~150ms-450ms no pior caso,
-    // e resolvem em ~10-30ms assim que o IP do ESP32 responde.
-    const batchSize = 85;
+    // Ondas moderadas de 32 IPs com micro-yield ao event loop entre lotes para
+    // nunca travar frames ou bloquear eventos de toque na UI thread.
+    const batchSize = 32;
     for (int start = 1; start <= 254; start += batchSize) {
       final end = (start + batchSize - 1).clamp(1, 254);
       final candidates = <String>[
@@ -136,6 +136,8 @@ final class Esp32DiscoveryService {
       if (hit != null) {
         return hit;
       }
+      // Cede tempo ao event loop do Flutter para processar gestos e frames pendentes
+      await Future<void>.delayed(const Duration(milliseconds: 8));
     }
     return null;
   }

@@ -39,6 +39,7 @@ final class WebsocketServiceImpl implements WebsocketService {
   String _url = '';
   int _reconnectAttempts = 0;
   bool _isDiscovering = false;
+  DateTime? _lastDiscoveryAttempt;
 
   WebsocketServiceImpl({
     this._discoveryService = const Esp32DiscoveryService(),
@@ -156,16 +157,26 @@ final class WebsocketServiceImpl implements WebsocketService {
     _reconnectTimer?.cancel();
     _reconnectAttempts++;
 
-    // Na mesma rede local (LAN), já dispara Auto-Discovery logo na 1ª falha (e a cada 2 tentativas)
-    if ((_reconnectAttempts == 1 || _reconnectAttempts % 2 == 0) &&
-        !_isDiscovering) {
+    // Evita tempestade de sockets TCP na UI thread: tenta descoberta na 1ª falha
+    // e depois apenas a cada 10 tentativas (ou quando acionado manualmente), com cooldown de 15s.
+    final now = DateTime.now();
+    final canRunAutoDiscovery =
+        _lastDiscoveryAttempt == null ||
+        now.difference(_lastDiscoveryAttempt!).inSeconds >= 15;
+    if ((_reconnectAttempts == 1 || _reconnectAttempts % 10 == 0) &&
+        !_isDiscovering &&
+        canRunAutoDiscovery) {
+      _lastDiscoveryAttempt = now;
       _tryAutoDiscovery();
     }
 
-    // Backoff curto de LAN: 500ms na 1ª tentativa, máximo de 1200ms nas seguintes
-    final delayMs = _reconnectAttempts == 1
-        ? 500
-        : (_reconnectAttempts == 2 ? 800 : 1200);
+    // Backoff progressivo na LAN para não saturar a thread principal quando o ESP32 está desligado
+    final delayMs = switch (_reconnectAttempts) {
+      1 => 600,
+      2 => 1200,
+      3 => 2000,
+      _ => 3000,
+    };
     _reconnectTimer = Timer(
       Duration(milliseconds: delayMs),
       _internalConnect,

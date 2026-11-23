@@ -95,16 +95,18 @@ class AudioService {
     _initialized = true;
     try {
       for (int i = 0; i < _poolSize; i++) {
-        final p = AudioPlayer();
+        final p = AudioPlayer()..setPlayerMode(PlayerMode.lowLatency);
         _hitPlayers.add(p);
       }
-      _undoPlayer = AudioPlayer();
-      _boxPlayer = AudioPlayer();
-      _conveyorAlertPlayer = AudioPlayer();
-      _freezerStartPlayer = AudioPlayer();
-      _freezerPlayer = AudioPlayer();
-      _doorTogglePlayer = AudioPlayer();
-      _alarmPlayer = AudioPlayer();
+      _undoPlayer = AudioPlayer()..setPlayerMode(PlayerMode.lowLatency);
+      _boxPlayer = AudioPlayer()..setPlayerMode(PlayerMode.lowLatency);
+      _conveyorAlertPlayer = AudioPlayer()
+        ..setPlayerMode(PlayerMode.lowLatency);
+      _freezerStartPlayer = AudioPlayer()
+        ..setPlayerMode(PlayerMode.lowLatency);
+      _freezerPlayer = AudioPlayer()..setPlayerMode(PlayerMode.lowLatency);
+      _doorTogglePlayer = AudioPlayer()..setPlayerMode(PlayerMode.lowLatency);
+      _alarmPlayer = AudioPlayer()..setPlayerMode(PlayerMode.lowLatency);
     } catch (e) {
       debugPrint('AudioService: AudioPlayer initialization error: $e');
     }
@@ -298,11 +300,13 @@ class AudioService {
     AudioPlayer? player,
     String assetPath, {
     required SystemSoundType fallback,
+    bool stopBeforePlay = false,
   }) {
     if (player != null) {
-      player.stop().then((_) {
-        return player.play(AssetSource(assetPath));
-      }).catchError((e) {
+      final playFuture = stopBeforePlay
+          ? player.stop().then((_) => player.play(AssetSource(assetPath)))
+          : player.play(AssetSource(assetPath));
+      playFuture.catchError((e) {
         debugPrint(
           'AudioService: error playing $assetPath ($e). Using system fallback.',
         );
