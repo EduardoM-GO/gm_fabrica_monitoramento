@@ -380,7 +380,7 @@ void main() {
       expect(find.textContaining('ABERTA HÁ 00:0'), findsOneWidget);
       expect(find.textContaining('Perda: +0.0 °C ▲'), findsOneWidget);
 
-      // Porta fecha no pico de 7.8 °C
+      // Porta fecha no pico de 7.8 °C (perdeu 2.0 °C desde os 5.8 °C da abertura; 0.0 °C recuperados no exato instante)
       fakeWs.rawDataController.add(
         BaseRawData.fromJson({
           't': 'telem',
@@ -394,7 +394,23 @@ void main() {
         }),
       );
       await tester.pump(const Duration(milliseconds: 100));
-      expect(find.textContaining('+2.0 °C pós-porta'), findsOneWidget);
+      expect(find.textContaining('Recuperado: -0.0 / 2.0 °C ▼'), findsOneWidget);
+
+      // Telemetria seguinte mostra temperatura caindo em tempo real para 6.4 °C (já recuperou -1.4 °C dos 2.0 °C)
+      fakeWs.rawDataController.add(
+        BaseRawData.fromJson({
+          't': 'telem',
+          'boot': 1,
+          'rssi': -55,
+          'freeHeap': 200000,
+          'totalCount': 12,
+          'f1': {'temp': 6.4, 'd': 0, 'ok': 1},
+          'f2': {'temp': -18.4, 'd': 0, 'ok': 1},
+          'room': {'temp': 20.5, 'h': 52.0},
+        }),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.textContaining('Recuperado: -1.4 / 2.0 °C ▼'), findsOneWidget);
 
       // 3.c Abre modal rápido de configurar tempos da porta e vínculo do Freezer 1
       await tester.tap(find.byKey(const ValueKey('freezer_config_f1')));

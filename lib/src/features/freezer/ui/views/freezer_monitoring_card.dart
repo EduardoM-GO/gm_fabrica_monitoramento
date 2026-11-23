@@ -740,6 +740,19 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
          'Informe freezer ou itemSignals',
        );
 
+  static Color resolveThermalBandColor(
+    double temperature,
+    ColorScheme colorScheme,
+  ) {
+    if (temperature <= 0.0) {
+      return colorScheme.tertiary;
+    }
+    if (temperature <= 8.0) {
+      return AppTheme.warningAmber;
+    }
+    return colorScheme.error;
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -753,19 +766,10 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
           final doorTransitions = item.doorTransitions.value;
           final baseTemp = item.effectiveBaselineTemp.value;
           final currentTemp = item.currentTemp.value;
-          final isOpen = item.isDoorOpen.value;
-          final delta = item.doorDeltaTemp.value;
-          final hasDoorShift =
-              delta.abs() >= 0.1 || item.doorOpenCount.value > 0;
-
-          final Color curveColor;
-          if (isOpen) {
-            curveColor = colorScheme.error;
-          } else if (hasDoorShift && (currentTemp - baseTemp) > 0.4) {
-            curveColor = AppTheme.warningAmber;
-          } else {
-            curveColor = colorScheme.tertiary;
-          }
+          final currentBandColor = resolveThermalBandColor(
+            currentTemp,
+            colorScheme,
+          );
 
           return CustomPaint(
             painter: _ThermalCurvePainter(
@@ -773,7 +777,10 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
               doorTransitions: doorTransitions,
               baselineTemp: baseTemp,
               currentTemp: currentTemp,
-              lineColor: curveColor,
+              lineColor: currentBandColor,
+              coldColor: colorScheme.tertiary,
+              warmColor: AppTheme.warningAmber,
+              hotColor: colorScheme.error,
               baselineColor: colorScheme.outline,
               doorOpenColor: colorScheme.error,
               doorCloseColor: AppTheme.successGreen,
@@ -787,35 +794,39 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
       mainAxisSize: expandGraph ? MainAxisSize.max : MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Micro-state do cabeçalho de porta aberta e perda térmica
+        // Micro-state do cabeçalho de porta aberta e recuperação térmica em tempo real
         SignalBuilder(
           builder: (context) {
             final isOpen = item.isDoorOpen.value;
             final delta = item.doorDeltaTemp.value;
+            final recovered = item.recoveredDegrees.value;
             final doorOpenCount = item.doorOpenCount.value;
             final penaltySec = item.accumulatedPenaltySeconds.value;
-            final baseTemp = item.effectiveBaselineTemp.value;
             final currentTemp = item.currentTemp.value;
-            final hasDoorShift = delta.abs() >= 0.1 || doorOpenCount > 0;
+            final hasDoorShift =
+                delta.abs() >= 0.1 || recovered >= 0.1 || doorOpenCount > 0;
             final showHeaderRow = isOpen || hasDoorShift || penaltySec > 0;
 
             if (!showHeaderRow) {
               return const SizedBox.shrink();
             }
 
-            final Color curveColor;
-            if (isOpen) {
-              curveColor = colorScheme.error;
-            } else if (hasDoorShift && (currentTemp - baseTemp) > 0.4) {
-              curveColor = AppTheme.warningAmber;
-            } else {
-              curveColor = colorScheme.tertiary;
-            }
+            final Color indicatorColor = isOpen
+                ? colorScheme.error
+                : resolveThermalBandColor(currentTemp, colorScheme);
 
             final sign = delta >= 0 ? '+' : '';
-            final doorShiftLabel = isOpen
-                ? 'Perda: $sign${delta.toStringAsFixed(1)} °C ▲'
-                : '$sign${delta.toStringAsFixed(1)} °C pós-porta';
+            final totalRise = max(0.0, delta);
+            final String doorShiftLabel;
+            if (isOpen) {
+              doorShiftLabel = 'Perda: $sign${delta.toStringAsFixed(1)} °C ▲';
+            } else if (totalRise >= 0.1) {
+              doorShiftLabel =
+                  'Recuperado: -${recovered.toStringAsFixed(1)} / ${totalRise.toStringAsFixed(1)} °C ▼';
+            } else {
+              doorShiftLabel =
+                  'Recuperado: -${recovered.toStringAsFixed(1)} °C ▼';
+            }
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 2),
@@ -858,9 +869,9 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
                             Icon(
                               isOpen
                                   ? Icons.trending_up_rounded
-                                  : Icons.swap_vert_rounded,
+                                  : Icons.trending_down_rounded,
                               size: 12,
-                              color: curveColor,
+                              color: indicatorColor,
                             ),
                             const SizedBox(width: 3),
                             Text(
@@ -868,7 +879,7 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
                               style: theme.textTheme.labelSmall?.copyWith(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w800,
-                                color: curveColor,
+                                color: indicatorColor,
                                 fontFeatures: const [
                                   FontFeature.tabularFigures(),
                                 ],
@@ -922,6 +933,9 @@ final class _ThermalCurvePainter extends CustomPainter {
   final double baselineTemp;
   final double currentTemp;
   final Color lineColor;
+  final Color coldColor;
+  final Color warmColor;
+  final Color hotColor;
   final Color baselineColor;
   final Color doorOpenColor;
   final Color doorCloseColor;
@@ -932,10 +946,54 @@ final class _ThermalCurvePainter extends CustomPainter {
     required this.baselineTemp,
     required this.currentTemp,
     required this.lineColor,
+    required this.coldColor,
+    required this.warmColor,
+    required this.hotColor,
     required this.baselineColor,
     required this.doorOpenColor,
     required this.doorCloseColor,
   });
+
+  /// Constrói o gradiente vertical por faixa térmica:
+  /// - > 8,0 °C (topo): [hotColor] (Vermelho)
+  /// - 0,1 °C .. 8,0 °C (meio): [warmColor] (Âmbar)
+  /// - <= 0,0 °C (base): [coldColor] (Azul)
+  Shader _buildThermalShader(
+    Size size,
+    double Function(double) yForTemp, {
+    required bool isFill,
+  }) {
+    final rect = Offset.zero & size;
+    final stop8 = (yForTemp(8.0) / size.height).clamp(0.0, 1.0);
+    final stop0 = (yForTemp(0.0) / size.height).clamp(0.0, 1.0);
+
+    Color applyAlpha(Color c, double yStop) {
+      if (!isFill) return c;
+      // Mais opaco no topo e suave próximo à base do gráfico
+      final alpha = (0.30 - (yStop * 0.22)).clamp(0.06, 0.30);
+      return c.withValues(alpha: alpha);
+    }
+
+    const eps = 0.015;
+    final s8a = (stop8 - eps).clamp(0.0, 1.0);
+    final s8b = (stop8 + eps).clamp(s8a, 1.0);
+    final s0a = max(s8b, (stop0 - eps).clamp(0.0, 1.0));
+    final s0b = (stop0 + eps).clamp(s0a, 1.0);
+
+    return LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      stops: [0.0, s8a, s8b, s0a, s0b, 1.0],
+      colors: [
+        applyAlpha(hotColor, 0.0),
+        applyAlpha(hotColor, s8a),
+        applyAlpha(warmColor, s8b),
+        applyAlpha(warmColor, s0a),
+        applyAlpha(coldColor, s0b),
+        applyAlpha(coldColor, 1.0),
+      ],
+    ).createShader(rect);
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1016,20 +1074,13 @@ final class _ThermalCurvePainter extends CustomPainter {
       ..close();
 
     final fillPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          lineColor.withValues(alpha: 0.30),
-          lineColor.withValues(alpha: 0.02),
-        ],
-      ).createShader(Offset.zero & size)
+      ..shader = _buildThermalShader(size, yForTemp, isFill: true)
       ..style = PaintingStyle.fill;
 
     canvas.drawPath(fillPath, fillPaint);
 
     final strokePaint = Paint()
-      ..color = lineColor
+      ..shader = _buildThermalShader(size, yForTemp, isFill: false)
       ..strokeWidth = 2.0
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
@@ -1078,6 +1129,9 @@ final class _ThermalCurvePainter extends CustomPainter {
     return oldDelegate.currentTemp != currentTemp ||
         oldDelegate.baselineTemp != baselineTemp ||
         oldDelegate.lineColor != lineColor ||
+        oldDelegate.coldColor != coldColor ||
+        oldDelegate.warmColor != warmColor ||
+        oldDelegate.hotColor != hotColor ||
         oldDelegate.history.length != history.length ||
         oldDelegate.doorTransitions.length != doorTransitions.length;
   }

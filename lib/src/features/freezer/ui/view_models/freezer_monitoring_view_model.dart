@@ -43,6 +43,7 @@ final class FreezerItemSignals {
   late final Signal<String> formattedTemp;
   late final Signal<double> effectiveBaselineTemp;
   late final Signal<double> doorDeltaTemp;
+  late final Signal<double> recoveredDegrees;
   late final Signal<int> doorOpenCount;
   late final Signal<int> accumulatedPenaltySeconds;
   late final Signal<List<({DateTime timestamp, double temperature})>>
@@ -84,6 +85,7 @@ final class FreezerItemSignals {
     formattedTemp = signal<String>(_formatTemp(initial));
     effectiveBaselineTemp = signal<double>(initial.effectiveBaselineTemp);
     doorDeltaTemp = signal<double>(initial.doorDeltaTemp);
+    recoveredDegrees = signal<double>(initial.recoveredDegrees);
     doorOpenCount = signal<int>(initial.doorOpenCount);
     accumulatedPenaltySeconds = signal<int>(initial.accumulatedPenaltySeconds);
     temperatureHistory =
@@ -170,6 +172,9 @@ final class FreezerItemSignals {
       }
       if (doorDeltaTemp.value != next.doorDeltaTemp) {
         doorDeltaTemp.value = next.doorDeltaTemp;
+      }
+      if (recoveredDegrees.value != next.recoveredDegrees) {
+        recoveredDegrees.value = next.recoveredDegrees;
       }
       if (doorOpenCount.value != next.doorOpenCount) {
         doorOpenCount.value = next.doorOpenCount;

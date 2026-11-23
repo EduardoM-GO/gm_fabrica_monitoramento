@@ -152,14 +152,27 @@ final class FreezerLiveState {
   }
 
   /// Variação de temperatura (ΔT) provocada pela abertura/fechamento da porta.
+  /// - Enquanto aberta: quanto a temperatura já subiu desde a abertura.
+  /// - Após fechar: quantos graus subiu no total (do momento da abertura até o pico pós-abertura).
   double get doorDeltaTemp {
     final openTemp = lastDoorOpenTemp;
     if (openTemp == null) return 0.0;
     if (isDoorOpen) {
       return currentTemp - openTemp;
     }
-    final peak = peakTemp ?? lastDoorCloseTemp ?? currentTemp;
-    return peak - openTemp;
+    final peak = effectivePeakTemp;
+    return max(0.0, peak - openTemp);
+  }
+
+  /// Graus já recuperados (reduzidos) em tempo real desde o pico pós-abertura da porta.
+  /// Atualiza continuamente a cada leitura de telemetria após o fechamento da porta.
+  double get recoveredDegrees {
+    if (isDoorOpen) return 0.0;
+    if (lastDoorOpenTemp == null && peakTemp == null && lastDoorCloseTemp == null) {
+      return 0.0;
+    }
+    final peak = effectivePeakTemp;
+    return max(0.0, peak - currentTemp);
   }
 
   /// Percentual de recuperação térmica (0.0 a 1.0) após fechamento da porta.

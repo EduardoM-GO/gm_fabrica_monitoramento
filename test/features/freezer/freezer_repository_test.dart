@@ -148,6 +148,23 @@ void main() {
       expect(f1.doorOpenCount, equals(1));
       // Tempo restante deve ser maior que antes da penalidade
       expect(f1.remainingSeconds, greaterThanOrEqualTo(initialRemaining));
+      expect(f1.doorDeltaTemp, closeTo(2.5, 0.01));
+      expect(f1.recoveredDegrees, closeTo(0.0, 0.01));
+
+      // Simula recuperação térmica em tempo real após a porta fechar (de 6.5 °C caiu para 4.7 °C -> recuperou 1.8 °C)
+      ws.controller.add(
+        FreezerRawData(
+          id: 'f1',
+          type: TypeRawDataEnum.telem,
+          temp: 4.7,
+          isDoorOpen: false,
+          isSensorOk: true,
+        ),
+      );
+      await pumpEventQueue();
+
+      f1 = freezerRepo.getFreezer('f1')!;
+      expect(f1.recoveredDegrees, closeTo(1.8, 0.01));
     });
 
     test('feedback "Ainda Mole" (soft) estende tempo imediatamente (+180s) e calibra futuro', () async {

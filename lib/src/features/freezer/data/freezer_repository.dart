@@ -454,7 +454,7 @@ final class FreezerRepository {
           status: FreezerStatusEnum.doorOpen,
           baselineTemp: state.baselineTemp ?? temp,
           lastDoorOpenTemp: temp,
-          peakTemp: max(state.peakTemp ?? temp, temp),
+          peakTemp: temp,
           doorTransitions: transitions,
         );
       }
