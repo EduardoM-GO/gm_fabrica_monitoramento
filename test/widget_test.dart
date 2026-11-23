@@ -317,10 +317,10 @@ void main() {
       expect(find.text('INICIAR LOTE DE PRODUÇÃO'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
-      // 3. Valida o Card Enxuto do Freezer: Tempo Passado / Tempo Alvo (00:00 / 20:00), Porta Fechada e botão Reiniciar
+      // 3. Valida o Card Enxuto do Freezer: Tempo Passado / Tempo Alvo (00:00 / 08:00), Porta Fechada e botão Reiniciar
       expect(find.byType(FreezerThermalCurvePanel), findsNWidgets(2));
       expect(find.text('PORTA FECHADA'), findsNWidgets(2));
-      expect(find.text('00:00 / 20:00'), findsOneWidget);
+      expect(find.text('00:00 / 08:00'), findsNWidgets(2));
 
       await tester.tap(find.byKey(const ValueKey('freezer_restart_f1')));
       await tester.pump(const Duration(milliseconds: 100));

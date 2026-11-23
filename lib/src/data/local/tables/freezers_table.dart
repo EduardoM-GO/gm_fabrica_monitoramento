@@ -16,7 +16,7 @@ class FreezersTable extends BaseTable {
   RealColumn get targetTemperature =>
       real().withDefault(const Constant(4.0))();
   IntColumn get defaultCoolingSeconds =>
-      integer().withDefault(const Constant(1200))();
+      integer().withDefault(const Constant(480))();
   IntColumn get unloadMinSeconds =>
       integer().withDefault(const Constant(30))();
   IntColumn get reloadMinSeconds =>

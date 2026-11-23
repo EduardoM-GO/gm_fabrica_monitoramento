@@ -49,7 +49,7 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
       defaultBoxCapacity: boxCap,
       defaultCoolingSeconds: r.defaultCoolingSeconds > 0
           ? r.defaultCoolingSeconds
-          : 1200,
+          : 480,
       isActive: r.isActive,
     );
   }

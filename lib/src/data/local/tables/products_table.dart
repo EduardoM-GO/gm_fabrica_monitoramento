@@ -10,6 +10,6 @@ class ProductsTable extends BaseTable {
   IntColumn get defaultBoxCapacity =>
       integer().withDefault(const Constant(50))();
   IntColumn get defaultCoolingSeconds =>
-      integer().withDefault(const Constant(1200))();
+      integer().withDefault(const Constant(480))();
   BoolColumn get isActive => boolean().withDefault(const Constant(true))();
 }

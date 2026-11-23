@@ -2004,7 +2004,7 @@ class $ProductsTableTable extends ProductsTable
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
-    defaultValue: const Constant(1200),
+    defaultValue: const Constant(480),
   );
   static const VerificationMeta _isActiveMeta = const VerificationMeta(
     'isActive',
@@ -4034,7 +4034,7 @@ class $FreezersTableTable extends FreezersTable
     false,
     type: DriftSqlType.int,
     requiredDuringInsert: false,
-    defaultValue: const Constant(1200),
+    defaultValue: const Constant(480),
   );
   static const VerificationMeta _unloadMinSecondsMeta = const VerificationMeta(
     'unloadMinSeconds',

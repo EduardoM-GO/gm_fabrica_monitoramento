@@ -66,7 +66,7 @@ final class FreezerLiveState {
     this.temperatureHistory = const [],
     this.doorTransitions = const [],
     this.isCalibrated = false,
-    this.calibratedBaseSeconds = 1200,
+    this.calibratedBaseSeconds = 480,
     this.unloadMinSeconds = 30,
     this.reloadMinSeconds = 60,
   }) : sensorIndex =

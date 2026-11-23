@@ -94,9 +94,9 @@ final class FreezerRepository {
       isDoorOpen: false,
       isSensorOk: true,
       status: FreezerStatusEnum.idle,
-      expectedDurationSeconds: 1200,
-      remainingSeconds: 1200,
-      calibratedBaseSeconds: 1200,
+      expectedDurationSeconds: 480,
+      remainingSeconds: 480,
+      calibratedBaseSeconds: 480,
     );
 
     _freezers['f2'] = const FreezerLiveState(
@@ -107,9 +107,9 @@ final class FreezerRepository {
       isDoorOpen: false,
       isSensorOk: true,
       status: FreezerStatusEnum.idle,
-      expectedDurationSeconds: 900,
-      remainingSeconds: 900,
-      calibratedBaseSeconds: 900,
+      expectedDurationSeconds: 480,
+      remainingSeconds: 480,
+      calibratedBaseSeconds: 480,
     );
 
     _emitState();
@@ -371,8 +371,8 @@ final class FreezerRepository {
           isDoorOpen: raw.isDoorOpen,
           isSensorOk: raw.isSensorOk,
           status: FreezerStatusEnum.idle,
-          expectedDurationSeconds: 1200,
-          remainingSeconds: 1200,
+          expectedDurationSeconds: 480,
+          remainingSeconds: 480,
         );
 
     final doorChanged = prev.isDoorOpen != raw.isDoorOpen;
@@ -993,11 +993,11 @@ final class FreezerRepository {
     } catch (_) {}
   }
 
-  /// Reseta calibração para valores padrão
+  /// Reseta calibração para valores padrão (8 minutos = 480s)
   Future<Result<Unit>> resetCalibration(
     String freezerId, {
     String? productId,
-    int defaultSeconds = 1200,
+    int defaultSeconds = 480,
   }) async {
     final res = await _freezerDao.resetCalibration(
       freezerId: freezerId,

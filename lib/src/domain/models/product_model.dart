@@ -16,7 +16,7 @@ final class ProductModel extends BaseModel {
     this.eanCode = '',
     required this.unitWeightGrams,
     int? defaultBoxCapacity,
-    this.defaultCoolingSeconds = 1200,
+    this.defaultCoolingSeconds = 480,
     this.isActive = true,
   }) : defaultBoxCapacity =
            (defaultBoxCapacity != null && defaultBoxCapacity > 0)
@@ -61,7 +61,7 @@ final class ProductModel extends BaseModel {
     final rawCooling = (map['default_cooling_seconds'] as num?)?.toInt();
     final resolvedCooling = (rawCooling != null && rawCooling >= 60)
         ? rawCooling
-        : 1200;
+        : 480;
 
     return ProductModel(
       id: map['id'] as String,

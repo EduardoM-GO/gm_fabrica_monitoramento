@@ -393,11 +393,11 @@ final class FreezerMonitoringViewModel {
     );
   }
 
-  /// Reseta a calibração de um freezer para o valor padrão de fábrica
+  /// Reseta a calibração de um freezer para o valor padrão de fábrica (8 minutos = 480s)
   Future<Result<Unit>> resetCalibration(
     String freezerId, {
     String? productId,
-    int defaultSeconds = 1200,
+    int defaultSeconds = 480,
   }) async {
     return _repository.resetCalibration(
       freezerId,

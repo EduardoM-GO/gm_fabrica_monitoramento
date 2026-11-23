@@ -49,7 +49,7 @@ final class FreezerSensorBindingModel {
     this.customLabel,
     this.targetTemperature = 4.0,
     this.criticalTemperature = 8.0,
-    this.defaultCoolingSeconds = 1200,
+    this.defaultCoolingSeconds = 480,
     this.unloadMinSeconds = 30,
     this.reloadMinSeconds = 60,
     this.inspectionThresholdSeconds = 12,
@@ -90,7 +90,7 @@ final class FreezerSensorBindingModel {
       criticalTemperature:
           (map['critical_temperature'] as num?)?.toDouble() ?? 8.0,
       defaultCoolingSeconds:
-          (map['default_cooling_seconds'] as num?)?.toInt() ?? 1200,
+          (map['default_cooling_seconds'] as num?)?.toInt() ?? 480,
       unloadMinSeconds: (map['unload_min_seconds'] as num?)?.toInt() ?? 30,
       reloadMinSeconds: (map['reload_min_seconds'] as num?)?.toInt() ?? 60,
       inspectionThresholdSeconds:

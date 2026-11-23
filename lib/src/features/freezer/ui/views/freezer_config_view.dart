@@ -388,7 +388,7 @@ class _FreezerConfigViewState extends State<FreezerConfigView> {
                 },
                 icon: const Icon(Icons.restore_rounded, size: 16),
                 label: const Text(
-                  'Restaurar Tempo Base Padrão (20 min)',
+                  'Restaurar Tempo Base Padrão (8 min)',
                   style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
                 ),
               ),

@@ -43,7 +43,7 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
                 id: 'f1',
                 idSensor: 1,
                 name: 'Sensor 1 (F1)',
-                defaultCoolingSeconds: const Value(1200),
+                defaultCoolingSeconds: const Value(480),
                 targetTemperature: const Value(4.0),
               ),
             );
@@ -55,11 +55,22 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
                 id: 'f2',
                 idSensor: 2,
                 name: 'Sensor 2 (F2)',
-                defaultCoolingSeconds: const Value(900),
+                defaultCoolingSeconds: const Value(480),
                 targetTemperature: const Value(-18.0),
               ),
             );
           }
+
+          // Atualiza registros legados (1200s / 900s) para o novo padrão inicial de 8 minutos (480s)
+          await (update(freezersTable)
+                ..where(
+                  (f) => f.defaultCoolingSeconds.isIn(const [900, 1200]),
+                ))
+              .write(
+                const FreezersTableCompanion(
+                  defaultCoolingSeconds: Value(480),
+                ),
+              );
 
           return (select(
             freezersTable,
@@ -280,6 +291,9 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
         );
       }
 
+      await (update(freezersTable)..where((f) => f.id.equals(freezerId))).write(
+        FreezersTableCompanion(defaultCoolingSeconds: Value(defaultSeconds)),
+      );
       return unit;
     },
     tag: 'FreezerDao.resetCalibration',
