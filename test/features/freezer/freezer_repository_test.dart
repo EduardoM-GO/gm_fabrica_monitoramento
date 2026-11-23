@@ -241,5 +241,40 @@ void main() {
       expect(savedF1.equipmentId, equals('24000000-0000-4000-8000-000000000001'));
       expect(savedF1.equipmentName, equals('Freezer Vertical 1'));
     });
+
+    test('startCycleFromLastDoorClose inicia ciclo descontando o tempo desde que a porta fechou', () async {
+      // Simula abertura rápida (1s <= inspectionThresholdSeconds de 5s) e fechamento da porta em idle
+      ws.controller.add(
+        DoorRawData(
+          type: TypeRawDataEnum.door,
+          freezerId: 1,
+          isOpen: true,
+        ),
+      );
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+
+      ws.controller.add(
+        DoorRawData(
+          type: TypeRawDataEnum.door,
+          freezerId: 1,
+          isOpen: false,
+        ),
+      );
+      await pumpEventQueue();
+
+      // Como foi abertura rápida (1s <= 5s), continuou em idle mas registrou lastDoorCloseAt
+      var f1 = freezerRepo.getFreezer('f1')!;
+      expect(f1.status, equals(FreezerStatusEnum.idle));
+      expect(f1.lastDoorCloseAt, isNotNull);
+
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+      await freezerRepo.startCycleFromLastDoorClose('f1');
+
+      f1 = freezerRepo.getFreezer('f1')!;
+      expect(f1.status, equals(FreezerStatusEnum.cooling));
+      expect(f1.elapsedSeconds, greaterThanOrEqualTo(1));
+      expect(f1.remainingSeconds, lessThanOrEqualTo(f1.expectedDurationSeconds - 1));
+    });
   });
 }

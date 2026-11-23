@@ -18,6 +18,7 @@ final class FreezerLiveState {
   final double? peakTemp;
   final double? lastDoorOpenTemp;
   final double? lastDoorCloseTemp;
+  final DateTime? lastDoorCloseAt;
 
   final int expectedDurationSeconds;
   final int remainingSeconds;
@@ -53,6 +54,7 @@ final class FreezerLiveState {
     this.peakTemp,
     this.lastDoorOpenTemp,
     this.lastDoorCloseTemp,
+    this.lastDoorCloseAt,
     required this.expectedDurationSeconds,
     required this.remainingSeconds,
     int? elapsedSeconds,
@@ -206,6 +208,7 @@ final class FreezerLiveState {
     double? peakTemp,
     double? lastDoorOpenTemp,
     double? lastDoorCloseTemp,
+    DateTime? lastDoorCloseAt,
     int? expectedDurationSeconds,
     int? remainingSeconds,
     int? elapsedSeconds,
@@ -254,6 +257,7 @@ final class FreezerLiveState {
       peakTemp: peakTemp ?? this.peakTemp,
       lastDoorOpenTemp: lastDoorOpenTemp ?? this.lastDoorOpenTemp,
       lastDoorCloseTemp: lastDoorCloseTemp ?? this.lastDoorCloseTemp,
+      lastDoorCloseAt: lastDoorCloseAt ?? this.lastDoorCloseAt,
       expectedDurationSeconds: resolvedExpected,
       remainingSeconds: resolvedRemaining,
       elapsedSeconds: resolvedElapsed,

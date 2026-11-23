@@ -406,6 +406,13 @@ final class FreezerMonitoringViewModel {
     await _repository.startManualCycle(freezerId);
   }
 
+  /// Inicia um ciclo descontando o tempo desde o último fechamento da porta
+  /// (e salvando o lote anterior como OK caso estivesse pronto/aguardando feedback)
+  Future<void> startCycleFromLastDoorClose(String freezerId) async {
+    _cancelReadyChimeSequence(freezerId);
+    await _repository.startCycleFromLastDoorClose(freezerId);
+  }
+
   /// Cancela o ciclo em andamento
   void cancelCycle(String freezerId) {
     _cancelReadyChimeSequence(freezerId);

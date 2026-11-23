@@ -447,6 +447,40 @@ void main() {
       expect(find.text('00:00 / 12:00'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
+      // 3.d Pressiona e segura (longPress) o Card do Freezer 1 para abrir o modal de ajuste de status
+      await tester.longPress(
+        find.byKey(const ValueKey('freezer_card_long_press_f1')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('freezer_status_override_dialog_f1')),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Coloquei Ovos (Contar desde que fechou a porta)'),
+        findsOneWidget,
+      );
+      expect(find.text('Freezer Vazio / Sem Ovos'), findsOneWidget);
+
+      // Seleciona "Freezer Vazio / Sem Ovos" -> para a contagem sem sujar calibração
+      await tester.tap(
+        find.byKey(const ValueKey('status_override_empty_idle_f1')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('AGUARDANDO FORMINHAS'), findsWidgets);
+
+      // Pressiona e segura novamente e escolhe "Coloquei Ovos (Contar desde que fechou a porta)"
+      await tester.longPress(
+        find.byKey(const ValueKey('freezer_card_long_press_f1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('status_override_from_door_close_f1')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('CRISTALIZANDO'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
       // 4. Abre a tela completa de Configurações e valida os dropdowns de vínculo de Sensores <-> Freezers
       await tester.tap(find.byIcon(Icons.settings_rounded), warnIfMissed: false);
       await tester.pump();

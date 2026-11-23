@@ -501,6 +501,7 @@ final class FreezerRepository {
             peakTemp: peakTemp,
             lastDoorOpenTemp: openedTemp,
             lastDoorCloseTemp: temp,
+            lastDoorCloseAt: now,
             doorTransitions: transitions,
           );
         }
@@ -511,6 +512,7 @@ final class FreezerRepository {
           peakTemp: recordedPeak,
           lastDoorOpenTemp: openedTemp,
           lastDoorCloseTemp: temp,
+          lastDoorCloseAt: now,
           doorTransitions: transitions,
         );
       }
@@ -530,6 +532,7 @@ final class FreezerRepository {
             peakTemp: recordedPeak,
             lastDoorOpenTemp: openedTemp,
             lastDoorCloseTemp: temp,
+            lastDoorCloseAt: now,
             doorTransitions: transitions,
           );
         }
@@ -566,6 +569,7 @@ final class FreezerRepository {
           peakTemp: recordedPeak,
           lastDoorOpenTemp: openedTemp,
           lastDoorCloseTemp: temp,
+          lastDoorCloseAt: now,
           doorTransitions: transitions,
         );
       }
@@ -595,6 +599,7 @@ final class FreezerRepository {
             peakTemp: recordedPeak,
             lastDoorOpenTemp: openedTemp,
             lastDoorCloseTemp: temp,
+            lastDoorCloseAt: now,
             doorTransitions: transitions,
           );
         }
@@ -614,6 +619,7 @@ final class FreezerRepository {
             peakTemp: recordedPeak,
             lastDoorOpenTemp: openedTemp,
             lastDoorCloseTemp: temp,
+            lastDoorCloseAt: now,
             doorTransitions: transitions,
           );
         }
@@ -625,6 +631,7 @@ final class FreezerRepository {
           peakTemp: recordedPeak,
           lastDoorOpenTemp: openedTemp,
           lastDoorCloseTemp: temp,
+          lastDoorCloseAt: now,
           doorTransitions: transitions,
         );
       }
@@ -634,6 +641,7 @@ final class FreezerRepository {
         peakTemp: recordedPeak,
         lastDoorOpenTemp: openedTemp,
         lastDoorCloseTemp: temp,
+        lastDoorCloseAt: now,
         doorTransitions: transitions,
       );
     }
@@ -707,12 +715,18 @@ final class FreezerRepository {
     required String freezerId,
     required double baselineTemp,
     required double peakTemp,
+    int initialElapsedSeconds = 0,
   }) async {
     final current = _freezers[freezerId];
     if (current == null) return;
 
     final activeBatch = _productionRepo.currentActiveBatch;
     final baseSeconds = current.calibratedBaseSeconds;
+    final safeElapsed = max(0, initialElapsedSeconds);
+    final initialRemaining = max(0, baseSeconds - safeElapsed);
+    final initialStatus = initialRemaining == 0
+        ? FreezerStatusEnum.ready
+        : FreezerStatusEnum.cooling;
 
     final startRes = await _freezerDao.startCoolingCycle(
       batchId: activeBatch?.id,
@@ -724,12 +738,12 @@ final class FreezerRepository {
 
     final cycleId = startRes.valueOrNull;
 
-    _executedSecondsInCycle[freezerId] = 0;
+    _executedSecondsInCycle[freezerId] = safeElapsed;
     _freezers[freezerId] = current.copyWith(
-      status: FreezerStatusEnum.cooling,
+      status: initialStatus,
       expectedDurationSeconds: baseSeconds,
-      remainingSeconds: baseSeconds,
-      elapsedSeconds: 0,
+      remainingSeconds: initialRemaining,
+      elapsedSeconds: safeElapsed,
       baselineTemp: baselineTemp,
       peakTemp: peakTemp,
       activeCycleId: cycleId,
@@ -740,11 +754,47 @@ final class FreezerRepository {
       calibratedBaseSeconds: baseSeconds,
     );
 
-    if (!_cycleStartedController.isClosed) {
+    if (initialStatus == FreezerStatusEnum.ready) {
+      if (!_cycleReadyController.isClosed) {
+        _cycleReadyController.add(freezerId);
+      }
+    } else if (!_cycleStartedController.isClosed) {
       _cycleStartedController.add(freezerId);
     }
 
     _emitState();
+  }
+
+  /// Inicia um novo ciclo descontando o tempo já decorrido desde o último fechamento da porta.
+  /// Se o lote anterior estava pronto (`ready`) ou aguardando avaliação (`feedbackPending`),
+  /// registra automaticamente o lote anterior como `autoOk` antes de iniciar o novo ciclo.
+  Future<void> startCycleFromLastDoorClose(String freezerId) async {
+    final current = _freezers[freezerId];
+    if (current == null) return;
+
+    if (current.status == FreezerStatusEnum.ready ||
+        current.status == FreezerStatusEnum.feedbackPending) {
+      await recordFeedback(freezerId, FreezerFeedbackEnum.autoOk);
+    }
+
+    final refreshed = _freezers[freezerId] ?? current;
+    final lastClose =
+        refreshed.lastDoorCloseAt ??
+        refreshed.doorTransitions
+            .where((t) => !t.isOpen)
+            .lastOrNull
+            ?.timestamp;
+
+    final elapsedSinceClose = lastClose != null
+        ? max(0, DateTime.now().difference(lastClose).inSeconds)
+        : 0;
+
+    await _startAdaptiveCycleInternal(
+      freezerId: freezerId,
+      baselineTemp: refreshed.effectiveBaselineTemp,
+      peakTemp: refreshed.effectivePeakTemp,
+      initialElapsedSeconds: elapsedSinceClose,
+    );
   }
 
   /// Inicia manualmente um ciclo para o freezer especificado
@@ -861,7 +911,7 @@ final class FreezerRepository {
     _emitState();
   }
 
-  /// Cancela o ciclo em andamento
+  /// Cancela o ciclo em andamento (Freezer Vazio / Sem Ovos), voltando para idle sem alterar a calibração
   void cancelCycle(String freezerId) {
     final current = _freezers[freezerId];
     if (current == null) return;
@@ -869,8 +919,12 @@ final class FreezerRepository {
     _executedSecondsInCycle.remove(freezerId);
     _freezers[freezerId] = current.copyWith(
       status: FreezerStatusEnum.idle,
+      elapsedSeconds: 0,
       remainingSeconds: current.calibratedBaseSeconds,
       expectedDurationSeconds: current.calibratedBaseSeconds,
+      accumulatedPenaltySeconds: 0,
+      accumulatedDoorOpenSeconds: 0,
+      doorOpenCount: 0,
       clearFeedbackCountdown: true,
       clearActiveCycleId: true,
     );

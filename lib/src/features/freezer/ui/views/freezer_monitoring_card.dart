@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:signals/signals_flutter.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_motion.dart';
@@ -160,16 +161,26 @@ class FreezerMonitoringCard extends StatelessWidget {
               borderColor = colorScheme.outlineVariant;
             }
 
-            return Card.outlined(
-              color: cardBgColor,
-              shape: RoundedRectangleBorder(
-                borderRadius: AppSpacing.borderRadiusLg,
-                side: BorderSide(
-                  color: borderColor,
-                  width: (isReady || isOpen || !isProbeOk) ? 2.0 : 1.2,
+            return GestureDetector(
+              key: ValueKey('freezer_card_long_press_${item.freezerId}'),
+              behavior: HitTestBehavior.opaque,
+              onLongPress: () {
+                try {
+                  HapticFeedback.mediumImpact();
+                } catch (_) {}
+                _showFreezerStatusOverrideDialog(context, item);
+              },
+              child: Card.outlined(
+                color: cardBgColor,
+                shape: RoundedRectangleBorder(
+                  borderRadius: AppSpacing.borderRadiusLg,
+                  side: BorderSide(
+                    color: borderColor,
+                    width: (isReady || isOpen || !isProbeOk) ? 2.0 : 1.2,
+                  ),
                 ),
+                child: cardBody,
               ),
-              child: cardBody,
             );
           },
         );
@@ -715,6 +726,256 @@ class FreezerMonitoringCard extends StatelessWidget {
         builder: (_) => FreezerConfigView(
           viewModel: viewModel,
           item: item,
+        ),
+      ),
+    );
+  }
+
+  void _showFreezerStatusOverrideDialog(
+    BuildContext context,
+    FreezerItemSignals item,
+  ) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final state = item.rawState.value;
+    final lastClose =
+        state.lastDoorCloseAt ??
+        state.doorTransitions.where((t) => !t.isOpen).lastOrNull?.timestamp;
+
+    String doorCloseElapsedText;
+    if (lastClose != null) {
+      final secs = max(0, DateTime.now().difference(lastClose).inSeconds);
+      final mm = (secs ~/ 60).toString().padLeft(2, '0');
+      final ss = (secs % 60).toString().padLeft(2, '0');
+      doorCloseElapsedText =
+          'Porta fechou há $mm:$ss • Inicia já descontando esse tempo';
+    } else {
+      doorCloseElapsedText =
+          'Sem fechamento de porta recente • Inicia contagem do 00:00';
+    }
+
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          key: ValueKey('freezer_status_override_dialog_${item.freezerId}'),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 10,
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(16, 10, 10, 4),
+          contentPadding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+          title: Row(
+            children: [
+              Icon(
+                Icons.ac_unit_rounded,
+                color: colorScheme.primary,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'STATUS DO FREEZER • ${item.displayHeaderName.value.toUpperCase()}',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 13.5,
+                  ),
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.close_rounded, size: 18),
+                tooltip: 'Fechar',
+                onPressed: () => Navigator.of(dialogContext).pop(),
+              ),
+            ],
+          ),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: _StatusOverrideOptionTile(
+                            tileKey: ValueKey(
+                              'status_override_from_door_close_${item.freezerId}',
+                            ),
+                            icon: Icons.history_toggle_off_rounded,
+                            color: colorScheme.tertiary,
+                            title:
+                                'Coloquei Ovos (Contar desde que fechou a porta)',
+                            subtitle: doorCloseElapsedText,
+                            onTap: () {
+                              Navigator.of(dialogContext).pop();
+                              viewModel.startCycleFromLastDoorClose(
+                                item.freezerId,
+                              );
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _StatusOverrideOptionTile(
+                            tileKey: ValueKey(
+                              'status_override_start_zero_${item.freezerId}',
+                            ),
+                            icon: Icons.play_circle_fill_rounded,
+                            color: colorScheme.primary,
+                            title: 'Iniciar Novo Ciclo do 00:00',
+                            subtitle:
+                                'Zera o cronômetro e começa a cristalização agora',
+                            onTap: () {
+                              Navigator.of(dialogContext).pop();
+                              viewModel.restartCycle(item.freezerId);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: _StatusOverrideOptionTile(
+                            tileKey: ValueKey(
+                              'status_override_empty_idle_${item.freezerId}',
+                            ),
+                            icon: Icons.pause_circle_filled_rounded,
+                            color: AppTheme.textSecondary,
+                            title: 'Freezer Vazio / Sem Ovos',
+                            subtitle:
+                                'Para a contagem sem alterar a calibração',
+                            onTap: () {
+                              Navigator.of(dialogContext).pop();
+                              viewModel.cancelCycle(item.freezerId);
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _StatusOverrideOptionTile(
+                            tileKey: ValueKey(
+                              'status_override_mark_ready_${item.freezerId}',
+                            ),
+                            icon: Icons.check_circle_rounded,
+                            color: AppTheme.successGreen,
+                            title: 'Lote Pronto (Finalizar e Calibrar)',
+                            subtitle:
+                                'Finaliza o lote e calibra os próximos ciclos',
+                            onTap: () {
+                              Navigator.of(dialogContext).pop();
+                              viewModel.markBatchReadyAndCalibrate(
+                                item.freezerId,
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+final class _StatusOverrideOptionTile extends StatelessWidget {
+  final Key tileKey;
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  const _StatusOverrideOptionTile({
+    required this.tileKey,
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Material(
+      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.borderRadiusMd,
+        side: BorderSide(color: color.withValues(alpha: 0.45)),
+      ),
+      child: InkWell(
+        key: tileKey,
+        borderRadius: AppSpacing.borderRadiusMd,
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.18),
+                  borderRadius: AppSpacing.borderRadiusSm,
+                ),
+                child: Icon(icon, color: color, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 11.5,
+                        height: 1.15,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 10,
+                        height: 1.15,
+                        color: AppTheme.textSecondary,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: color.withValues(alpha: 0.8),
+                size: 16,
+              ),
+            ],
+          ),
         ),
       ),
     );
