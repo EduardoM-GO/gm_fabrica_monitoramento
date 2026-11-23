@@ -24,6 +24,7 @@ import 'package:gm_fabrica_monitoramento/src/features/production/ui/view_models/
 import 'package:gm_fabrica_monitoramento/src/features/production/ui/views/egg_count_card.dart';
 import 'package:gm_fabrica_monitoramento/src/features/settings/ui/view_models/settings_view_model.dart';
 import 'package:gm_fabrica_monitoramento/src/features/settings/ui/views/settings_dialog.dart';
+import 'package:gm_fabrica_monitoramento/src/features/splash/ui/views/kiosk_splash_view.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -195,12 +196,21 @@ void main() {
           ],
           child: MaterialApp(
             theme: AppTheme.darkTheme,
-            home: const DashboardView(),
+            home: const KioskSplashView(
+              duration: Duration(milliseconds: 600),
+              nextChild: DashboardView(),
+            ),
           ),
         ),
       );
 
-      await tester.pump(const Duration(milliseconds: 150));
+      // Verifica renderização inicial da Tela de Splash G&M Chocolates
+      expect(find.text('G&M CHOCOLATES FINOS'), findsOneWidget);
+      expect(find.byKey(const ValueKey('kiosk_splash_logo')), findsOneWidget);
+
+      // Aguarda transição automática da Splash para o Dashboard Kiosk 60/40
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.pumpAndSettle();
 
       // Verifica renderização do Kiosk 60/40 (EggCountCard + 2 Freezers + StatusBadges + SlidingCounterText)
       expect(find.byType(EggCountCard), findsOneWidget);

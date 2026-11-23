@@ -20,6 +20,7 @@ import 'src/features/freezer/ui/view_models/freezer_monitoring_view_model.dart';
 import 'src/features/production/data/production_repository.dart';
 import 'src/features/production/ui/view_models/egg_count_view_model.dart';
 import 'src/features/settings/ui/view_models/settings_view_model.dart';
+import 'src/features/splash/ui/views/kiosk_splash_view.dart';
 
 /// Entry point of the factory monitoring application.
 /// Configures dependency injection and sets up UI, Data, and Domain layers
@@ -151,18 +152,28 @@ void main() async {
 
 class FactoryMonitoringApp extends StatelessWidget {
   final bool requireSupabaseAuth;
+  final Duration splashDuration;
 
-  const FactoryMonitoringApp({super.key, this.requireSupabaseAuth = false});
+  const FactoryMonitoringApp({
+    super.key,
+    this.requireSupabaseAuth = false,
+    this.splashDuration = const Duration(milliseconds: 1800),
+  });
 
   @override
   Widget build(BuildContext context) {
+    final targetScreen = requireSupabaseAuth
+        ? const _KioskAuthGate()
+        : const DashboardView();
+
     return MaterialApp(
-      title: 'GM Fábrica - Monitoramento',
+      title: 'G&M Fábrica - Monitoramento',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.darkTheme,
-      home: requireSupabaseAuth
-          ? const _KioskAuthGate()
-          : const DashboardView(),
+      home: KioskSplashView(
+        duration: splashDuration,
+        nextChild: targetScreen,
+      ),
     );
   }
 }
