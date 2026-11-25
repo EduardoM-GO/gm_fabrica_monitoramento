@@ -152,12 +152,13 @@ class FreezerMonitoringCard extends StatelessWidget {
           ),
         );
 
-        // Micro-state da casca do Card: só reconstrói a decoração quando status, isDoorOpen ou isSensorOk mudam
+        // Micro-state da casca do Card: só reconstrói a decoração quando status, isDoorOpen, isSensorOk ou isDefrosting mudam
         return SignalBuilder(
           builder: (context) {
             final status = item.status.value;
             final isOpen = item.isDoorOpen.value;
             final isProbeOk = item.isSensorOk.value;
+            final isDefrosting = item.isDefrosting.value;
             final isReady = status == FreezerStatusEnum.ready;
             final isFeedback = status == FreezerStatusEnum.feedbackPending;
             final isCooling = status == FreezerStatusEnum.cooling;
@@ -168,6 +169,12 @@ class FreezerMonitoringCard extends StatelessWidget {
             if (!isProbeOk || isOpen) {
               cardBgColor = colorScheme.errorContainer.withValues(alpha: 0.30);
               borderColor = colorScheme.error;
+            } else if (isDefrosting) {
+              // Visual de Motor Off / Standby para indicar que o compressor Frost Free desligou
+              cardBgColor = colorScheme.surfaceContainerLowest.withValues(
+                alpha: 0.85,
+              );
+              borderColor = AppTheme.warningAmber.withValues(alpha: 0.75);
             } else if (isReady) {
               cardBgColor = AppTheme.successGreen.withValues(alpha: 0.16);
               borderColor = AppTheme.successGreen;
@@ -197,7 +204,10 @@ class FreezerMonitoringCard extends StatelessWidget {
                   borderRadius: AppSpacing.borderRadiusLg,
                   side: BorderSide(
                     color: borderColor,
-                    width: (isReady || isOpen || !isProbeOk) ? 2.0 : 1.2,
+                    width:
+                        (isReady || isOpen || !isProbeOk || isDefrosting)
+                            ? 2.0
+                            : 1.2,
                   ),
                 ),
                 child: cardBody,
@@ -218,12 +228,13 @@ class FreezerMonitoringCard extends StatelessWidget {
   }) {
     return Row(
       children: [
-        // Micro-state do ícone de gelo
+        // Micro-state do ícone de gelo / motor desligado
         SignalBuilder(
           builder: (context) {
             final status = item.status.value;
             final isOpen = item.isDoorOpen.value;
             final isProbeOk = item.isSensorOk.value;
+            final isDefrosting = item.isDefrosting.value;
             final isActive =
                 status == FreezerStatusEnum.cooling ||
                 status == FreezerStatusEnum.ready ||
@@ -235,8 +246,12 @@ class FreezerMonitoringCard extends StatelessWidget {
               isProbeOk: isProbeOk,
             );
             return Icon(
-              Icons.ac_unit_rounded,
-              color: isActive ? accentColor : AppTheme.textMuted,
+              isDefrosting
+                  ? Icons.power_off_rounded
+                  : Icons.ac_unit_rounded,
+              color: isDefrosting
+                  ? AppTheme.warningAmber
+                  : (isActive ? accentColor : AppTheme.textMuted),
               size: useLargeMetrics ? 18 : 13,
             );
           },
@@ -270,18 +285,36 @@ class FreezerMonitoringCard extends StatelessWidget {
                   },
                 ),
                 SizedBox(width: useLargeMetrics ? 8 : 6),
-                // Micro-state do Badge de Porta (só reconstrói quando isDoorOpen muda)
+                // Micro-state do Badge de Porta e Degelo (Frost Free Off)
                 SignalBuilder(
                   builder: (context) {
                     final isOpen = item.isDoorOpen.value;
-                    return StatusBadge(
-                      label: isOpen ? 'PORTA ABERTA' : 'PORTA FECHADA',
-                      icon: isOpen
-                          ? Icons.sensor_door_outlined
-                          : Icons.door_front_door_rounded,
-                      color: isOpen ? colorScheme.error : AppTheme.successGreen,
-                      compact: true,
-                      subtle: false,
+                    final isDefrosting = item.isDefrosting.value;
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        StatusBadge(
+                          label: isOpen ? 'PORTA ABERTA' : 'PORTA FECHADA',
+                          icon: isOpen
+                              ? Icons.sensor_door_outlined
+                              : Icons.door_front_door_rounded,
+                          color: isOpen
+                              ? colorScheme.error
+                              : AppTheme.successGreen,
+                          compact: true,
+                          subtle: false,
+                        ),
+                        if (isDefrosting) ...[
+                          SizedBox(width: useLargeMetrics ? 6 : 4),
+                          StatusBadge(
+                            label: 'MOTOR OFF • DEGELO',
+                            icon: Icons.power_off_rounded,
+                            color: AppTheme.warningAmber,
+                            compact: true,
+                            subtle: false,
+                          ),
+                        ],
+                      ],
                     );
                   },
                 ),
@@ -459,9 +492,12 @@ class FreezerMonitoringCard extends StatelessWidget {
                         final target = item.targetFormatted.value;
                         final status = item.status.value;
                         final hasOvertime = item.hasOvertime.value;
+                        final isDefrosting = item.isDefrosting.value;
 
                         final Color elapsedColor;
-                        if (status == FreezerStatusEnum.ready) {
+                        if (isDefrosting) {
+                          elapsedColor = AppTheme.textMuted;
+                        } else if (status == FreezerStatusEnum.ready) {
                           elapsedColor = AppTheme.successGreen;
                         } else if (hasOvertime) {
                           elapsedColor = AppTheme.warningAmber;
@@ -504,10 +540,11 @@ class FreezerMonitoringCard extends StatelessWidget {
                       },
                     ),
                     SizedBox(width: useLargeMetrics ? 12 : 8),
-                    // Micro-state 2: Rótulo de status operacional (só reconstrói quando status ou porta mudam)
+                    // Micro-state 2: Rótulo de status operacional (só reconstrói quando status, porta ou degelo mudam)
                     SignalBuilder(
                       builder: (context) {
                         final isOpen = item.isDoorOpen.value;
+                        final isDefrosting = item.isDefrosting.value;
                         final status = item.status.value;
                         final isReady = status == FreezerStatusEnum.ready;
                         final isCooling = status == FreezerStatusEnum.cooling;
@@ -519,6 +556,11 @@ class FreezerMonitoringCard extends StatelessWidget {
                         if (isOpen) {
                           statusLabel = 'PERDENDO TEMPERATURA';
                           statusColor = colorScheme.error;
+                        } else if (isDefrosting) {
+                          statusLabel = isIdle
+                              ? 'MOTOR EM DEGELO • NÃO COLOCAR FORMAS'
+                              : 'MOTOR EM DEGELO • TEMPO PAUSADO (NÃO ABRIR)';
+                          statusColor = AppTheme.warningAmber;
                         } else if (isReady) {
                           statusLabel = 'LOTE PRONTO! PODE RETIRAR';
                           statusColor = AppTheme.successGreen;
@@ -534,9 +576,9 @@ class FreezerMonitoringCard extends StatelessWidget {
                           statusLabel,
                           style: TextStyle(
                             fontSize: useLargeMetrics
-                                ? (isIdle ? 12 : 13)
-                                : (isIdle ? 9.5 : 10),
-                            fontWeight: isIdle
+                                ? (isIdle && !isDefrosting ? 12 : 13)
+                                : (isIdle && !isDefrosting ? 9.5 : 10),
+                            fontWeight: (isIdle && !isDefrosting)
                                 ? FontWeight.w600
                                 : FontWeight.w900,
                             letterSpacing: 0.3,
@@ -556,6 +598,7 @@ class FreezerMonitoringCard extends StatelessWidget {
                 final fmtTemp = item.formattedTemp.value;
                 final isProbeOk = item.isSensorOk.value;
                 final isOpen = item.isDoorOpen.value;
+                final isDefrosting = item.isDefrosting.value;
                 final isReady = item.status.value == FreezerStatusEnum.ready;
 
                 return AnimatedValueText(
@@ -568,6 +611,8 @@ class FreezerMonitoringCard extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                     color: !isProbeOk || isOpen
                         ? colorScheme.error
+                        : isDefrosting
+                        ? AppTheme.warningAmber
                         : isReady
                         ? AppTheme.successGreen
                         : colorScheme.onSurface,
@@ -585,11 +630,14 @@ class FreezerMonitoringCard extends StatelessWidget {
             final progress = item.progress.value;
             final isReady = item.status.value == FreezerStatusEnum.ready;
             final isOpen = item.isDoorOpen.value;
+            final isDefrosting = item.isDefrosting.value;
 
             return SmoothProgressBar(
               value: progress,
               minHeight: useLargeMetrics ? 8 : 5,
-              progressColor: isReady
+              progressColor: isDefrosting
+                  ? AppTheme.warningAmber
+                  : isReady
                   ? AppTheme.successGreen
                   : (isOpen ? colorScheme.error : colorScheme.tertiary),
               backgroundColor: colorScheme.surfaceContainerHighest.withValues(
@@ -927,6 +975,31 @@ class FreezerMonitoringCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  _StatusOverrideOptionTile(
+                    tileKey: ValueKey(
+                      'status_override_defrost_toggle_${item.freezerId}',
+                    ),
+                    icon: state.isDefrosting
+                        ? Icons.power_rounded
+                        : Icons.power_off_rounded,
+                    color: state.isDefrosting
+                        ? AppTheme.successGreen
+                        : AppTheme.warningAmber,
+                    title: state.isDefrosting
+                        ? 'Motor Religou (Encerrar Modo Degelo)'
+                        : 'Marcar Motor em Degelo (Frost Free Desligado)',
+                    subtitle: state.isDefrosting
+                        ? 'Retoma a contagem do ciclo e soma compensação térmica'
+                        : 'Pausa o cronômetro e avisa a equipe para não abrir nem colocar formas',
+                    onTap: () {
+                      Navigator.of(dialogContext).pop();
+                      viewModel.setManualDefrostMode(
+                        item.freezerId,
+                        isDefrosting: !state.isDefrosting,
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
@@ -1103,10 +1176,13 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
       mainAxisSize: expandGraph ? MainAxisSize.max : MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Micro-state do cabeçalho de porta aberta e recuperação térmica em tempo real
+        // Micro-state do cabeçalho de porta aberta, degelo e recuperação térmica em tempo real
         SignalBuilder(
           builder: (context) {
             final isOpen = item.isDoorOpen.value;
+            final isDefrosting = item.isDefrosting.value;
+            final defrostDelta = item.defrostDeltaTemp.value;
+            final accDefrostSec = item.accumulatedDefrostSeconds.value;
             final delta = item.doorDeltaTemp.value;
             final recovered = item.recoveredDegrees.value;
             final doorOpenCount = item.doorOpenCount.value;
@@ -1114,7 +1190,12 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
             final currentTemp = item.currentTemp.value;
             final hasDoorShift =
                 delta.abs() >= 0.1 || recovered >= 0.1 || doorOpenCount > 0;
-            final showHeaderRow = isOpen || hasDoorShift || penaltySec > 0;
+            final showHeaderRow =
+                isOpen ||
+                isDefrosting ||
+                hasDoorShift ||
+                penaltySec > 0 ||
+                accDefrostSec > 0;
 
             if (!showHeaderRow) {
               return const SizedBox.shrink();
@@ -1122,6 +1203,8 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
 
             final Color indicatorColor = isOpen
                 ? colorScheme.error
+                : isDefrosting
+                ? AppTheme.warningAmber
                 : resolveThermalBandColor(currentTemp, colorScheme);
 
             final sign = delta >= 0 ? '+' : '';
@@ -1129,6 +1212,9 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
             final String doorShiftLabel;
             if (isOpen) {
               doorShiftLabel = 'Perda: $sign${delta.toStringAsFixed(1)} °C ▲';
+            } else if (isDefrosting) {
+              doorShiftLabel =
+                  'Subiu no degelo: +${defrostDelta.toStringAsFixed(1)} °C ▲';
             } else if (totalRise >= 0.1) {
               doorShiftLabel =
                   'Recuperado: -${recovered.toStringAsFixed(1)} / ${totalRise.toStringAsFixed(1)} °C ▼';
@@ -1173,10 +1259,33 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
                               },
                             ),
                             SizedBox(width: effectiveLarge ? 8 : 6),
-                          ],
-                          if (isOpen || hasDoorShift) ...[
+                          ] else if (isDefrosting) ...[
                             Icon(
-                              isOpen
+                              Icons.power_off_rounded,
+                              size: effectiveLarge ? 14 : 11,
+                              color: AppTheme.warningAmber,
+                            ),
+                            SizedBox(width: effectiveLarge ? 4 : 3),
+                            SignalBuilder(
+                              builder: (context) {
+                                return Text(
+                                  'EM DEGELO HÁ ${item.currentDefrostFormatted.value}',
+                                  style: TextStyle(
+                                    fontSize: effectiveLarge ? 12 : 9.5,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppTheme.warningAmber,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                            SizedBox(width: effectiveLarge ? 8 : 6),
+                          ],
+                          if (isOpen || isDefrosting || hasDoorShift) ...[
+                            Icon(
+                              (isOpen || isDefrosting)
                                   ? Icons.trending_up_rounded
                                   : Icons.trending_down_rounded,
                               size: effectiveLarge ? 15 : 12,
@@ -1199,12 +1308,12 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (penaltySec > 0)
+                  if (penaltySec > 0 || accDefrostSec > 0)
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerRight,
                       child: Text(
-                        '+${penaltySec}s no alvo',
+                        '+${penaltySec + accDefrostSec}s no alvo',
                         style: TextStyle(
                           fontSize: effectiveLarge ? 11.5 : 9,
                           fontWeight: FontWeight.w600,

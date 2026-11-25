@@ -99,4 +99,149 @@ final class FreezerAdaptiveEngine {
     }
     return 0;
   }
+
+  /// 6. Avalia se o freezer entrou no ciclo de degelo (Frost Free desligado / motor off).
+  /// Regras blindadas contra falsos positivos (baseadas nos dados reais da fábrica):
+  /// - A porta deve estar fechada e ter respeitado o período de inércia pós-fechamento ([postDoorInertiaSeconds], padrão 90s).
+  /// - Gatilho A (Subida contínua com porta fechada): na janela de [windowSeconds] (após a inércia),
+  ///   a temperatura subiu >= [minClosedDoorTempRise] (padrão 2.0 °C) desde a mínima da janela
+  ///   e não caiu mais que 0.25 °C do pico recente.
+  /// - Gatilho B (Temperatura absoluta elevada sem queda): a temperatura permaneceu >= [highTempThreshold]
+  ///   (padrão 5.5 °C) durante pelo menos [highTempSustainedSeconds] (padrão 180s) sem cair >= 0.4 °C.
+  bool detectDefrostStart({
+    required double currentTemp,
+    required bool isDoorOpen,
+    required DateTime now,
+    DateTime? lastDoorCloseAt,
+    required List<({DateTime timestamp, double temperature})> history,
+    int postDoorInertiaSeconds = 90,
+    int windowSeconds = 180,
+    double minClosedDoorTempRise = 2.0,
+    double highTempThreshold = 5.5,
+    int highTempSustainedSeconds = 180,
+  }) {
+    if (isDoorOpen) return false;
+
+    if (lastDoorCloseAt != null &&
+        now.difference(lastDoorCloseAt).inSeconds < postDoorInertiaSeconds) {
+      return false;
+    }
+
+    // Filtra apenas amostras ocorridas após o fim da inércia pós-porta
+    final inertiaCutoff = lastDoorCloseAt?.add(
+      Duration(seconds: postDoorInertiaSeconds),
+    );
+    final validSamples = history.where((pt) {
+      if (inertiaCutoff != null && pt.timestamp.isBefore(inertiaCutoff)) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    if (validSamples.length < 3) return false;
+
+    // Gatilho A: Subida contínua >= 2.0 °C na janela (ex: últimos 3 min pós-inércia)
+    final windowCutoff = now.subtract(Duration(seconds: windowSeconds));
+    final windowSamples = validSamples
+        .where((pt) => !pt.timestamp.isBefore(windowCutoff))
+        .toList();
+
+    if (windowSamples.length >= 3) {
+      final spanSeconds = now
+          .difference(windowSamples.first.timestamp)
+          .inSeconds;
+      if (spanSeconds >= 60) {
+        double minT = windowSamples.first.temperature;
+        DateTime minTs = windowSamples.first.timestamp;
+        double maxAfterMin = minT;
+
+        for (final s in windowSamples) {
+          if (s.temperature < minT) {
+            minT = s.temperature;
+            minTs = s.timestamp;
+            maxAfterMin = s.temperature;
+          } else if (s.temperature > maxAfterMin) {
+            maxAfterMin = s.temperature;
+          }
+        }
+
+        final riseFromMin = currentTemp - minT;
+        final isStillRisingOrAtPeak = (maxAfterMin - currentTemp) <= 0.25;
+        final riseDurationSec = now.difference(minTs).inSeconds;
+
+        if (riseFromMin >= minClosedDoorTempRise &&
+            isStillRisingOrAtPeak &&
+            riseDurationSec >= 60) {
+          return true;
+        }
+      }
+    }
+
+    // Gatilho B: Temperatura >= 5.5 °C sustentada por >= 180s sem resfriar
+    if (currentTemp >= highTempThreshold) {
+      final sustainedCutoff = now.subtract(
+        Duration(seconds: highTempSustainedSeconds),
+      );
+      final sustainedSamples = validSamples
+          .where((pt) => !pt.timestamp.isBefore(sustainedCutoff))
+          .toList();
+
+      if (sustainedSamples.length >= 3) {
+        final spanSec = now
+            .difference(sustainedSamples.first.timestamp)
+            .inSeconds;
+        if (spanSec >= highTempSustainedSeconds - 15) {
+          final allAboveThreshold = sustainedSamples.every(
+            (s) => s.temperature >= highTempThreshold - 0.3,
+          );
+          final firstTemp = sustainedSamples.first.temperature;
+          final notCoolingDown = (firstTemp - currentTemp) < 0.4;
+          if (allAboveThreshold && notCoolingDown) {
+            return true;
+          }
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /// 7. Avalia se o compressor do freezer religou e já está recuperando temperatura após o degelo.
+  /// - Se o freezer tem um ciclo ativo ([hasActiveCycle] = true): destrava o ciclo assim que
+  ///   a temperatura cair >= [minDropFromPeak] (padrão 1.0 °C) abaixo do pico atingido no degelo ([defrostPeakTemp]).
+  /// - Se o freezer estava vazio/ocioso ([hasActiveCycle] = false): além de cair >= 1.0 °C do pico,
+  ///   exige que a temperatura já tenha baixado para <= [safeIdleReadyTemp] (padrão +2.5 °C) antes de liberar "Aguardando Forminhas".
+  bool detectDefrostEnd({
+    required double currentTemp,
+    required double defrostPeakTemp,
+    required bool hasActiveCycle,
+    double minDropFromPeak = 1.0,
+    double safeIdleReadyTemp = 2.5,
+  }) {
+    final dropFromPeak = defrostPeakTemp - currentTemp;
+    if (dropFromPeak < minDropFromPeak) {
+      return false;
+    }
+
+    if (!hasActiveCycle && currentTemp > safeIdleReadyTemp) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /// 8. Calcula o bônus de recuperação térmica (em segundos) somado ao alvo quando o motor religa
+  /// após um degelo durante um lote ativo, compensando os graus que a câmara subiu enquanto esteve desligada.
+  int calculateDefrostRecoverySeconds({
+    required double defrostStartTemp,
+    required double defrostPeakTemp,
+    double recoverySecondsPerDegree = 25.0,
+    int minRecoverySeconds = 60,
+    int maxRecoverySeconds = 420,
+  }) {
+    final deltaT = max(0.0, defrostPeakTemp - defrostStartTemp);
+    if (deltaT <= 0.2) return minRecoverySeconds;
+    final bonus = (deltaT * recoverySecondsPerDegree).round();
+    return bonus.clamp(minRecoverySeconds, maxRecoverySeconds);
+  }
 }

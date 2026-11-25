@@ -132,5 +132,82 @@ void main() {
       );
     });
   });
+
+  group('FreezerAdaptiveEngine - Degelo (Frost Free Desligado)', () {
+    test('detectDefrostStart ignora subida térmica durante inércia pós-fechamento da porta (90s)', () {
+      final now = DateTime(2026, 11, 24, 15, 0, 0);
+      final closedAt = now.subtract(const Duration(seconds: 60)); // fechou há 60s (< 90s)
+      final history = [
+        (timestamp: now.subtract(const Duration(seconds: 50)), temperature: 0.0),
+        (timestamp: now.subtract(const Duration(seconds: 25)), temperature: 1.5),
+        (timestamp: now, temperature: 3.0),
+      ];
+
+      expect(
+        engine.detectDefrostStart(
+          currentTemp: 3.0,
+          isDoorOpen: false,
+          now: now,
+          lastDoorCloseAt: closedAt,
+          history: history,
+        ),
+        isFalse,
+      );
+    });
+
+    test('detectDefrostStart detecta subida contínua >= 2.0 °C com porta fechada após inércia', () {
+      final now = DateTime(2026, 11, 24, 15, 0, 0);
+      final closedAt = now.subtract(const Duration(minutes: 10));
+      final history = [
+        (timestamp: now.subtract(const Duration(seconds: 150)), temperature: -2.0),
+        (timestamp: now.subtract(const Duration(seconds: 90)), temperature: -1.1),
+        (timestamp: now.subtract(const Duration(seconds: 30)), temperature: -0.3),
+        (timestamp: now, temperature: 0.2), // subiu 2.2 °C com porta fechada
+      ];
+
+      expect(
+        engine.detectDefrostStart(
+          currentTemp: 0.2,
+          isDoorOpen: false,
+          now: now,
+          lastDoorCloseAt: closedAt,
+          history: history,
+        ),
+        isTrue,
+      );
+    });
+
+    test('detectDefrostEnd exige queda >= 1.0 °C do pico em ciclo ativo e <= 2.5 °C quando ocioso', () {
+      // Com ciclo ativo: pico foi 8.0 °C, caiu para 6.8 °C (queda de 1.2 °C) -> destrava ciclo
+      expect(
+        engine.detectDefrostEnd(
+          currentTemp: 6.8,
+          defrostPeakTemp: 8.0,
+          hasActiveCycle: true,
+        ),
+        isTrue,
+      );
+
+      // Ocioso (idle): pico foi 8.0 °C, caiu para 5.0 °C (queda de 3.0 °C, mas ainda > 2.5 °C) -> mantém bloqueado para novas formas
+      expect(
+        engine.detectDefrostEnd(
+          currentTemp: 5.0,
+          defrostPeakTemp: 8.0,
+          hasActiveCycle: false,
+        ),
+        isFalse,
+      );
+
+      // Ocioso (idle): caiu para 2.2 °C (<= 2.5 °C) -> libera "Aguardando Forminhas"
+      expect(
+        engine.detectDefrostEnd(
+          currentTemp: 2.2,
+          defrostPeakTemp: 8.0,
+          hasActiveCycle: false,
+        ),
+        isTrue,
+      );
+    });
+  });
 }
 

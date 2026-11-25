@@ -28,6 +28,14 @@ final class FreezerLiveState {
   final int currentDoorOpenSeconds;
   final int doorOpenCount;
 
+  // --- Estado de Degelo (Frost Free Desligado / Motor Off) ---
+  final bool isDefrosting;
+  final DateTime? defrostStartedAt;
+  final double? defrostStartTemp;
+  final double? defrostPeakTemp;
+  final int currentDefrostSeconds;
+  final int accumulatedDefrostSeconds;
+
   final int? feedbackCountdownSeconds;
   final FreezerFeedbackEnum? lastFeedback;
   final String? activeCycleId;
@@ -62,6 +70,12 @@ final class FreezerLiveState {
     this.accumulatedDoorOpenSeconds = 0,
     this.currentDoorOpenSeconds = 0,
     this.doorOpenCount = 0,
+    this.isDefrosting = false,
+    this.defrostStartedAt,
+    this.defrostStartTemp,
+    this.defrostPeakTemp,
+    this.currentDefrostSeconds = 0,
+    this.accumulatedDefrostSeconds = 0,
     this.feedbackCountdownSeconds,
     this.lastFeedback,
     this.activeCycleId,
@@ -132,6 +146,21 @@ final class FreezerLiveState {
     final m = total ~/ 60;
     final s = total % 60;
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  /// Tempo da pausa atual de degelo formatado (MM:SS), ex.: "04:12".
+  String get currentDefrostFormatted {
+    final total = isDefrosting ? max(0, currentDefrostSeconds) : 0;
+    final m = total ~/ 60;
+    final s = total % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+  }
+
+  /// Elevação térmica durante o degelo atual (quantos °C subiu desde que o motor desligou).
+  double get defrostDeltaTemp {
+    if (!isDefrosting || defrostStartTemp == null) return 0.0;
+    final peak = max(currentTemp, defrostPeakTemp ?? currentTemp);
+    return max(0.0, peak - defrostStartTemp!);
   }
 
   /// Temperatura de referência antes da abertura de porta ou início de ciclo.
@@ -216,6 +245,13 @@ final class FreezerLiveState {
     int? accumulatedDoorOpenSeconds,
     int? currentDoorOpenSeconds,
     int? doorOpenCount,
+    bool? isDefrosting,
+    DateTime? defrostStartedAt,
+    bool clearDefrostState = false,
+    double? defrostStartTemp,
+    double? defrostPeakTemp,
+    int? currentDefrostSeconds,
+    int? accumulatedDefrostSeconds,
     int? feedbackCountdownSeconds,
     bool clearFeedbackCountdown = false,
     FreezerFeedbackEnum? lastFeedback,
@@ -269,6 +305,26 @@ final class FreezerLiveState {
           currentDoorOpenSeconds ??
           ((isDoorOpen ?? this.isDoorOpen) ? this.currentDoorOpenSeconds : 0),
       doorOpenCount: doorOpenCount ?? this.doorOpenCount,
+      isDefrosting: clearDefrostState
+          ? false
+          : (isDefrosting ?? this.isDefrosting),
+      defrostStartedAt: clearDefrostState
+          ? null
+          : (defrostStartedAt ?? this.defrostStartedAt),
+      defrostStartTemp: clearDefrostState
+          ? null
+          : (defrostStartTemp ?? this.defrostStartTemp),
+      defrostPeakTemp: clearDefrostState
+          ? null
+          : (defrostPeakTemp ?? this.defrostPeakTemp),
+      currentDefrostSeconds: clearDefrostState
+          ? 0
+          : (currentDefrostSeconds ??
+                ((isDefrosting ?? this.isDefrosting)
+                    ? this.currentDefrostSeconds
+                    : 0)),
+      accumulatedDefrostSeconds:
+          accumulatedDefrostSeconds ?? this.accumulatedDefrostSeconds,
       feedbackCountdownSeconds: clearFeedbackCountdown
           ? null
           : (feedbackCountdownSeconds ?? this.feedbackCountdownSeconds),

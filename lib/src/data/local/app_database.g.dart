@@ -536,9 +536,9 @@ class $FreezerEventsTableTable extends FreezerEventsTable
   late final GeneratedColumn<String> batchId = GeneratedColumn<String>(
     'batch_id',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.string,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
   );
   static const VerificationMeta _recordedAtMeta = const VerificationMeta(
     'recordedAt',
@@ -630,8 +630,6 @@ class $FreezerEventsTableTable extends FreezerEventsTable
         _batchIdMeta,
         batchId.isAcceptableOrUnknown(data['batch_id']!, _batchIdMeta),
       );
-    } else if (isInserting) {
-      context.missing(_batchIdMeta);
     }
     if (data.containsKey('recorded_at')) {
       context.handle(
@@ -687,7 +685,7 @@ class $FreezerEventsTableTable extends FreezerEventsTable
       batchId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}batch_id'],
-      )!,
+      ),
       recordedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}recorded_at'],
@@ -726,7 +724,7 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
   final String id;
   final SyncStatusEnum syncStatus;
   final String freezerId;
-  final String batchId;
+  final String? batchId;
   final DateTime recordedAt;
   final double temperature;
   final bool isDoorOpen;
@@ -735,7 +733,7 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
     required this.id,
     required this.syncStatus,
     required this.freezerId,
-    required this.batchId,
+    this.batchId,
     required this.recordedAt,
     required this.temperature,
     required this.isDoorOpen,
@@ -751,7 +749,9 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
       );
     }
     map['freezer_id'] = Variable<String>(freezerId);
-    map['batch_id'] = Variable<String>(batchId);
+    if (!nullToAbsent || batchId != null) {
+      map['batch_id'] = Variable<String>(batchId);
+    }
     map['recorded_at'] = Variable<DateTime>(recordedAt);
     map['temperature'] = Variable<double>(temperature);
     map['is_door_open'] = Variable<bool>(isDoorOpen);
@@ -768,7 +768,9 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
       id: Value(id),
       syncStatus: Value(syncStatus),
       freezerId: Value(freezerId),
-      batchId: Value(batchId),
+      batchId: batchId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(batchId),
       recordedAt: Value(recordedAt),
       temperature: Value(temperature),
       isDoorOpen: Value(isDoorOpen),
@@ -787,7 +789,7 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
         serializer.fromJson<int>(json['syncStatus']),
       ),
       freezerId: serializer.fromJson<String>(json['freezerId']),
-      batchId: serializer.fromJson<String>(json['batchId']),
+      batchId: serializer.fromJson<String?>(json['batchId']),
       recordedAt: serializer.fromJson<DateTime>(json['recordedAt']),
       temperature: serializer.fromJson<double>(json['temperature']),
       isDoorOpen: serializer.fromJson<bool>(json['isDoorOpen']),
@@ -805,7 +807,7 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
         $FreezerEventsTableTable.$convertersyncStatus.toJson(syncStatus),
       ),
       'freezerId': serializer.toJson<String>(freezerId),
-      'batchId': serializer.toJson<String>(batchId),
+      'batchId': serializer.toJson<String?>(batchId),
       'recordedAt': serializer.toJson<DateTime>(recordedAt),
       'temperature': serializer.toJson<double>(temperature),
       'isDoorOpen': serializer.toJson<bool>(isDoorOpen),
@@ -819,7 +821,7 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
     String? id,
     SyncStatusEnum? syncStatus,
     String? freezerId,
-    String? batchId,
+    Value<String?> batchId = const Value.absent(),
     DateTime? recordedAt,
     double? temperature,
     bool? isDoorOpen,
@@ -828,7 +830,7 @@ class FreezerEvent extends DataClass implements Insertable<FreezerEvent> {
     id: id ?? this.id,
     syncStatus: syncStatus ?? this.syncStatus,
     freezerId: freezerId ?? this.freezerId,
-    batchId: batchId ?? this.batchId,
+    batchId: batchId.present ? batchId.value : this.batchId,
     recordedAt: recordedAt ?? this.recordedAt,
     temperature: temperature ?? this.temperature,
     isDoorOpen: isDoorOpen ?? this.isDoorOpen,
@@ -901,7 +903,7 @@ class FreezerEventsTableCompanion extends UpdateCompanion<FreezerEvent> {
   final Value<String> id;
   final Value<SyncStatusEnum> syncStatus;
   final Value<String> freezerId;
-  final Value<String> batchId;
+  final Value<String?> batchId;
   final Value<DateTime> recordedAt;
   final Value<double> temperature;
   final Value<bool> isDoorOpen;
@@ -922,7 +924,7 @@ class FreezerEventsTableCompanion extends UpdateCompanion<FreezerEvent> {
     required String id,
     this.syncStatus = const Value.absent(),
     required String freezerId,
-    required String batchId,
+    this.batchId = const Value.absent(),
     this.recordedAt = const Value.absent(),
     required double temperature,
     required bool isDoorOpen,
@@ -930,7 +932,6 @@ class FreezerEventsTableCompanion extends UpdateCompanion<FreezerEvent> {
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        freezerId = Value(freezerId),
-       batchId = Value(batchId),
        temperature = Value(temperature),
        isDoorOpen = Value(isDoorOpen),
        triggerReason = Value(triggerReason);
@@ -962,7 +963,7 @@ class FreezerEventsTableCompanion extends UpdateCompanion<FreezerEvent> {
     Value<String>? id,
     Value<SyncStatusEnum>? syncStatus,
     Value<String>? freezerId,
-    Value<String>? batchId,
+    Value<String?>? batchId,
     Value<DateTime>? recordedAt,
     Value<double>? temperature,
     Value<bool>? isDoorOpen,
@@ -2648,6 +2649,18 @@ class $CoolingCyclesTableTable extends CoolingCyclesTable
     requiredDuringInsert: false,
     defaultValue: const Constant(0),
   );
+  static const VerificationMeta _accumulatedDefrostSecondsMeta =
+      const VerificationMeta('accumulatedDefrostSeconds');
+  @override
+  late final GeneratedColumn<int> accumulatedDefrostSeconds =
+      GeneratedColumn<int>(
+        'accumulated_defrost_seconds',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(0),
+      );
   static const VerificationMeta _feedbackMeta = const VerificationMeta(
     'feedback',
   );
@@ -2674,6 +2687,7 @@ class $CoolingCyclesTableTable extends CoolingCyclesTable
     accumulatedDoorOpenSeconds,
     accumulatedPenaltySeconds,
     doorOpenCount,
+    accumulatedDefrostSeconds,
     feedback,
   ];
   @override
@@ -2784,6 +2798,15 @@ class $CoolingCyclesTableTable extends CoolingCyclesTable
         ),
       );
     }
+    if (data.containsKey('accumulated_defrost_seconds')) {
+      context.handle(
+        _accumulatedDefrostSecondsMeta,
+        accumulatedDefrostSeconds.isAcceptableOrUnknown(
+          data['accumulated_defrost_seconds']!,
+          _accumulatedDefrostSecondsMeta,
+        ),
+      );
+    }
     if (data.containsKey('feedback')) {
       context.handle(
         _feedbackMeta,
@@ -2853,6 +2876,10 @@ class $CoolingCyclesTableTable extends CoolingCyclesTable
         DriftSqlType.int,
         data['${effectivePrefix}door_open_count'],
       )!,
+      accumulatedDefrostSeconds: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}accumulated_defrost_seconds'],
+      )!,
       feedback: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}feedback'],
@@ -2883,6 +2910,7 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
   final int accumulatedDoorOpenSeconds;
   final int accumulatedPenaltySeconds;
   final int doorOpenCount;
+  final int accumulatedDefrostSeconds;
   final String? feedback;
   const CoolingCycle({
     required this.id,
@@ -2898,6 +2926,7 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
     required this.accumulatedDoorOpenSeconds,
     required this.accumulatedPenaltySeconds,
     required this.doorOpenCount,
+    required this.accumulatedDefrostSeconds,
     this.feedback,
   });
   @override
@@ -2934,6 +2963,9 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
       accumulatedPenaltySeconds,
     );
     map['door_open_count'] = Variable<int>(doorOpenCount);
+    map['accumulated_defrost_seconds'] = Variable<int>(
+      accumulatedDefrostSeconds,
+    );
     if (!nullToAbsent || feedback != null) {
       map['feedback'] = Variable<String>(feedback);
     }
@@ -2965,6 +2997,7 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
       accumulatedDoorOpenSeconds: Value(accumulatedDoorOpenSeconds),
       accumulatedPenaltySeconds: Value(accumulatedPenaltySeconds),
       doorOpenCount: Value(doorOpenCount),
+      accumulatedDefrostSeconds: Value(accumulatedDefrostSeconds),
       feedback: feedback == null && nullToAbsent
           ? const Value.absent()
           : Value(feedback),
@@ -3000,6 +3033,9 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
         json['accumulatedPenaltySeconds'],
       ),
       doorOpenCount: serializer.fromJson<int>(json['doorOpenCount']),
+      accumulatedDefrostSeconds: serializer.fromJson<int>(
+        json['accumulatedDefrostSeconds'],
+      ),
       feedback: serializer.fromJson<String?>(json['feedback']),
     );
   }
@@ -3028,6 +3064,9 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
         accumulatedPenaltySeconds,
       ),
       'doorOpenCount': serializer.toJson<int>(doorOpenCount),
+      'accumulatedDefrostSeconds': serializer.toJson<int>(
+        accumulatedDefrostSeconds,
+      ),
       'feedback': serializer.toJson<String?>(feedback),
     };
   }
@@ -3046,6 +3085,7 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
     int? accumulatedDoorOpenSeconds,
     int? accumulatedPenaltySeconds,
     int? doorOpenCount,
+    int? accumulatedDefrostSeconds,
     Value<String?> feedback = const Value.absent(),
   }) => CoolingCycle(
     id: id ?? this.id,
@@ -3068,6 +3108,8 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
     accumulatedPenaltySeconds:
         accumulatedPenaltySeconds ?? this.accumulatedPenaltySeconds,
     doorOpenCount: doorOpenCount ?? this.doorOpenCount,
+    accumulatedDefrostSeconds:
+        accumulatedDefrostSeconds ?? this.accumulatedDefrostSeconds,
     feedback: feedback.present ? feedback.value : this.feedback,
   );
   CoolingCycle copyWithCompanion(CoolingCyclesTableCompanion data) {
@@ -3103,6 +3145,9 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
       doorOpenCount: data.doorOpenCount.present
           ? data.doorOpenCount.value
           : this.doorOpenCount,
+      accumulatedDefrostSeconds: data.accumulatedDefrostSeconds.present
+          ? data.accumulatedDefrostSeconds.value
+          : this.accumulatedDefrostSeconds,
       feedback: data.feedback.present ? data.feedback.value : this.feedback,
     );
   }
@@ -3123,6 +3168,7 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
           ..write('accumulatedDoorOpenSeconds: $accumulatedDoorOpenSeconds, ')
           ..write('accumulatedPenaltySeconds: $accumulatedPenaltySeconds, ')
           ..write('doorOpenCount: $doorOpenCount, ')
+          ..write('accumulatedDefrostSeconds: $accumulatedDefrostSeconds, ')
           ..write('feedback: $feedback')
           ..write(')'))
         .toString();
@@ -3143,6 +3189,7 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
     accumulatedDoorOpenSeconds,
     accumulatedPenaltySeconds,
     doorOpenCount,
+    accumulatedDefrostSeconds,
     feedback,
   );
   @override
@@ -3162,6 +3209,7 @@ class CoolingCycle extends DataClass implements Insertable<CoolingCycle> {
           other.accumulatedDoorOpenSeconds == this.accumulatedDoorOpenSeconds &&
           other.accumulatedPenaltySeconds == this.accumulatedPenaltySeconds &&
           other.doorOpenCount == this.doorOpenCount &&
+          other.accumulatedDefrostSeconds == this.accumulatedDefrostSeconds &&
           other.feedback == this.feedback);
 }
 
@@ -3179,6 +3227,7 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
   final Value<int> accumulatedDoorOpenSeconds;
   final Value<int> accumulatedPenaltySeconds;
   final Value<int> doorOpenCount;
+  final Value<int> accumulatedDefrostSeconds;
   final Value<String?> feedback;
   final Value<int> rowid;
   const CoolingCyclesTableCompanion({
@@ -3195,6 +3244,7 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
     this.accumulatedDoorOpenSeconds = const Value.absent(),
     this.accumulatedPenaltySeconds = const Value.absent(),
     this.doorOpenCount = const Value.absent(),
+    this.accumulatedDefrostSeconds = const Value.absent(),
     this.feedback = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -3212,6 +3262,7 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
     this.accumulatedDoorOpenSeconds = const Value.absent(),
     this.accumulatedPenaltySeconds = const Value.absent(),
     this.doorOpenCount = const Value.absent(),
+    this.accumulatedDefrostSeconds = const Value.absent(),
     this.feedback = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
@@ -3231,6 +3282,7 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
     Expression<int>? accumulatedDoorOpenSeconds,
     Expression<int>? accumulatedPenaltySeconds,
     Expression<int>? doorOpenCount,
+    Expression<int>? accumulatedDefrostSeconds,
     Expression<String>? feedback,
     Expression<int>? rowid,
   }) {
@@ -3252,6 +3304,8 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
       if (accumulatedPenaltySeconds != null)
         'accumulated_penalty_seconds': accumulatedPenaltySeconds,
       if (doorOpenCount != null) 'door_open_count': doorOpenCount,
+      if (accumulatedDefrostSeconds != null)
+        'accumulated_defrost_seconds': accumulatedDefrostSeconds,
       if (feedback != null) 'feedback': feedback,
       if (rowid != null) 'rowid': rowid,
     });
@@ -3271,6 +3325,7 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
     Value<int>? accumulatedDoorOpenSeconds,
     Value<int>? accumulatedPenaltySeconds,
     Value<int>? doorOpenCount,
+    Value<int>? accumulatedDefrostSeconds,
     Value<String?>? feedback,
     Value<int>? rowid,
   }) {
@@ -3292,6 +3347,8 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
       accumulatedPenaltySeconds:
           accumulatedPenaltySeconds ?? this.accumulatedPenaltySeconds,
       doorOpenCount: doorOpenCount ?? this.doorOpenCount,
+      accumulatedDefrostSeconds:
+          accumulatedDefrostSeconds ?? this.accumulatedDefrostSeconds,
       feedback: feedback ?? this.feedback,
       rowid: rowid ?? this.rowid,
     );
@@ -3349,6 +3406,11 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
     if (doorOpenCount.present) {
       map['door_open_count'] = Variable<int>(doorOpenCount.value);
     }
+    if (accumulatedDefrostSeconds.present) {
+      map['accumulated_defrost_seconds'] = Variable<int>(
+        accumulatedDefrostSeconds.value,
+      );
+    }
     if (feedback.present) {
       map['feedback'] = Variable<String>(feedback.value);
     }
@@ -3374,6 +3436,7 @@ class CoolingCyclesTableCompanion extends UpdateCompanion<CoolingCycle> {
           ..write('accumulatedDoorOpenSeconds: $accumulatedDoorOpenSeconds, ')
           ..write('accumulatedPenaltySeconds: $accumulatedPenaltySeconds, ')
           ..write('doorOpenCount: $doorOpenCount, ')
+          ..write('accumulatedDefrostSeconds: $accumulatedDefrostSeconds, ')
           ..write('feedback: $feedback, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -5373,7 +5436,7 @@ typedef $$FreezerEventsTableTableCreateCompanionBuilder =
       required String id,
       Value<SyncStatusEnum> syncStatus,
       required String freezerId,
-      required String batchId,
+      Value<String?> batchId,
       Value<DateTime> recordedAt,
       required double temperature,
       required bool isDoorOpen,
@@ -5385,7 +5448,7 @@ typedef $$FreezerEventsTableTableUpdateCompanionBuilder =
       Value<String> id,
       Value<SyncStatusEnum> syncStatus,
       Value<String> freezerId,
-      Value<String> batchId,
+      Value<String?> batchId,
       Value<DateTime> recordedAt,
       Value<double> temperature,
       Value<bool> isDoorOpen,
@@ -5584,7 +5647,7 @@ class $$FreezerEventsTableTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<SyncStatusEnum> syncStatus = const Value.absent(),
                 Value<String> freezerId = const Value.absent(),
-                Value<String> batchId = const Value.absent(),
+                Value<String?> batchId = const Value.absent(),
                 Value<DateTime> recordedAt = const Value.absent(),
                 Value<double> temperature = const Value.absent(),
                 Value<bool> isDoorOpen = const Value.absent(),
@@ -5606,7 +5669,7 @@ class $$FreezerEventsTableTableTableManager
                 required String id,
                 Value<SyncStatusEnum> syncStatus = const Value.absent(),
                 required String freezerId,
-                required String batchId,
+                Value<String?> batchId = const Value.absent(),
                 Value<DateTime> recordedAt = const Value.absent(),
                 required double temperature,
                 required bool isDoorOpen,
@@ -6440,6 +6503,7 @@ typedef $$CoolingCyclesTableTableCreateCompanionBuilder =
       Value<int> accumulatedDoorOpenSeconds,
       Value<int> accumulatedPenaltySeconds,
       Value<int> doorOpenCount,
+      Value<int> accumulatedDefrostSeconds,
       Value<String?> feedback,
       Value<int> rowid,
     });
@@ -6458,6 +6522,7 @@ typedef $$CoolingCyclesTableTableUpdateCompanionBuilder =
       Value<int> accumulatedDoorOpenSeconds,
       Value<int> accumulatedPenaltySeconds,
       Value<int> doorOpenCount,
+      Value<int> accumulatedDefrostSeconds,
       Value<String?> feedback,
       Value<int> rowid,
     });
@@ -6534,6 +6599,11 @@ class $$CoolingCyclesTableTableFilterComposer
 
   ColumnFilters<int> get doorOpenCount => $composableBuilder(
     column: $table.doorOpenCount,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get accumulatedDefrostSeconds => $composableBuilder(
+    column: $table.accumulatedDefrostSeconds,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -6617,6 +6687,11 @@ class $$CoolingCyclesTableTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get accumulatedDefrostSeconds => $composableBuilder(
+    column: $table.accumulatedDefrostSeconds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get feedback => $composableBuilder(
     column: $table.feedback,
     builder: (column) => ColumnOrderings(column),
@@ -6690,6 +6765,11 @@ class $$CoolingCyclesTableTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<int> get accumulatedDefrostSeconds => $composableBuilder(
+    column: $table.accumulatedDefrostSeconds,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get feedback =>
       $composableBuilder(column: $table.feedback, builder: (column) => column);
 }
@@ -6747,6 +6827,7 @@ class $$CoolingCyclesTableTableTableManager
                 Value<int> accumulatedDoorOpenSeconds = const Value.absent(),
                 Value<int> accumulatedPenaltySeconds = const Value.absent(),
                 Value<int> doorOpenCount = const Value.absent(),
+                Value<int> accumulatedDefrostSeconds = const Value.absent(),
                 Value<String?> feedback = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CoolingCyclesTableCompanion(
@@ -6763,6 +6844,7 @@ class $$CoolingCyclesTableTableTableManager
                 accumulatedDoorOpenSeconds: accumulatedDoorOpenSeconds,
                 accumulatedPenaltySeconds: accumulatedPenaltySeconds,
                 doorOpenCount: doorOpenCount,
+                accumulatedDefrostSeconds: accumulatedDefrostSeconds,
                 feedback: feedback,
                 rowid: rowid,
               ),
@@ -6781,6 +6863,7 @@ class $$CoolingCyclesTableTableTableManager
                 Value<int> accumulatedDoorOpenSeconds = const Value.absent(),
                 Value<int> accumulatedPenaltySeconds = const Value.absent(),
                 Value<int> doorOpenCount = const Value.absent(),
+                Value<int> accumulatedDefrostSeconds = const Value.absent(),
                 Value<String?> feedback = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => CoolingCyclesTableCompanion.insert(
@@ -6797,6 +6880,7 @@ class $$CoolingCyclesTableTableTableManager
                 accumulatedDoorOpenSeconds: accumulatedDoorOpenSeconds,
                 accumulatedPenaltySeconds: accumulatedPenaltySeconds,
                 doorOpenCount: doorOpenCount,
+                accumulatedDefrostSeconds: accumulatedDefrostSeconds,
                 feedback: feedback,
                 rowid: rowid,
               ),

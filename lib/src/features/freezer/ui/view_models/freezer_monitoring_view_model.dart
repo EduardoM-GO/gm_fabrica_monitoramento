@@ -30,6 +30,10 @@ final class FreezerItemSignals {
   late final Signal<bool> isDoorOpen;
   late final Signal<bool> isSensorOk;
   late final Signal<bool> hasOvertime;
+  late final Signal<bool> isDefrosting;
+  late final Signal<String> currentDefrostFormatted;
+  late final Signal<double> defrostDeltaTemp;
+  late final Signal<int> accumulatedDefrostSeconds;
 
   // --- Micro-states de Tempo e Progresso (atualizam a 1 Hz) ---
   late final Signal<String> elapsedFormatted;
@@ -72,6 +76,10 @@ final class FreezerItemSignals {
     isDoorOpen = signal<bool>(initial.isDoorOpen);
     isSensorOk = signal<bool>(initial.isSensorOk);
     hasOvertime = signal<bool>(initial.overtimeSeconds > 0);
+    isDefrosting = signal<bool>(initial.isDefrosting);
+    currentDefrostFormatted = signal<String>(initial.currentDefrostFormatted);
+    defrostDeltaTemp = signal<double>(initial.defrostDeltaTemp);
+    accumulatedDefrostSeconds = signal<int>(initial.accumulatedDefrostSeconds);
 
     elapsedFormatted = signal<String>(initial.elapsedFormatted);
     targetFormatted = signal<String>(initial.targetFormatted);
@@ -141,6 +149,18 @@ final class FreezerItemSignals {
       final nextOvertime = next.overtimeSeconds > 0;
       if (hasOvertime.value != nextOvertime) {
         hasOvertime.value = nextOvertime;
+      }
+      if (isDefrosting.value != next.isDefrosting) {
+        isDefrosting.value = next.isDefrosting;
+      }
+      if (currentDefrostFormatted.value != next.currentDefrostFormatted) {
+        currentDefrostFormatted.value = next.currentDefrostFormatted;
+      }
+      if (defrostDeltaTemp.value != next.defrostDeltaTemp) {
+        defrostDeltaTemp.value = next.defrostDeltaTemp;
+      }
+      if (accumulatedDefrostSeconds.value != next.accumulatedDefrostSeconds) {
+        accumulatedDefrostSeconds.value = next.accumulatedDefrostSeconds;
       }
 
       if (elapsedFormatted.value != next.elapsedFormatted) {
@@ -244,6 +264,7 @@ final class FreezerMonitoringViewModel {
   StreamSubscription? _readySub;
   StreamSubscription? _doorToggleSub;
   StreamSubscription? _alarmSub;
+  StreamSubscription? _defrostToggleSub;
 
   FreezerMonitoringViewModel(
     this._repository, {
@@ -345,6 +366,15 @@ final class FreezerMonitoringViewModel {
     _alarmSub = _repository.doorAlarmStream.listen((freezerId) {
       _audioService?.playDoorAlarm();
     });
+
+    _defrostToggleSub = _repository.defrostToggleStream.listen((event) {
+      if (event.isDefrosting) {
+        _cancelReadyChimeSequence(event.freezerId);
+        _audioService?.playFreezerDefrost();
+      } else {
+        _audioService?.playFreezerStarted(freezerId: event.freezerId);
+      }
+    });
   }
 
   /// Toca o alerta de lote pronto até 3 vezes (0s, 2s e 4s), interrompendo
@@ -431,6 +461,18 @@ final class FreezerMonitoringViewModel {
     await _repository.markBatchReadyAndCalibrate(freezerId);
   }
 
+  /// Ativa ou encerra manualmente o modo Degelo / Motor Off (Frost Free)
+  Future<void> setManualDefrostMode(
+    String freezerId, {
+    required bool isDefrosting,
+  }) async {
+    _cancelReadyChimeSequence(freezerId);
+    await _repository.setManualDefrostMode(
+      freezerId,
+      isDefrosting: isDefrosting,
+    );
+  }
+
   /// Atualiza os tempos de porta, tempo alvo base e opcionalmente o equipamento vinculado
   Future<void> updateDoorTimingConfig(
     String freezerId, {
@@ -475,5 +517,6 @@ final class FreezerMonitoringViewModel {
     _readySub?.cancel();
     _doorToggleSub?.cancel();
     _alarmSub?.cancel();
+    _defrostToggleSub?.cancel();
   }
 }

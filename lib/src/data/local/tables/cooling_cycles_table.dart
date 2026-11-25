@@ -26,6 +26,10 @@ class CoolingCyclesTable extends BaseTable {
       integer().withDefault(const Constant(0))();
   IntColumn get doorOpenCount => integer().withDefault(const Constant(0))();
 
+  // Segundos em que o ciclo ficou pausado devido ao degelo (Frost Free desligado)
+  IntColumn get accumulatedDefrostSeconds =>
+      integer().withDefault(const Constant(0))();
+
   // Feedback registrado ao final: 'on_point', 'soft', 'overchilled', 'auto_ok'
   TextColumn get feedback => text().nullable()();
 }

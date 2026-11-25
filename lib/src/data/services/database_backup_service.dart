@@ -333,6 +333,7 @@ class DatabaseBackupService {
             'accumulated_door_open_seconds': r.accumulatedDoorOpenSeconds,
             'accumulated_penalty_seconds': r.accumulatedPenaltySeconds,
             'door_open_count': r.doorOpenCount,
+            'accumulated_defrost_seconds': r.accumulatedDefrostSeconds,
             'feedback': r.feedback,
             'sync_status': r.syncStatus.name,
           },

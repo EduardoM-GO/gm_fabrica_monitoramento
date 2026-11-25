@@ -50,6 +50,7 @@ class AudioService {
   static const String doorOpenAsset = 'audio/door_open.wav';
   static const String doorCloseAsset = 'audio/door_close.wav';
   static const String doorAlarmAsset = 'audio/door_alarm.wav';
+  static const String freezerDefrostAsset = 'audio/freezer_defrost.wav';
 
   static const List<String> allAudioAssets = [
     eggHitAsset,
@@ -64,6 +65,7 @@ class AudioService {
     doorOpenAsset,
     doorCloseAsset,
     doorAlarmAsset,
+    freezerDefrostAsset,
   ];
 
   bool _initialized = false;
@@ -301,6 +303,22 @@ class AudioService {
     }
 
     _play(doorAlarmAsset, fallback: SystemSoundType.alert);
+  }
+
+  /// Plays descending motor power-down standby tone when freezer enters Frost Free defrost
+  void playFreezerDefrost({bool forceTest = false}) {
+    if (isMuted ||
+        (!forceTest && (!alarmSoundEnabled || !freezerStartSoundEnabled))) {
+      return;
+    }
+
+    if (!kIsWeb) {
+      try {
+        HapticFeedback.mediumImpact();
+      } catch (_) {}
+    }
+
+    _play(freezerDefrostAsset, fallback: SystemSoundType.alert);
   }
 
   void _play(

@@ -1,4 +1,5 @@
 import 'package:drift/drift.dart';
+import 'package:gm_fabrica_monitoramento/src/data/local/enum/trigger_freezer_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/domain/models/freezer_event_model.dart';
 import 'package:gm_fabrica_monitoramento/src/domain/models/freezer_model.dart';
 import 'package:gm_fabrica_monitoramento/src/utils/generator_id.dart';
@@ -127,7 +128,7 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
           await into(freezerEventsTable).insert(
             FreezerEventsTableCompanion.insert(
               id: event.id,
-              batchId: event.batch.id,
+              batchId: Value(event.batch.id),
               freezerId: event.freezer.id,
               temperature: event.temperature,
               isDoorOpen: event.isDoorOpen,
@@ -139,6 +140,32 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
         },
         tag: 'FreezerDao.logFreezerEvent',
       );
+
+  /// Registra um evento bruto do sensor do freezer (porta, variação térmica ou início/fim de degelo)
+  Future<Result<Unit>> logRawFreezerEvent({
+    required String freezerId,
+    String? batchId,
+    required double temperature,
+    required bool isDoorOpen,
+    required TriggerFreezerEnum triggerReason,
+    DateTime? recordedAt,
+  }) => Result.catchInAsync(
+    fn: () async {
+      await into(freezerEventsTable).insert(
+        FreezerEventsTableCompanion.insert(
+          id: GeneratorId.getid(),
+          freezerId: freezerId,
+          batchId: Value(batchId),
+          recordedAt: Value(recordedAt ?? DateTime.now()),
+          temperature: temperature,
+          isDoorOpen: isDoorOpen,
+          triggerReason: triggerReason,
+        ),
+      );
+      return unit;
+    },
+    tag: 'FreezerDao.logRawFreezerEvent',
+  );
 
   // ==========================================
   // CALIBRAÇÃO ADAPTATIVA
@@ -352,6 +379,7 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
     required int accumulatedDoorOpenSeconds,
     required int accumulatedPenaltySeconds,
     required int doorOpenCount,
+    int? accumulatedDefrostSeconds,
   }) => Result.catchInAsync(
     fn: () async {
       await (update(
@@ -364,6 +392,9 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
           accumulatedDoorOpenSeconds: Value(accumulatedDoorOpenSeconds),
           accumulatedPenaltySeconds: Value(accumulatedPenaltySeconds),
           doorOpenCount: Value(doorOpenCount),
+          accumulatedDefrostSeconds: accumulatedDefrostSeconds != null
+              ? Value(accumulatedDefrostSeconds)
+              : const Value.absent(),
           syncStatus: const Value(SyncStatusEnum.updating),
         ),
       );
@@ -399,6 +430,7 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
     required int accumulatedDoorOpenSeconds,
     required int accumulatedPenaltySeconds,
     required int doorOpenCount,
+    int accumulatedDefrostSeconds = 0,
     String? feedback,
   }) => Result.catchInAsync(
     fn: () async {
@@ -410,6 +442,7 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
           accumulatedDoorOpenSeconds: Value(accumulatedDoorOpenSeconds),
           accumulatedPenaltySeconds: Value(accumulatedPenaltySeconds),
           doorOpenCount: Value(doorOpenCount),
+          accumulatedDefrostSeconds: Value(accumulatedDefrostSeconds),
           feedback: Value(feedback),
           finishedAt: Value(DateTime.now()),
           syncStatus: const Value(SyncStatusEnum.updating),

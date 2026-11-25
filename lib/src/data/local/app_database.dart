@@ -40,7 +40,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration {
@@ -68,6 +68,14 @@ class AppDatabase extends _$AppDatabase {
             "DELETE FROM products_table WHERE id IN ('prod_ovo_250', 'prod_casca_500', 'prod_mini_100') "
             "AND id NOT IN (SELECT DISTINCT product_id FROM production_batches_table)",
           );
+        }
+        if (from < 3) {
+          await m.addColumn(
+            coolingCyclesTable,
+            coolingCyclesTable.accumulatedDefrostSeconds,
+          );
+          // ignore: experimental_member_use
+          await m.alterTable(TableMigration(freezerEventsTable));
         }
       },
       beforeOpen: (details) async {

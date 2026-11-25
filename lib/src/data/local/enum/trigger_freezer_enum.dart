@@ -3,4 +3,6 @@ enum TriggerFreezerEnum {
   doorClosed, // 1: Porta foi fechada
   tempChanged, // 2: Variação de temperatura acima do limite
   periodic, // 3: Snapshot periódico de segurança
+  defrostStarted, // 4: Compressor desligou / Entrou em degelo (Frost Free)
+  defrostEnded, // 5: Compressor religou / Saiu do degelo
 }

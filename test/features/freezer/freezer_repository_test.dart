@@ -312,5 +312,65 @@ void main() {
 
       reopenedRepo.dispose();
     });
+
+    test('degelo (Frost Free desligado) pausa o cronômetro, soma bônus ao religar, grava eventos e protege a calibração', () async {
+      await freezerRepo.startManualCycle('f1');
+      var f1 = freezerRepo.getFreezer('f1')!;
+      final baseBefore = f1.calibratedBaseSeconds;
+      final expectedBefore = f1.expectedDurationSeconds;
+
+      // 1. Ativa modo degelo (simulando subida térmica / comando manual)
+      await freezerRepo.setManualDefrostMode('f1', isDefrosting: true);
+      f1 = freezerRepo.getFreezer('f1')!;
+      expect(f1.isDefrosting, isTrue);
+
+      final elapsedWhileDefrostStart = f1.elapsedSeconds;
+
+      // 2. Avança 2 segundos durante o degelo + simula pico de temperatura no degelo (+4 °C acima do início)
+      ws.controller.add(
+        FreezerRawData(
+          id: 'f1',
+          type: TypeRawDataEnum.telem,
+          temp: f1.currentTemp + 4.0,
+          isDoorOpen: false,
+          isSensorOk: true,
+        ),
+      );
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 2100));
+
+      f1 = freezerRepo.getFreezer('f1')!;
+      // O progresso (elapsedSeconds) permanece congelado enquanto o tempo esperado aumenta 1s/s
+      expect(f1.elapsedSeconds, equals(elapsedWhileDefrostStart));
+      expect(f1.accumulatedDefrostSeconds, greaterThanOrEqualTo(2));
+      expect(f1.expectedDurationSeconds, greaterThanOrEqualTo(expectedBefore + 2));
+
+      // 3. Simula que o compressor religou e a temperatura caiu >= 1.0 °C abaixo do pico
+      final peak = f1.defrostPeakTemp!;
+      ws.controller.add(
+        FreezerRawData(
+          id: 'f1',
+          type: TypeRawDataEnum.telem,
+          temp: peak - 1.2,
+          isDoorOpen: false,
+          isSensorOk: true,
+        ),
+      );
+      await pumpEventQueue();
+
+      f1 = freezerRepo.getFreezer('f1')!;
+      expect(f1.isDefrosting, isFalse);
+      // Soma bônus de recuperação térmica (4.0 °C * 25s = 100s)
+      expect(f1.accumulatedPenaltySeconds, greaterThanOrEqualTo(100));
+
+      // 4. Finaliza o ciclo e verifica que a calibração base NÃO foi contaminada pela demora do degelo
+      await freezerRepo.recordFeedback('f1', FreezerFeedbackEnum.onPoint);
+      f1 = freezerRepo.getFreezer('f1')!;
+      expect(f1.calibratedBaseSeconds, equals(baseBefore));
+
+      // 5. Verifica que os eventos defrostStarted e defrostEnded foram gravados na tabela freezer_events_table
+      final events = await db.select(db.freezerEventsTable).get();
+      expect(events.length, greaterThanOrEqualTo(2));
+    });
   });
 }

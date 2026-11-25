@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:gm_fabrica_monitoramento/src/data/local/daos/freezer_dao.dart';
+import 'package:gm_fabrica_monitoramento/src/data/local/enum/trigger_freezer_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/data/remote/supabase_catalog_datasource.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/door_raw_data.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/raw_data/freezer_raw_data.dart';
@@ -47,6 +48,8 @@ final class FreezerRepository {
   final _doorToggleController =
       StreamController<({String freezerId, bool isOpen})>.broadcast();
   final _doorAlarmController = StreamController<String>.broadcast();
+  final _defrostToggleController =
+      StreamController<({String freezerId, bool isDefrosting})>.broadcast();
 
   static const int _maxHistoryPoints = 60;
   final int doorCriticalSeconds;
@@ -81,6 +84,8 @@ final class FreezerRepository {
   Stream<({String freezerId, bool isOpen})> get doorToggleStream =>
       _doorToggleController.stream;
   Stream<String> get doorAlarmStream => _doorAlarmController.stream;
+  Stream<({String freezerId, bool isDefrosting})> get defrostToggleStream =>
+      _defrostToggleController.stream;
 
   Map<String, FreezerLiveState> get currentFreezers =>
       Map.unmodifiable(_freezers);
@@ -212,6 +217,7 @@ final class FreezerRepository {
             accumulatedDoorOpenSeconds: cycle.accumulatedDoorOpenSeconds,
             accumulatedPenaltySeconds: cycle.accumulatedPenaltySeconds,
             doorOpenCount: cycle.doorOpenCount,
+            accumulatedDefrostSeconds: cycle.accumulatedDefrostSeconds,
           );
         }
       } else {
@@ -254,6 +260,29 @@ final class FreezerRepository {
           }
         }
       }
+
+      // 2.5 Restaura estado de degelo (Frost Free desligado) caso o app tenha reiniciado durante o degelo
+      final savedDefrosting = prefs?.getBool('freezer_${id}_is_defrosting') ?? false;
+      final afterRestore = _freezers[id];
+      if (savedDefrosting && afterRestore != null) {
+        final savedDefrostStartMs = prefs?.getInt('freezer_${id}_defrost_start_ms');
+        final savedDefrostStartTemp = prefs?.getDouble('freezer_${id}_defrost_start_temp');
+        final savedDefrostPeakTemp = prefs?.getDouble('freezer_${id}_defrost_peak_temp');
+        final defrostStartedAt = savedDefrostStartMs != null
+            ? DateTime.fromMillisecondsSinceEpoch(savedDefrostStartMs)
+            : DateTime.now();
+        final currentDefrostSec = max(
+          0,
+          DateTime.now().difference(defrostStartedAt).inSeconds,
+        );
+        _freezers[id] = afterRestore.copyWith(
+          isDefrosting: true,
+          defrostStartedAt: defrostStartedAt,
+          defrostStartTemp: savedDefrostStartTemp ?? afterRestore.currentTemp,
+          defrostPeakTemp: savedDefrostPeakTemp ?? afterRestore.currentTemp,
+          currentDefrostSeconds: currentDefrostSec,
+        );
+      }
     }
     _emitState();
 
@@ -271,11 +300,34 @@ final class FreezerRepository {
       final id = entry.key;
       final s = entry.value;
       final startedAt = _cycleStartedAt[id];
+
+      if (s.isDefrosting) {
+        final defrostSec = s.defrostStartedAt != null
+            ? max(1, now.difference(s.defrostStartedAt!).inSeconds)
+            : s.currentDefrostSeconds;
+        final defrostDelta = max(0, defrostSec - s.currentDefrostSeconds);
+        final hasActiveCycle =
+            s.status == FreezerStatusEnum.cooling ||
+            s.status == FreezerStatusEnum.doorOpen;
+        _freezers[id] = s.copyWith(
+          currentDefrostSeconds: defrostSec,
+          accumulatedDefrostSeconds: hasActiveCycle
+              ? s.accumulatedDefrostSeconds + defrostDelta
+              : s.accumulatedDefrostSeconds,
+          expectedDurationSeconds: hasActiveCycle
+              ? s.expectedDurationSeconds + defrostDelta
+              : s.expectedDurationSeconds,
+        );
+        changed = true;
+        continue;
+      }
+
       if (startedAt != null &&
           (s.status == FreezerStatusEnum.cooling ||
               s.status == FreezerStatusEnum.doorOpen ||
               s.status == FreezerStatusEnum.ready)) {
-        final elapsed = max(0, now.difference(startedAt).inSeconds);
+        final totalWall = max(0, now.difference(startedAt).inSeconds);
+        final elapsed = max(0, totalWall - s.accumulatedDefrostSeconds);
         final rem = max(0, s.expectedDurationSeconds - elapsed);
         _executedSecondsInCycle[id] = elapsed;
         _freezers[id] = s.copyWith(
@@ -484,6 +536,9 @@ final class FreezerRepository {
       currentTemp: raw.temp,
       baselineTemp: prev.baselineTemp ?? raw.temp,
       peakTemp: updatedPeak,
+      defrostPeakTemp: prev.isDefrosting
+          ? max(prev.defrostPeakTemp ?? raw.temp, raw.temp)
+          : prev.defrostPeakTemp,
       isDoorOpen: raw.isDoorOpen,
       isSensorOk: raw.isSensorOk,
       temperatureHistory: history,
@@ -493,8 +548,180 @@ final class FreezerRepository {
       updated = _handleDoorTransition(updated, raw.isDoorOpen, raw.temp, now);
     }
 
+    updated = _evaluateDefrostState(updated, now);
+
     _freezers[raw.id] = updated;
     unawaited(_persistThermalSnapshot(updated));
+    _emitState();
+  }
+
+  /// Avalia se o freezer entrou ou saiu do ciclo de degelo (Frost Free desligado)
+  /// com base na curva térmica ao vivo e nas regras de inércia pós-porta.
+  FreezerLiveState _evaluateDefrostState(FreezerLiveState state, DateTime now) {
+    if (!state.isSensorOk) return state;
+
+    if (!state.isDefrosting) {
+      final shouldEnterDefrost = _engine.detectDefrostStart(
+        currentTemp: state.currentTemp,
+        isDoorOpen: state.isDoorOpen,
+        now: now,
+        lastDoorCloseAt: state.lastDoorCloseAt,
+        history: state.temperatureHistory,
+      );
+      if (shouldEnterDefrost) {
+        return _enterDefrostInternal(state, now);
+      }
+      return state;
+    } else {
+      final hasActiveCycle =
+          state.status == FreezerStatusEnum.cooling ||
+          state.status == FreezerStatusEnum.doorOpen;
+      final peak = max(
+        state.currentTemp,
+        state.defrostPeakTemp ?? state.currentTemp,
+      );
+      final shouldExitDefrost = _engine.detectDefrostEnd(
+        currentTemp: state.currentTemp,
+        defrostPeakTemp: peak,
+        hasActiveCycle: hasActiveCycle,
+      );
+      if (shouldExitDefrost) {
+        return _exitDefrostInternal(state, now);
+      }
+      return state;
+    }
+  }
+
+  FreezerLiveState _enterDefrostInternal(
+    FreezerLiveState state,
+    DateTime now,
+  ) {
+    if (state.isDefrosting) return state;
+
+    // Descobre a temperatura de início do degelo na janela recente (ou usa a temperatura atual)
+    double startTemp = state.currentTemp;
+    final cutoff = now.subtract(const Duration(seconds: 180));
+    for (final pt in state.temperatureHistory) {
+      if (!pt.timestamp.isBefore(cutoff) && pt.temperature < startTemp) {
+        startTemp = pt.temperature;
+      }
+    }
+
+    final updated = state.copyWith(
+      isDefrosting: true,
+      defrostStartedAt: now,
+      defrostStartTemp: startTemp,
+      defrostPeakTemp: state.currentTemp,
+      currentDefrostSeconds: 0,
+    );
+
+    if (!_defrostToggleController.isClosed) {
+      _defrostToggleController.add((
+        freezerId: state.freezerId,
+        isDefrosting: true,
+      ));
+    }
+
+    unawaited(_persistDefrostPrefs(updated));
+    unawaited(
+      _freezerDao.logRawFreezerEvent(
+        freezerId: state.freezerId,
+        batchId: _productionRepo.currentActiveBatch?.id,
+        temperature: state.currentTemp,
+        isDoorOpen: state.isDoorOpen,
+        triggerReason: TriggerFreezerEnum.defrostStarted,
+        recordedAt: now,
+      ),
+    );
+
+    return updated;
+  }
+
+  FreezerLiveState _exitDefrostInternal(
+    FreezerLiveState state,
+    DateTime now,
+  ) {
+    if (!state.isDefrosting) return state;
+
+    final hasActiveCycle =
+        state.status == FreezerStatusEnum.cooling ||
+        state.status == FreezerStatusEnum.doorOpen;
+
+    int recoveryBonusSec = 0;
+    if (hasActiveCycle) {
+      final startTemp = state.defrostStartTemp ?? state.currentTemp;
+      final peakTemp = max(
+        state.currentTemp,
+        state.defrostPeakTemp ?? state.currentTemp,
+      );
+      recoveryBonusSec = _engine.calculateDefrostRecoverySeconds(
+        defrostStartTemp: startTemp,
+        defrostPeakTemp: peakTemp,
+      );
+    }
+
+    final newExpected = state.expectedDurationSeconds + recoveryBonusSec;
+    final newRemaining = state.remainingSeconds + recoveryBonusSec;
+    final newAccPenalty = state.accumulatedPenaltySeconds + recoveryBonusSec;
+
+    if (state.activeCycleId != null) {
+      unawaited(
+        _freezerDao.updateCoolingCycleMetrics(
+          cycleId: state.activeCycleId!,
+          expectedDurationSeconds: newExpected,
+          accumulatedDoorOpenSeconds: state.accumulatedDoorOpenSeconds,
+          accumulatedPenaltySeconds: newAccPenalty,
+          doorOpenCount: state.doorOpenCount,
+          accumulatedDefrostSeconds: state.accumulatedDefrostSeconds,
+        ),
+      );
+    }
+
+    final updated = state.copyWith(
+      clearDefrostState: true,
+      expectedDurationSeconds: newExpected,
+      remainingSeconds: newRemaining,
+      accumulatedPenaltySeconds: newAccPenalty,
+    );
+
+    if (!_defrostToggleController.isClosed) {
+      _defrostToggleController.add((
+        freezerId: state.freezerId,
+        isDefrosting: false,
+      ));
+    }
+
+    unawaited(_clearDefrostPrefs(state.freezerId));
+    if (hasActiveCycle) {
+      unawaited(_persistActiveCyclePrefs(updated));
+    }
+    unawaited(
+      _freezerDao.logRawFreezerEvent(
+        freezerId: state.freezerId,
+        batchId: _productionRepo.currentActiveBatch?.id,
+        temperature: state.currentTemp,
+        isDoorOpen: state.isDoorOpen,
+        triggerReason: TriggerFreezerEnum.defrostEnded,
+        recordedAt: now,
+      ),
+    );
+
+    return updated;
+  }
+
+  /// Permite ao operador ativar ou encerrar manualmente o modo Degelo (Motor Off) pelo menu de toque longo
+  Future<void> setManualDefrostMode(
+    String freezerId, {
+    required bool isDefrosting,
+  }) async {
+    final current = _freezers[freezerId];
+    if (current == null || current.isDefrosting == isDefrosting) return;
+
+    final now = DateTime.now();
+    final updated = isDefrosting
+        ? _enterDefrostInternal(current, now)
+        : _exitDefrostInternal(current, now);
+    _freezers[freezerId] = updated;
     _emitState();
   }
 
@@ -804,26 +1031,54 @@ final class FreezerRepository {
         if (s.status == FreezerStatusEnum.cooling ||
             s.status == FreezerStatusEnum.doorOpen ||
             s.status == FreezerStatusEnum.ready) {
-          final newElapsed =
-              (_executedSecondsInCycle[id] ?? s.elapsedSeconds) + 1;
-          _executedSecondsInCycle[id] = newElapsed;
-          final rem = max(0, s.expectedDurationSeconds - newElapsed);
+          if (s.isDefrosting &&
+              (s.status == FreezerStatusEnum.cooling ||
+                  s.status == FreezerStatusEnum.doorOpen)) {
+            // Congela o progresso de cristalização durante o degelo (Frost Free desligado):
+            // elapsedSeconds e remainingSeconds ficam pausados, e expectedDurationSeconds
+            // acompanha 1s a cada 1s de degelo para o operador visualizar o impacto real no alvo.
+            final defrostSec = s.defrostStartedAt != null
+                ? max(1, now.difference(s.defrostStartedAt!).inSeconds)
+                : s.currentDefrostSeconds + 1;
+            final newAccDefrost = s.accumulatedDefrostSeconds + 1;
+            final newExpected = s.expectedDurationSeconds + 1;
 
-          if (s.status == FreezerStatusEnum.cooling && rem == 0) {
             s = s.copyWith(
-              elapsedSeconds: newElapsed,
-              remainingSeconds: 0,
-              status: FreezerStatusEnum.ready,
+              currentDefrostSeconds: defrostSec,
+              accumulatedDefrostSeconds: newAccDefrost,
+              expectedDurationSeconds: newExpected,
             );
-            if (!_cycleReadyController.isClosed) {
-              _cycleReadyController.add(id);
-            }
+            _freezers[id] = s;
+            changed = true;
           } else {
-            s = s.copyWith(
-              elapsedSeconds: newElapsed,
-              remainingSeconds: rem,
-            );
+            final newElapsed =
+                (_executedSecondsInCycle[id] ?? s.elapsedSeconds) + 1;
+            _executedSecondsInCycle[id] = newElapsed;
+            final rem = max(0, s.expectedDurationSeconds - newElapsed);
+
+            if (s.status == FreezerStatusEnum.cooling && rem == 0) {
+              s = s.copyWith(
+                elapsedSeconds: newElapsed,
+                remainingSeconds: 0,
+                status: FreezerStatusEnum.ready,
+              );
+              if (!_cycleReadyController.isClosed) {
+                _cycleReadyController.add(id);
+              }
+            } else {
+              s = s.copyWith(
+                elapsedSeconds: newElapsed,
+                remainingSeconds: rem,
+              );
+            }
+            _freezers[id] = s;
+            changed = true;
           }
+        } else if (s.isDefrosting) {
+          final defrostSec = s.defrostStartedAt != null
+              ? max(1, now.difference(s.defrostStartedAt!).inSeconds)
+              : s.currentDefrostSeconds + 1;
+          s = s.copyWith(currentDefrostSeconds: defrostSec);
           _freezers[id] = s;
           changed = true;
         } else if (s.status == FreezerStatusEnum.feedbackPending) {
@@ -876,6 +1131,7 @@ final class FreezerRepository {
       accumulatedPenaltySeconds: 0,
       accumulatedDoorOpenSeconds: 0,
       doorOpenCount: 0,
+      accumulatedDefrostSeconds: 0,
       clearFeedbackCountdown: true,
       calibratedBaseSeconds: baseSeconds,
     );
@@ -1027,35 +1283,47 @@ final class FreezerRepository {
     }
 
     if (current.activeCycleId != null) {
+      final totalWallSeconds =
+          executedSeconds + current.accumulatedDefrostSeconds;
       await _freezerDao.finishCoolingCycle(
         cycleId: current.activeCycleId!,
-        actualSeconds: executedSeconds,
+        actualSeconds: totalWallSeconds,
         accumulatedDoorOpenSeconds: current.accumulatedDoorOpenSeconds,
         accumulatedPenaltySeconds: current.accumulatedPenaltySeconds,
         doorOpenCount: current.doorOpenCount,
+        accumulatedDefrostSeconds: current.accumulatedDefrostSeconds,
         feedback: feedback.code,
       );
     } else {
       await _freezerDao.cancelActiveCoolingCycles(freezerId);
     }
 
-    final newCalibrated = _engine.adaptCalibration(
-      currentCalibratedSeconds: current.calibratedBaseSeconds,
-      executedEffectiveSeconds: executedSeconds,
-      feedback: feedback,
-    );
+    // Protege a calibração automática: se o ciclo sofreu pausa por degelo (Frost Free desligado),
+    // não altera o tempo base calibrado dos próximos ciclos para que um degelo de ~20-30 min
+    // não distorça o tempo normal de 10-12 min das próximas fornadas.
+    final hadDefrostAnomaly =
+        current.isDefrosting || current.accumulatedDefrostSeconds > 0;
+    final newCalibrated = hadDefrostAnomaly
+        ? current.calibratedBaseSeconds
+        : _engine.adaptCalibration(
+            currentCalibratedSeconds: current.calibratedBaseSeconds,
+            executedEffectiveSeconds: executedSeconds,
+            feedback: feedback,
+          );
 
-    await _freezerDao.upsertCalibration(
-      freezerId: freezerId,
-      productId: productId,
-      calibratedDurationSeconds: newCalibrated,
-      lastFeedback: feedback.code,
-    );
+    if (!hadDefrostAnomaly) {
+      await _freezerDao.upsertCalibration(
+        freezerId: freezerId,
+        productId: productId,
+        calibratedDurationSeconds: newCalibrated,
+        lastFeedback: feedback.code,
+      );
 
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('freezer_${freezerId}_target_sec', newCalibrated);
-    } catch (_) {}
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('freezer_${freezerId}_target_sec', newCalibrated);
+      } catch (_) {}
+    }
 
     _cycleStartedAt.remove(freezerId);
     _executedSecondsInCycle.remove(freezerId);
@@ -1065,6 +1333,7 @@ final class FreezerRepository {
       remainingSeconds: newCalibrated,
       expectedDurationSeconds: newCalibrated,
       elapsedSeconds: 0,
+      accumulatedDefrostSeconds: 0,
       clearFeedbackCountdown: true,
       clearActiveCycleId: true,
       lastFeedback: feedback,
@@ -1093,6 +1362,7 @@ final class FreezerRepository {
       accumulatedPenaltySeconds: 0,
       accumulatedDoorOpenSeconds: 0,
       doorOpenCount: 0,
+      accumulatedDefrostSeconds: 0,
       clearFeedbackCountdown: true,
       clearActiveCycleId: true,
     );
@@ -1141,6 +1411,42 @@ final class FreezerRepository {
       await prefs.remove('freezer_${freezerId}_active_expected_sec');
       await prefs.remove('freezer_${freezerId}_active_base_temp');
       await prefs.remove('freezer_${freezerId}_active_peak_temp');
+    } catch (_) {}
+  }
+
+  Future<void> _persistDefrostPrefs(FreezerLiveState state) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final id = state.freezerId;
+      await prefs.setBool('freezer_${id}_is_defrosting', state.isDefrosting);
+      if (state.defrostStartedAt != null) {
+        await prefs.setInt(
+          'freezer_${id}_defrost_start_ms',
+          state.defrostStartedAt!.millisecondsSinceEpoch,
+        );
+      }
+      if (state.defrostStartTemp != null) {
+        await prefs.setDouble(
+          'freezer_${id}_defrost_start_temp',
+          state.defrostStartTemp!,
+        );
+      }
+      if (state.defrostPeakTemp != null) {
+        await prefs.setDouble(
+          'freezer_${id}_defrost_peak_temp',
+          state.defrostPeakTemp!,
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _clearDefrostPrefs(String freezerId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('freezer_${freezerId}_is_defrosting');
+      await prefs.remove('freezer_${freezerId}_defrost_start_ms');
+      await prefs.remove('freezer_${freezerId}_defrost_start_temp');
+      await prefs.remove('freezer_${freezerId}_defrost_peak_temp');
     } catch (_) {}
   }
 
@@ -1339,6 +1645,7 @@ final class FreezerRepository {
     _cycleReadyController.close();
     _doorToggleController.close();
     _doorAlarmController.close();
+    _defrostToggleController.close();
   }
 }
 

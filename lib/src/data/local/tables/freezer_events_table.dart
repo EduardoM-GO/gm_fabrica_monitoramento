@@ -7,7 +7,8 @@ import 'package:gm_fabrica_monitoramento/src/data/local/tables/production_batche
 @DataClassName('FreezerEvent')
 class FreezerEventsTable extends BaseTable {
   TextColumn get freezerId => text().references(FreezersTable, #id)();
-  TextColumn get batchId => text().references(ProductionBatchesTable, #id)();
+  TextColumn get batchId =>
+      text().nullable().references(ProductionBatchesTable, #id)();
 
   DateTimeColumn get recordedAt => dateTime().withDefault(currentDateAndTime)();
 
