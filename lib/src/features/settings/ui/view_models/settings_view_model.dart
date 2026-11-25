@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:gm_fabrica_monitoramento/src/data/services/audio_service.dart';
+import 'package:gm_fabrica_monitoramento/src/data/services/database_backup_service.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/enum/ws_connection_state_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/esp32_discovery_service.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/websocket_service.dart';
@@ -22,6 +23,7 @@ final class SettingsViewModel {
 
   final WebsocketService _wsService;
   final AudioService? _audioService;
+  final DatabaseBackupService? backupService;
   final Esp32DiscoveryService _discoveryService;
 
   late final Signal<String> espHost;
@@ -29,6 +31,9 @@ final class SettingsViewModel {
   late final Signal<WsConnectionStateEnum> connectionState;
   late final Signal<String?> lastError;
   late final Signal<bool> isDiscovering;
+  late final Signal<bool> isBackingUpDatabase;
+  late final Signal<DatabaseBackupResult?> lastBackupResult;
+  late final Signal<String?> lastBackupError;
   late final Signal<bool> eggSoundEnabled;
   late final Signal<bool> alarmSoundEnabled;
 
@@ -50,6 +55,7 @@ final class SettingsViewModel {
   SettingsViewModel({
     required this._wsService,
     AudioService? audioService,
+    this.backupService,
     this._discoveryService = const Esp32DiscoveryService(),
     String initialHost = '192.168.0.58',
     int initialPort = 81,
@@ -63,6 +69,9 @@ final class SettingsViewModel {
     );
     lastError = signal<String?>(null);
     isDiscovering = signal<bool>(false);
+    isBackingUpDatabase = signal<bool>(false);
+    lastBackupResult = signal<DatabaseBackupResult?>(null);
+    lastBackupError = signal<String?>(null);
     eggSoundEnabled = signal<bool>(audioService?.eggSoundEnabled ?? true);
     alarmSoundEnabled = signal<bool>(audioService?.alarmSoundEnabled ?? true);
 
@@ -304,6 +313,31 @@ final class SettingsViewModel {
       _audioService?.playFreezerReady(freezerId: freezerId, forceTest: true);
   void testDoorToggleSound() => _audioService?.playDoorOpened(forceTest: true);
   void testDoorAlarmSound() => _audioService?.playDoorAlarm(forceTest: true);
+
+  /// Gera um arquivo .zip com o banco SQLite (VACUUM INTO) + JSON/CSV das tabelas
+  /// e faz upload para o Supabase Storage.
+  Future<DatabaseBackupResult?> runDatabaseBackup() async {
+    final service = backupService;
+    if (service == null) {
+      lastBackupError.value =
+          'Serviço de backup não configurado nesta instância.';
+      return null;
+    }
+    if (isBackingUpDatabase.value) return null;
+
+    isBackingUpDatabase.value = true;
+    lastBackupError.value = null;
+    try {
+      final result = await service.createAndUploadBackup();
+      lastBackupResult.value = result;
+      return result;
+    } catch (e) {
+      lastBackupError.value = 'Falha ao gerar backup do banco: $e';
+      return null;
+    } finally {
+      isBackingUpDatabase.value = false;
+    }
+  }
 
   void dispose() {
     _connSub?.cancel();

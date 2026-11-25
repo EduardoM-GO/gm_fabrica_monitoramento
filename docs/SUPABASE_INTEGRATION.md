@@ -352,6 +352,26 @@ alter publication supabase_realtime add table public.products;
 alter publication supabase_realtime add table public.production_schedules;
 alter publication supabase_realtime add table public.freezers;
 alter publication supabase_realtime add table public.freezer_calibrations;
+
+-- 11. Bucket no Supabase Storage para Backups (.zip) do Banco SQLite Local
+insert into storage.buckets (id, name, public)
+values ('database-backups', 'database-backups', false)
+on conflict (id) do nothing;
+
+create policy "Permitir upload de backups pelo Kiosk autenticado"
+  on storage.objects for insert
+  to authenticated
+  with check (bucket_id = 'database-backups');
+
+create policy "Permitir atualização de backups pelo Kiosk autenticado"
+  on storage.objects for update
+  to authenticated
+  using (bucket_id = 'database-backups');
+
+create policy "Permitir leitura de backups por usuários autenticados"
+  on storage.objects for select
+  to authenticated
+  using (bucket_id = 'database-backups');
 ```
 
 ---

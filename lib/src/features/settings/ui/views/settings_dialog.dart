@@ -145,6 +145,13 @@ class _SettingsDialogState extends State<SettingsDialog> {
                           colorScheme,
                           vm,
                         ),
+                        const SizedBox(height: AppSpacing.sm),
+                        _buildDatabaseBackupCard(
+                          context,
+                          theme,
+                          colorScheme,
+                          vm,
+                        ),
                       ],
                     );
 
@@ -462,6 +469,144 @@ class _SettingsDialogState extends State<SettingsDialog> {
               onChanged: vm.toggleDoorAlarmSound,
               onTestPrimary: vm.testDoorAlarmSound,
               testPrimaryLabel: 'Testar',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDatabaseBackupCard(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme colorScheme,
+    SettingsViewModel vm,
+  ) {
+    return Card.filled(
+      color: colorScheme.surfaceContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppSpacing.borderRadiusMd,
+        side: BorderSide(color: colorScheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'BACKUP & DIAGNÓSTICO DO BANCO DE DADOS (ZIP → SUPABASE)',
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4,
+                          color: colorScheme.tertiary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Compacta SQLite (VACUUM INTO) + JSON/CSV das tabelas para análise.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          fontSize: 11,
+                          color: AppTheme.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                SignalBuilder(
+                  builder: (context) {
+                    final isBackingUp = vm.isBackingUpDatabase.value;
+                    return FilledButton.tonalIcon(
+                      key: const ValueKey('run_database_backup_btn'),
+                      onPressed: isBackingUp
+                          ? null
+                          : () async {
+                              final res = await vm.runDatabaseBackup();
+                              if (!context.mounted) return;
+                              final messenger = ScaffoldMessenger.of(context);
+                              if (res != null) {
+                                final msg = res.uploadedToSupabase
+                                    ? 'Backup ${res.fileName} (${res.totalRecords} registros) enviado ao Supabase Storage!'
+                                    : (res.uploadWarning ??
+                                          'Backup ${res.fileName} salvo localmente.');
+                                messenger.showSnackBar(
+                                  SnackBar(content: Text(msg)),
+                                );
+                              } else if (vm.lastBackupError.value != null) {
+                                messenger.showSnackBar(
+                                  SnackBar(
+                                    backgroundColor: colorScheme.error,
+                                    content: Text(vm.lastBackupError.value!),
+                                  ),
+                                );
+                              }
+                            },
+                      icon: isBackingUp
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.folder_zip_rounded, size: 16),
+                      label: Text(
+                        isBackingUp
+                            ? 'Compactando...'
+                            : 'Gerar Backup (.zip)',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+            SignalBuilder(
+              builder: (context) {
+                final res = vm.lastBackupResult.value;
+                final err = vm.lastBackupError.value;
+                if (err != null) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      err,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: colorScheme.error,
+                      ),
+                    ),
+                  );
+                }
+                if (res == null) return const SizedBox.shrink();
+
+                final kb = (res.sizeBytes / 1024).toStringAsFixed(1);
+                final statusText = res.uploadedToSupabase
+                    ? 'Enviado: ${res.supabaseStoragePath}'
+                    : 'Local: ${res.localZipPath}';
+                return Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Último backup: ${res.fileName} ($kb KB • ${res.totalRecords} registros) — $statusText',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      color: res.uploadedToSupabase
+                          ? AppTheme.successGreen
+                          : AppTheme.warningAmber,
+                    ),
+                  ),
+                );
+              },
             ),
           ],
         ),

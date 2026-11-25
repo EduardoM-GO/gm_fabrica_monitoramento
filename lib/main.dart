@@ -11,6 +11,7 @@ import 'src/core/themes/app_theme.dart';
 import 'src/data/local/app_database.dart';
 import 'src/data/remote/supabase_catalog_datasource.dart';
 import 'src/data/services/audio_service.dart';
+import 'src/data/services/database_backup_service.dart';
 import 'src/data/websocket/websocket_service.dart';
 import 'src/data/websocket/websocket_service_impl.dart';
 import 'src/features/auth/ui/views/kiosk_login_view.dart';
@@ -70,8 +71,9 @@ void main() async {
   final isSupabaseReady = await bootstrapSupabase();
   final CatalogRemoteDatasource catalogRemote = SupabaseCatalogDatasource();
 
-  // 1. Data Layer: Local Database (Drift SQLite)
+  // 1. Data Layer: Local Database (Drift SQLite) & Backup Service
   final database = AppDatabase();
+  final backupService = DatabaseBackupService(database: database);
 
   // 2. Audio Feedback Service (RAM WAV / Asset Pool)
   final audioService = AudioService();
@@ -87,6 +89,7 @@ void main() async {
   settingsViewModel = SettingsViewModel(
     wsService: wsService,
     audioService: audioService,
+    backupService: backupService,
   );
   // Inicia conexão assíncrona usando IP salvo ou padrão (192.168.0.58:81)
   unawaited(settingsViewModel.initAndConnect());
@@ -144,6 +147,7 @@ void main() async {
     MultiProvider(
       providers: [
         Provider<AppDatabase>.value(value: database),
+        Provider<DatabaseBackupService>.value(value: backupService),
         Provider<CatalogRemoteDatasource>.value(value: catalogRemote),
         Provider<WebsocketService>.value(value: wsService),
         Provider<AudioService>.value(value: audioService),
