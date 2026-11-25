@@ -34,6 +34,8 @@ final class FreezerRepository {
   final Map<String, double> _tempWhenOpened = {};
   final Map<String, double> _baselineTempBeforeLoad = {};
   final Map<String, int> _executedSecondsInCycle = {};
+  final Map<String, double> _lastLoggedEventTemp = {};
+  final Map<String, DateTime> _lastLoggedEventAt = {};
 
   List<EquipmentModel> _availableEquipments = const [];
   bool _isSyncingEquipments = false;
@@ -51,7 +53,7 @@ final class FreezerRepository {
   final _defrostToggleController =
       StreamController<({String freezerId, bool isDefrosting})>.broadcast();
 
-  static const int _maxHistoryPoints = 60;
+  static const int _maxHistoryPoints = 240;
   final int doorCriticalSeconds;
   final int inspectionThresholdSeconds;
 
@@ -550,9 +552,46 @@ final class FreezerRepository {
 
     updated = _evaluateDefrostState(updated, now);
 
+    _maybeLogThermalSnapshotEvent(updated, now);
+
     _freezers[raw.id] = updated;
     unawaited(_persistThermalSnapshot(updated));
     _emitState();
+  }
+
+  /// Registra amostras térmicas significativas (`tempChanged` >= 1.0 °C ou `periodic` a cada 3 min)
+  /// na tabela `freezer_events_table` para reconstruir a curva real do Frost Free nos backups.
+  void _maybeLogThermalSnapshotEvent(FreezerLiveState state, DateTime now) {
+    if (!state.isSensorOk) return;
+    final id = state.freezerId;
+    final lastTemp = _lastLoggedEventTemp[id];
+    final lastAt = _lastLoggedEventAt[id];
+
+    final tempDiff = lastTemp != null
+        ? (state.currentTemp - lastTemp).abs()
+        : double.infinity;
+    final elapsedSec = lastAt != null ? now.difference(lastAt).inSeconds : 9999;
+
+    // Evita flood em intervalos sub-segundo; grava se variou >= 1.0 °C (com min 15s) ou a cada 180s
+    final isSignificantShift = tempDiff >= 1.0 && elapsedSec >= 15;
+    final isPeriodicDue = elapsedSec >= 180;
+
+    if (lastTemp == null || isSignificantShift || isPeriodicDue) {
+      _lastLoggedEventTemp[id] = state.currentTemp;
+      _lastLoggedEventAt[id] = now;
+      unawaited(
+        _freezerDao.logRawFreezerEvent(
+          freezerId: id,
+          batchId: _productionRepo.currentActiveBatch?.id,
+          temperature: state.currentTemp,
+          isDoorOpen: state.isDoorOpen,
+          triggerReason: isSignificantShift
+              ? TriggerFreezerEnum.tempChanged
+              : TriggerFreezerEnum.periodic,
+          recordedAt: now,
+        ),
+      );
+    }
   }
 
   /// Avalia se o freezer entrou ou saiu do ciclo de degelo (Frost Free desligado)
@@ -759,6 +798,21 @@ final class FreezerRepository {
     if (!_doorToggleController.isClosed) {
       _doorToggleController.add((freezerId: id, isOpen: isNowOpen));
     }
+
+    _lastLoggedEventTemp[id] = temp;
+    _lastLoggedEventAt[id] = now;
+    unawaited(
+      _freezerDao.logRawFreezerEvent(
+        freezerId: id,
+        batchId: _productionRepo.currentActiveBatch?.id,
+        temperature: temp,
+        isDoorOpen: isNowOpen,
+        triggerReason: isNowOpen
+            ? TriggerFreezerEnum.doorOpened
+            : TriggerFreezerEnum.doorClosed,
+        recordedAt: now,
+      ),
+    );
 
     if (isNowOpen) {
       _doorOpenSince[id] = now;

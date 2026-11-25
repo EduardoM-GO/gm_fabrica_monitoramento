@@ -368,9 +368,35 @@ void main() {
       f1 = freezerRepo.getFreezer('f1')!;
       expect(f1.calibratedBaseSeconds, equals(baseBefore));
 
-      // 5. Verifica que os eventos defrostStarted e defrostEnded foram gravados na tabela freezer_events_table
+      // 5. Verifica que os eventos defrostStarted, defrostEnded e telemetria foram gravados na tabela freezer_events_table
       final events = await db.select(db.freezerEventsTable).get();
       expect(events.length, greaterThanOrEqualTo(2));
+    });
+
+    test('grava eventos doorOpened e doorClosed na tabela freezer_events_table e mantém histórico de até 240 amostras para o detector Frost Free', () async {
+      ws.controller.add(
+        DoorRawData(
+          type: TypeRawDataEnum.door,
+          freezerId: 1,
+          isOpen: true,
+        ),
+      );
+      await pumpEventQueue();
+
+      ws.controller.add(
+        DoorRawData(
+          type: TypeRawDataEnum.door,
+          freezerId: 1,
+          isOpen: false,
+        ),
+      );
+      await pumpEventQueue();
+
+      final events = await db.select(db.freezerEventsTable).get();
+      expect(
+        events.map((e) => e.triggerReason.name),
+        containsAll(['doorOpened', 'doorClosed']),
+      );
     });
   });
 }

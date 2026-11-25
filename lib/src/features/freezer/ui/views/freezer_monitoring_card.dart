@@ -1413,16 +1413,21 @@ final class _ThermalCurvePainter extends CustomPainter {
     ).createShader(rect);
   }
 
+  static const int _maxGraphPoints = 60;
+
   @override
   void paint(Canvas canvas, Size size) {
     if (size.width <= 0 || size.height <= 0) return;
 
-    final samples = history.isNotEmpty
+    final rawSamples = history.isNotEmpty
         ? history
         : [
             (timestamp: DateTime.now(), temperature: baselineTemp),
             (timestamp: DateTime.now(), temperature: currentTemp),
           ];
+    final samples = rawSamples.length > _maxGraphPoints
+        ? rawSamples.sublist(rawSamples.length - _maxGraphPoints)
+        : rawSamples;
 
     double minT = min(baselineTemp, currentTemp);
     double maxT = max(baselineTemp, currentTemp);
