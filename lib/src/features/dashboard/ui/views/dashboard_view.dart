@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_breakpoints.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_spacing.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_theme.dart';
+import 'package:gm_fabrica_monitoramento/src/core/widgets/kiosk_clock_display.dart';
 import 'package:gm_fabrica_monitoramento/src/core/widgets/status_badge.dart';
 import 'package:gm_fabrica_monitoramento/src/data/websocket/enum/ws_connection_state_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/ui/view_models/freezer_monitoring_view_model.dart';
@@ -220,6 +221,13 @@ final class _TopKioskStatusStrip extends StatelessWidget {
                 ),
                 SizedBox(width: isTablet ? AppSpacing.sm : AppSpacing.xs),
               ],
+
+              // Data e Hora atual em tempo real (evita arrastar barra do sistema em modo Kiosk)
+              const Flexible(
+                child: KioskClockDisplay(),
+              ),
+
+              SizedBox(width: isTablet ? AppSpacing.md : AppSpacing.sm),
 
               // Clima da Sala isolado em seu próprio micro-state textual (`roomSummaryText`)
               Flexible(

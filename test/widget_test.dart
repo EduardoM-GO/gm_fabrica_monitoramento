@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_breakpoints.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_motion.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_theme.dart';
+import 'package:gm_fabrica_monitoramento/src/core/utils/time_formatter.dart';
+import 'package:gm_fabrica_monitoramento/src/core/widgets/kiosk_clock_display.dart';
 import 'package:gm_fabrica_monitoramento/src/core/widgets/status_badge.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/app_database.dart';
 import 'package:gm_fabrica_monitoramento/src/data/remote/supabase_catalog_datasource.dart';
@@ -213,11 +215,16 @@ void main() {
       await tester.pump(const Duration(milliseconds: 700));
       await tester.pumpAndSettle();
 
-      // Verifica renderização do Kiosk 60/40 (EggCountCard + 2 Freezers + StatusBadges + SlidingCounterText)
+      // Verifica renderização do Kiosk 60/40 (EggCountCard + 2 Freezers + StatusBadges + SlidingCounterText + Relógio KioskClockDisplay)
       expect(find.byType(EggCountCard), findsOneWidget);
       expect(find.byType(FreezerMonitoringCard), findsNWidgets(2));
       expect(find.byType(SlidingCounterText), findsOneWidget);
       expect(find.byType(StatusBadge), findsWidgets);
+      expect(find.byType(KioskClockDisplay), findsOneWidget);
+      expect(
+        TimeFormatter.formatKioskClock(DateTime(2026, 11, 24, 14, 35)),
+        'Ter, 24/11 • 14:35',
+      );
 
       // Verifica que os freezers vindos de cost_centers foram vinculados aos sensores f1 e f2
       expect(

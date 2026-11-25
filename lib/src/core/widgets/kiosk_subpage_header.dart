@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_breakpoints.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_spacing.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_theme.dart';
+import 'package:gm_fabrica_monitoramento/src/core/widgets/kiosk_clock_display.dart';
 import 'package:gm_fabrica_monitoramento/src/core/widgets/status_badge.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/ui/view_models/freezer_monitoring_view_model.dart';
 import 'package:gm_fabrica_monitoramento/src/features/production/ui/view_models/egg_count_view_model.dart';
@@ -155,6 +156,15 @@ final class KioskSubpageHeader extends StatelessWidget {
                 );
               },
             ),
+
+          Padding(
+            padding: EdgeInsets.only(
+              right: actions.isNotEmpty
+                  ? (isTablet ? AppSpacing.md : AppSpacing.sm)
+                  : 0,
+            ),
+            child: const KioskClockDisplay(),
+          ),
 
           for (var i = 0; i < actions.length; i++) ...[
             if (i > 0) SizedBox(width: isTablet ? AppSpacing.sm : AppSpacing.xs),

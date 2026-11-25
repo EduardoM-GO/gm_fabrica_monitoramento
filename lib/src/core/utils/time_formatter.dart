@@ -40,4 +40,24 @@ class TimeFormatter {
     final sign = delta > 0 ? '+' : '';
     return '$sign${delta.toStringAsFixed(1)} °C';
   }
+
+  static const List<String> _ptBrWeekdays = [
+    'Seg',
+    'Ter',
+    'Qua',
+    'Qui',
+    'Sex',
+    'Sáb',
+    'Dom',
+  ];
+
+  /// Formats current date and time in pt-BR short format: `Ter, 24/11 • 14:35`
+  static String formatKioskClock(DateTime dateTime) {
+    final weekday = _ptBrWeekdays[(dateTime.weekday - 1).clamp(0, 6)];
+    final day = dateTime.day.toString().padLeft(2, '0');
+    final month = dateTime.month.toString().padLeft(2, '0');
+    final hour = dateTime.hour.toString().padLeft(2, '0');
+    final minute = dateTime.minute.toString().padLeft(2, '0');
+    return '$weekday, $day/$month • $hour:$minute';
+  }
 }
