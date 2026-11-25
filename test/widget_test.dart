@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gm_fabrica_monitoramento/src/core/themes/app_breakpoints.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_motion.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_theme.dart';
 import 'package:gm_fabrica_monitoramento/src/core/widgets/status_badge.dart';
@@ -499,6 +500,129 @@ void main() {
       await tester.tap(find.text('Fechar'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 350));
+
+      eggViewModel.dispose();
+      freezerViewModel.dispose();
+      settingsViewModel.dispose();
+      freezerRepo.dispose();
+      productionRepo.dispose();
+      await fakeWs.dispose();
+      await db.close();
+    },
+  );
+
+  testWidgets(
+    'Lenovo Idea Tab TB336FU (11" 2560x1600 16:10 @ DPR 2.0 -> 1280x800 dp) renders tablet-optimized 50/50 M3 Kiosk without overflow',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final db = AppDatabase.forTesting(NativeDatabase.memory());
+      final fakeWs = WidgetTestFakeWs();
+      final audioService = AudioService(isMuted: true);
+
+      final fakeSupabaseCatalog = FakeSupabaseCatalogDatasource(
+        remoteProducts: [
+          ProductModel.fromSupabaseMap({
+            'id': '11111111-1111-4111-8111-111111111111',
+            'name': 'Ovo Ao Leite 250g',
+            'category': 'ovos',
+            'is_active': true,
+          }),
+        ],
+        remoteEquipments: [
+          EquipmentModel.fromSupabaseMap({
+            'id': '24000000-0000-4000-8000-000000000001',
+            'name': 'Freezer 1',
+            'type': 'equipamento',
+            'is_active': true,
+          }),
+          EquipmentModel.fromSupabaseMap({
+            'id': '24000000-0000-4000-8000-000000000002',
+            'name': 'Freezer 2',
+            'type': 'equipamento',
+            'is_active': true,
+          }),
+        ],
+      );
+
+      final settingsViewModel = SettingsViewModel(
+        wsService: fakeWs,
+        audioService: audioService,
+      );
+      final productionRepo = ProductionRepository(
+        db.productionDao,
+        fakeWs,
+        remoteDatasource: fakeSupabaseCatalog,
+      );
+      final freezerRepo = FreezerRepository(
+        freezerDao: db.freezerDao,
+        wsService: fakeWs,
+        productionRepo: productionRepo,
+        engine: const FreezerAdaptiveEngine(),
+        remoteDatasource: fakeSupabaseCatalog,
+      );
+
+      final eggViewModel = EggCountViewModel(
+        productionRepo,
+        audioService: audioService,
+      );
+      final freezerViewModel = FreezerMonitoringViewModel(
+        freezerRepo,
+        audioService: audioService,
+      );
+
+      // Lenovo Idea Tab TB336FU Landscape: 2560x1600 physical, DPR 2.0 -> 1280x800 dp
+      tester.view.physicalSize = const Size(2560, 1600);
+      tester.view.devicePixelRatio = 2.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      late BuildContext capturedContext;
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            Provider<AppDatabase>.value(value: db),
+            Provider<CatalogRemoteDatasource>.value(value: fakeSupabaseCatalog),
+            Provider<WebsocketService>.value(value: fakeWs),
+            Provider<AudioService>.value(value: audioService),
+            Provider<ProductionRepository>.value(value: productionRepo),
+            Provider<FreezerRepository>.value(value: freezerRepo),
+            Provider<SettingsViewModel>.value(value: settingsViewModel),
+            Provider<EggCountViewModel>.value(value: eggViewModel),
+            Provider<FreezerMonitoringViewModel>.value(value: freezerViewModel),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.darkTheme,
+            home: Builder(
+              builder: (context) {
+                capturedContext = context;
+                return const DashboardView();
+              },
+            ),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(AppBreakpoints.isTabletKiosk(capturedContext), isTrue);
+      expect(find.byType(EggCountCard), findsOneWidget);
+      expect(find.byType(FreezerMonitoringCard), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+
+      // Inicia lote e verifica sub-tela de Ajuste com o 4º atalho de tablet (-10 Ovos)
+      await tester.tap(find.text('INICIAR LOTE DE PRODUÇÃO'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Ovo Ao Leite 250g'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('AJUSTAR CONTAGEM / QUEBRA'));
+      await tester.pumpAndSettle();
+      expect(find.text('-10 Ovos'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(find.text('Voltar'));
+      await tester.pumpAndSettle();
 
       eggViewModel.dispose();
       freezerViewModel.dispose();

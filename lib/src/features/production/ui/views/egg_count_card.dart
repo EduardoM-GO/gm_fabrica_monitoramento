@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:gm_fabrica_monitoramento/src/core/themes/app_breakpoints.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_motion.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_spacing.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_theme.dart';
@@ -17,10 +18,13 @@ final class EggCountCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isTablet = AppBreakpoints.isTabletKiosk(context);
 
     return LayoutBuilder(
       builder: (context, cardConstraints) {
         final hasBoundedHeight = cardConstraints.maxHeight.isFinite;
+        final isTallCard = hasBoundedHeight && cardConstraints.maxHeight >= 460;
+        final useLargeMetrics = isTablet || isTallCard;
 
         // Seção Hero da Caixa Atual: cada campo (Contador, Capacidade e Barra de Progresso)
         // possui seu próprio SignalBuilder (micro-state).
@@ -49,7 +53,7 @@ final class EggCountCard extends StatelessWidget {
                             style: theme.textTheme.displayLarge?.copyWith(
                               fontFamily: AppTheme.fontHeading,
                               fontWeight: FontWeight.w900,
-                              fontSize: 96,
+                              fontSize: useLargeMetrics ? 148 : 96,
                               height: 1.0,
                               fontFeatures: const [
                                 FontFeature.tabularFigures(),
@@ -63,7 +67,9 @@ final class EggCountCard extends StatelessWidget {
                           );
                         },
                       ),
-                      const SizedBox(width: AppSpacing.xs),
+                      SizedBox(
+                        width: useLargeMetrics ? AppSpacing.sm : AppSpacing.xs,
+                      ),
                       // Micro-state 2: Capacidade da caixa (só muda quando troca de produto)
                       SignalBuilder(
                         builder: (context) {
@@ -73,7 +79,7 @@ final class EggCountCard extends StatelessWidget {
                             style: theme.textTheme.headlineSmall?.copyWith(
                               color: AppTheme.textSecondary,
                               fontWeight: FontWeight.w700,
-                              fontSize: 26,
+                              fontSize: useLargeMetrics ? 38 : 26,
                               fontFeatures: const [
                                 FontFeature.tabularFigures(),
                               ],
@@ -91,7 +97,7 @@ final class EggCountCard extends StatelessWidget {
               builder: (context) {
                 final text = viewModel.lastHitConfirmationText.value;
                 if (text == null) {
-                  return const SizedBox(height: 6);
+                  return SizedBox(height: useLargeMetrics ? 12 : 6);
                 }
                 final isVibrant = viewModel.isRecentHitHighlight.value;
                 final fgColor = isVibrant
@@ -107,7 +113,10 @@ final class EggCountCard extends StatelessWidget {
                     : colorScheme.outlineVariant;
 
                 return Padding(
-                  padding: const EdgeInsets.only(top: 4, bottom: 6),
+                  padding: EdgeInsets.only(
+                    top: useLargeMetrics ? 8 : 4,
+                    bottom: useLargeMetrics ? 12 : 6,
+                  ),
                   child: Center(
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
@@ -115,9 +124,9 @@ final class EggCountCard extends StatelessWidget {
                         key: const ValueKey('egg_last_hit_confirmation_badge'),
                         duration: AppMotion.durationFast,
                         curve: AppMotion.easeOut,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: useLargeMetrics ? 14 : 10,
+                          vertical: useLargeMetrics ? 7 : 4,
                         ),
                         decoration: BoxDecoration(
                           color: bgColor,
@@ -134,14 +143,14 @@ final class EggCountCard extends StatelessWidget {
                               isVibrant
                                   ? Icons.check_circle_rounded
                                   : Icons.history_rounded,
-                              size: 13,
+                              size: useLargeMetrics ? 16 : 13,
                               color: fgColor,
                             ),
-                            const SizedBox(width: 5),
+                            SizedBox(width: useLargeMetrics ? 7 : 5),
                             Text(
                               text,
                               style: theme.textTheme.labelSmall?.copyWith(
-                                fontSize: 11,
+                                fontSize: useLargeMetrics ? 13.5 : 11,
                                 fontWeight: isVibrant
                                     ? FontWeight.w900
                                     : FontWeight.w700,
@@ -166,7 +175,7 @@ final class EggCountCard extends StatelessWidget {
                 final progress = viewModel.boxProgress.value;
                 return SmoothProgressBar(
                   value: progress,
-                  minHeight: 8,
+                  minHeight: useLargeMetrics ? 12 : 8,
                   progressColor: progress >= 1.0
                       ? AppTheme.successGreen
                       : colorScheme.primary,
@@ -179,9 +188,9 @@ final class EggCountCard extends StatelessWidget {
         );
 
         final cardBody = Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.md,
-            vertical: 10,
+          padding: EdgeInsets.symmetric(
+            horizontal: useLargeMetrics ? AppSpacing.lg : AppSpacing.md,
+            vertical: useLargeMetrics ? AppSpacing.md : 10,
           ),
           child: Column(
             mainAxisSize:
@@ -196,7 +205,7 @@ final class EggCountCard extends StatelessWidget {
                       viewModel.isConveyorRunningWithoutBatch.value;
                   if (!isConveyorAlert) return const SizedBox.shrink();
                   return Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
+                    padding: EdgeInsets.only(bottom: useLargeMetrics ? 8 : 4),
                     child: BreathingGlow(
                       isPulsing: true,
                       child: Card.filled(
@@ -209,16 +218,17 @@ final class EggCountCard extends StatelessWidget {
                           borderRadius: AppSpacing.borderRadiusMd,
                           onTap: () => _showProductSelectorSheet(context),
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppSpacing.sm,
-                              vertical: 6,
+                            padding: EdgeInsets.symmetric(
+                              horizontal:
+                                  useLargeMetrics ? AppSpacing.md : AppSpacing.sm,
+                              vertical: useLargeMetrics ? 10 : 6,
                             ),
                             child: Row(
                               children: [
                                 Icon(
                                   Icons.warning_amber_rounded,
                                   color: colorScheme.onErrorContainer,
-                                  size: 18,
+                                  size: useLargeMetrics ? 22 : 18,
                                 ),
                                 const SizedBox(width: AppSpacing.xs),
                                 Expanded(
@@ -227,6 +237,7 @@ final class EggCountCard extends StatelessWidget {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: theme.textTheme.bodySmall?.copyWith(
+                                      fontSize: useLargeMetrics ? 13.5 : null,
                                       color: colorScheme.onErrorContainer,
                                       fontWeight: FontWeight.w800,
                                     ),
@@ -260,7 +271,9 @@ final class EggCountCard extends StatelessWidget {
                                 style: theme.textTheme.titleMedium?.copyWith(
                                   fontFamily: AppTheme.fontHeading,
                                   fontWeight: FontWeight.w900,
-                                  fontSize: active ? 16 : 14,
+                                  fontSize: useLargeMetrics
+                                      ? (active ? 22 : 18)
+                                      : (active ? 16 : 14),
                                   letterSpacing: 0.4,
                                   color: active
                                       ? colorScheme.onSurface
@@ -272,7 +285,7 @@ final class EggCountCard extends StatelessWidget {
                             },
                           ),
                         ),
-                        const SizedBox(width: 8),
+                        SizedBox(width: useLargeMetrics ? 10 : 8),
                         // Micro-state: StatusBadge do lote (só muda quando abre/fecha lote)
                         SignalBuilder(
                           builder: (context) {
@@ -282,7 +295,7 @@ final class EggCountCard extends StatelessWidget {
                               color: active
                                   ? AppTheme.successGreen
                                   : AppTheme.textMuted,
-                              compact: true,
+                              compact: !useLargeMetrics,
                               subtle: !active,
                             );
                           },
@@ -296,33 +309,47 @@ final class EggCountCard extends StatelessWidget {
                       final hasBatch = viewModel.hasActiveBatch.value;
                       if (!hasBatch) return const SizedBox.shrink();
                       return Material(
-                        color: Colors.transparent,
+                        color: useLargeMetrics
+                            ? colorScheme.surfaceContainerHighest.withValues(
+                                alpha: 0.65,
+                              )
+                            : Colors.transparent,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: AppSpacing.borderRadiusSm,
+                          side: useLargeMetrics
+                              ? BorderSide(color: colorScheme.outlineVariant)
+                              : BorderSide.none,
+                        ),
                         child: InkWell(
                           key: const ValueKey('manage_active_batch_btn'),
-                          borderRadius: AppSpacing.borderRadiusXs,
+                          borderRadius: AppSpacing.borderRadiusSm,
                           onTap: () => _showProductSelectorSheet(context),
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 8,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: useLargeMetrics ? 14 : 10,
+                              vertical: useLargeMetrics ? 10 : 8,
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
                                   Icons.swap_horiz_rounded,
-                                  size: 14,
-                                  color: AppTheme.textMuted.withValues(
-                                    alpha: 0.9,
-                                  ),
+                                  size: useLargeMetrics ? 18 : 14,
+                                  color: useLargeMetrics
+                                      ? colorScheme.primary
+                                      : AppTheme.textMuted.withValues(
+                                          alpha: 0.9,
+                                        ),
                                 ),
-                                const SizedBox(width: 4),
-                                const Text(
+                                SizedBox(width: useLargeMetrics ? 6 : 4),
+                                Text(
                                   'TROCAR / LOTE',
                                   style: TextStyle(
                                     fontWeight: FontWeight.w800,
-                                    fontSize: 10.5,
-                                    color: AppTheme.textMuted,
+                                    fontSize: useLargeMetrics ? 12.5 : 10.5,
+                                    color: useLargeMetrics
+                                        ? colorScheme.onSurface
+                                        : AppTheme.textMuted,
                                   ),
                                 ),
                               ],
@@ -335,7 +362,7 @@ final class EggCountCard extends StatelessWidget {
                 ],
               ),
 
-              const SizedBox(height: 6),
+              SizedBox(height: useLargeMetrics ? 12 : 6),
 
               // --- 1º MAIS IMPORTANTE: Contagem Atual centralizada e limpa ---
               if (hasBoundedHeight)
@@ -343,64 +370,94 @@ final class EggCountCard extends StatelessWidget {
               else
                 heroCurrentBoxSection,
 
-              const SizedBox(height: 8),
+              SizedBox(height: useLargeMetrics ? 14 : 8),
 
               // --- 2º MAIS IMPORTANTE: Total e Caixas Fechadas com Micro-States separados ---
-              Row(
-                children: [
-                  Expanded(
-                    child: SignalBuilder(
-                      builder: (context) {
-                        return _StatItem(
-                          label: 'TOTAL',
-                          value: '${viewModel.dailyNetCount.value}',
-                          color: colorScheme.primary,
-                        );
-                      },
+              Container(
+                padding: useLargeMetrics
+                    ? const EdgeInsets.symmetric(
+                        vertical: AppSpacing.sm,
+                        horizontal: AppSpacing.sm,
+                      )
+                    : EdgeInsets.zero,
+                decoration: useLargeMetrics
+                    ? BoxDecoration(
+                        color: colorScheme.surfaceContainerLow,
+                        borderRadius: AppSpacing.borderRadiusMd,
+                        border: Border.all(
+                          color: colorScheme.outlineVariant.withValues(
+                            alpha: 0.65,
+                          ),
+                        ),
+                      )
+                    : null,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SignalBuilder(
+                        builder: (context) {
+                          return _StatItem(
+                            label: 'TOTAL',
+                            value: '${viewModel.dailyNetCount.value}',
+                            color: colorScheme.primary,
+                            isLarge: useLargeMetrics,
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                  Container(
-                    width: 1,
-                    height: 28,
-                    color: colorScheme.outlineVariant.withValues(alpha: 0.4),
-                  ),
-                  Expanded(
-                    child: SignalBuilder(
-                      builder: (context) {
-                        return _StatItem(
-                          label: 'CAIXAS FECHADAS',
-                          value: '${viewModel.dailyCompletedBoxes.value}',
-                          color: colorScheme.secondary,
-                        );
-                      },
+                    Container(
+                      width: 1,
+                      height: useLargeMetrics ? 42 : 28,
+                      color: colorScheme.outlineVariant.withValues(alpha: 0.4),
                     ),
-                  ),
-                ],
+                    Expanded(
+                      child: SignalBuilder(
+                        builder: (context) {
+                          return _StatItem(
+                            label: 'CAIXAS FECHADAS',
+                            value: '${viewModel.dailyCompletedBoxes.value}',
+                            color: colorScheme.secondary,
+                            isLarge: useLargeMetrics,
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
               ),
 
-              const SizedBox(height: 8),
+              SizedBox(height: useLargeMetrics ? 14 : 8),
 
               // --- Micro-state: Único Botão Operacional na Base (só reconstrói quando `hasActiveBatch` muda) ---
               SignalBuilder(
                 builder: (context) {
                   final hasBatch = viewModel.hasActiveBatch.value;
+                  final buttonHeight = useLargeMetrics
+                      ? AppBreakpoints.minTouchTargetTablet
+                      : 42.0;
+
                   if (!hasBatch) {
                     return PressableScale(
                       child: FilledButton.icon(
                         style: FilledButton.styleFrom(
-                          minimumSize: const Size.fromHeight(42),
-                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          minimumSize: Size.fromHeight(buttonHeight),
+                          padding: EdgeInsets.symmetric(
+                            vertical: useLargeMetrics ? 12 : 8,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: AppSpacing.borderRadiusMd,
                           ),
                         ),
                         onPressed: () => _showProductSelectorSheet(context),
-                        icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                        label: const Text(
+                        icon: Icon(
+                          Icons.play_arrow_rounded,
+                          size: useLargeMetrics ? 24 : 20,
+                        ),
+                        label: Text(
                           'INICIAR LOTE DE PRODUÇÃO',
                           style: TextStyle(
                             fontWeight: FontWeight.w900,
-                            fontSize: 13,
+                            fontSize: useLargeMetrics ? 15 : 13,
                             letterSpacing: 0.5,
                           ),
                         ),
@@ -410,8 +467,10 @@ final class EggCountCard extends StatelessWidget {
                   return PressableScale(
                     child: FilledButton.tonalIcon(
                       style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(42),
-                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        minimumSize: Size.fromHeight(buttonHeight),
+                        padding: EdgeInsets.symmetric(
+                          vertical: useLargeMetrics ? 12 : 8,
+                        ),
                         backgroundColor: colorScheme.surfaceContainerHighest,
                         foregroundColor: colorScheme.onSurface,
                         shape: RoundedRectangleBorder(
@@ -420,12 +479,15 @@ final class EggCountCard extends StatelessWidget {
                         ),
                       ),
                       onPressed: () => _showDiscardSheet(context),
-                      icon: const Icon(Icons.exposure_rounded, size: 18),
-                      label: const Text(
+                      icon: Icon(
+                        Icons.exposure_rounded,
+                        size: useLargeMetrics ? 22 : 18,
+                      ),
+                      label: Text(
                         'AJUSTAR CONTAGEM / QUEBRA',
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
-                          fontSize: 12.5,
+                          fontSize: useLargeMetrics ? 14.5 : 12.5,
                           letterSpacing: 0.4,
                         ),
                       ),
@@ -500,11 +562,13 @@ final class _StatItem extends StatelessWidget {
   final String label;
   final String value;
   final Color color;
+  final bool isLarge;
 
   const _StatItem({
     required this.label,
     required this.value,
     required this.color,
+    this.isLarge = false,
   });
 
   @override
@@ -520,12 +584,12 @@ final class _StatItem extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: theme.textTheme.labelSmall?.copyWith(
             color: AppTheme.textMuted,
-            fontSize: 9.5,
+            fontSize: isLarge ? 12 : 9.5,
             fontWeight: FontWeight.w800,
             letterSpacing: 0.6,
           ),
         ),
-        const SizedBox(height: 2),
+        SizedBox(height: isLarge ? 4 : 2),
         FittedBox(
           fit: BoxFit.scaleDown,
           child: Text(
@@ -533,7 +597,7 @@ final class _StatItem extends StatelessWidget {
             style: theme.textTheme.titleLarge?.copyWith(
               fontFamily: AppTheme.fontHeading,
               fontWeight: FontWeight.w900,
-              fontSize: 22,
+              fontSize: isLarge ? 32 : 22,
               height: 1.05,
               color: color,
               fontFeatures: const [FontFeature.tabularFigures()],

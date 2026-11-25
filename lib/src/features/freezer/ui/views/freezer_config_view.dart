@@ -502,6 +502,7 @@ final class _NumericStepperField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isTablet = AppBreakpoints.isTabletKiosk(context);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -509,28 +510,33 @@ final class _NumericStepperField extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.only(top: 2),
           child: IconButton.filledTonal(
-            visualDensity: VisualDensity.compact,
+            visualDensity:
+                isTablet ? VisualDensity.standard : VisualDensity.compact,
+            style: isTablet
+                ? IconButton.styleFrom(minimumSize: const Size(48, 48))
+                : null,
             tooltip: 'Diminuir',
             onPressed: onDecrement,
-            icon: const Icon(Icons.remove_rounded, size: 18),
+            icon: Icon(Icons.remove_rounded, size: isTablet ? 22 : 18),
           ),
         ),
-        const SizedBox(width: AppSpacing.xs),
+        SizedBox(width: isTablet ? AppSpacing.sm : AppSpacing.xs),
         Expanded(
           child: TextField(
             key: fieldKey,
             controller: controller,
             keyboardType: TextInputType.number,
-            style: const TextStyle(
+            style: TextStyle(
+              fontSize: isTablet ? 16 : null,
               fontWeight: FontWeight.w800,
-              fontFeatures: [FontFeature.tabularFigures()],
+              fontFeatures: const [FontFeature.tabularFigures()],
             ),
             decoration: InputDecoration(
               labelText: labelText,
               helperText: helperText,
               helperMaxLines: 2,
               suffixText: unitLabel,
-              isDense: true,
+              isDense: !isTablet,
               filled: true,
               fillColor: colorScheme.surfaceContainerHighest,
               border: OutlineInputBorder(
@@ -539,14 +545,18 @@ final class _NumericStepperField extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: AppSpacing.xs),
+        SizedBox(width: isTablet ? AppSpacing.sm : AppSpacing.xs),
         Padding(
           padding: const EdgeInsets.only(top: 2),
           child: IconButton.filledTonal(
-            visualDensity: VisualDensity.compact,
+            visualDensity:
+                isTablet ? VisualDensity.standard : VisualDensity.compact,
+            style: isTablet
+                ? IconButton.styleFrom(minimumSize: const Size(48, 48))
+                : null,
             tooltip: 'Aumentar',
             onPressed: onIncrement,
-            icon: const Icon(Icons.add_rounded, size: 18),
+            icon: Icon(Icons.add_rounded, size: isTablet ? 22 : 18),
           ),
         ),
       ],

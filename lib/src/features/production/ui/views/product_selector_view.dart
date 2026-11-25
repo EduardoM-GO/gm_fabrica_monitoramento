@@ -232,6 +232,7 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isTablet = AppBreakpoints.isTabletKiosk(context);
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
@@ -254,9 +255,9 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                 : _selectedCategory;
 
             return Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: AppSpacing.sm,
-                vertical: 6,
+              padding: EdgeInsets.symmetric(
+                horizontal: isTablet ? AppSpacing.md : AppSpacing.sm,
+                vertical: isTablet ? AppSpacing.xs : 6,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -276,7 +277,9 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                     actions: [
                       IconButton(
                         key: const ValueKey('refresh_supabase_products_btn'),
-                        visualDensity: VisualDensity.compact,
+                        visualDensity: isTablet
+                            ? VisualDensity.standard
+                            : VisualDensity.compact,
                         tooltip: 'Sincronizar produtos do Supabase',
                         onPressed: isSyncing
                             ? null
@@ -289,40 +292,45 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                                   strokeWidth: 2,
                                 ),
                               )
-                            : const Icon(Icons.sync_rounded, size: 18),
+                            : Icon(
+                                Icons.sync_rounded,
+                                size: isTablet ? 22 : 18,
+                              ),
                       ),
                       if (isLocked)
                         FilledButton.tonalIcon(
                           key: const ValueKey('finish_active_batch_btn'),
                           style: FilledButton.styleFrom(
-                            visualDensity: VisualDensity.compact,
-                            minimumSize: const Size(0, 36),
+                            visualDensity: isTablet
+                                ? VisualDensity.standard
+                                : VisualDensity.compact,
+                            minimumSize: Size(0, isTablet ? 44 : 36),
                             backgroundColor: colorScheme.errorContainer,
                             foregroundColor: colorScheme.onErrorContainer,
                           ),
                           onPressed: () => _confirmAndCloseBatch(context),
-                          icon: const Icon(
+                          icon: Icon(
                             Icons.stop_circle_outlined,
-                            size: 16,
+                            size: isTablet ? 18 : 16,
                           ),
-                          label: const Text(
+                          label: Text(
                             'Encerrar Lote Atual',
                             style: TextStyle(
-                              fontSize: 12,
+                              fontSize: isTablet ? 13.5 : 12,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
                         ),
                     ],
                   ),
-                  const SizedBox(height: 6),
+                  SizedBox(height: isTablet ? AppSpacing.sm : 6),
 
                   // Banner de Lote Ativo (quando houver lote aberto)
                   if (isLocked) ...[
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm,
-                        vertical: 8,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isTablet ? AppSpacing.md : AppSpacing.sm,
+                        vertical: isTablet ? 10 : 8,
                       ),
                       decoration: BoxDecoration(
                         color: colorScheme.primaryContainer.withValues(
@@ -335,7 +343,7 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                         children: [
                           Icon(
                             Icons.verified_rounded,
-                            size: 18,
+                            size: isTablet ? 22 : 18,
                             color: colorScheme.primary,
                           ),
                           const SizedBox(width: AppSpacing.xs),
@@ -345,6 +353,7 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: theme.textTheme.bodySmall?.copyWith(
+                                fontSize: isTablet ? 13.5 : null,
                                 fontWeight: FontWeight.w800,
                                 color: colorScheme.onSurface,
                                 fontFeatures: const [
@@ -358,12 +367,12 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                             label:
                                 'Total: ${widget.viewModel.dailyNetCount.value} • Caixas: ${widget.viewModel.dailyCompletedBoxes.value}',
                             color: AppTheme.successGreen,
-                            compact: true,
+                            compact: !isTablet,
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    SizedBox(height: isTablet ? AppSpacing.sm : 6),
                   ],
 
                   // Barra de Busca + Chips de Categoria (Ovos selecionado por padrão em 1º lugar)
@@ -373,19 +382,19 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                         Expanded(
                           flex: 5,
                           child: SizedBox(
-                            height: 36,
+                            height: isTablet ? 44 : 36,
                             child: TextField(
                               key: const ValueKey('product_search_input'),
                               controller: _searchController,
                               onChanged: (v) =>
                                   setState(() => _searchQuery = v),
-                              style: const TextStyle(fontSize: 12.5),
+                              style: TextStyle(fontSize: isTablet ? 14 : 12.5),
                               decoration: InputDecoration(
                                 hintText:
                                     'Buscar ovo ou produto por nome, categoria ou gramas...',
-                                prefixIcon: const Icon(
+                                prefixIcon: Icon(
                                   Icons.search_rounded,
-                                  size: 16,
+                                  size: isTablet ? 20 : 16,
                                 ),
                                 suffixIcon: _searchQuery.isNotEmpty
                                     ? IconButton(
@@ -394,16 +403,16 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                                           _searchController.clear();
                                           setState(() => _searchQuery = '');
                                         },
-                                        icon: const Icon(
+                                        icon: Icon(
                                           Icons.clear_rounded,
-                                          size: 15,
+                                          size: isTablet ? 18 : 15,
                                         ),
                                       )
                                     : null,
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 8,
+                                isDense: !isTablet,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: isTablet ? 14 : 10,
+                                  vertical: isTablet ? 10 : 8,
                                 ),
                                 filled: true,
                                 fillColor: colorScheme.surfaceContainer,
@@ -424,16 +433,18 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                                 if (hasAnyEggs) ...[
                                   FilterChip(
                                     key: const ValueKey('filter_chip_ovos'),
-                                    label: const Text(
+                                    label: Text(
                                       'OVOS',
                                       style: TextStyle(
-                                        fontSize: 11,
+                                        fontSize: isTablet ? 12.5 : 11,
                                         fontWeight: FontWeight.w800,
                                       ),
                                     ),
                                     selected:
                                         effectiveCategory == _eggFilterKey,
-                                    visualDensity: VisualDensity.compact,
+                                    visualDensity: isTablet
+                                        ? VisualDensity.standard
+                                        : VisualDensity.compact,
                                     onSelected: (_) => setState(
                                       () => _selectedCategory = _eggFilterKey,
                                     ),
@@ -442,15 +453,17 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                                 ],
                                 FilterChip(
                                   key: const ValueKey('filter_chip_todos'),
-                                  label: const Text(
+                                  label: Text(
                                     'Todos',
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: isTablet ? 12.5 : 11,
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                   selected: effectiveCategory == null,
-                                  visualDensity: VisualDensity.compact,
+                                  visualDensity: isTablet
+                                      ? VisualDensity.standard
+                                      : VisualDensity.compact,
                                   onSelected: (_) => setState(
                                     () => _selectedCategory = null,
                                   ),
@@ -461,13 +474,15 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                                     key: ValueKey('filter_chip_$cat'),
                                     label: Text(
                                       cat.toUpperCase(),
-                                      style: const TextStyle(
-                                        fontSize: 11,
+                                      style: TextStyle(
+                                        fontSize: isTablet ? 12.5 : 11,
                                         fontWeight: FontWeight.w700,
                                       ),
                                     ),
                                     selected: effectiveCategory == cat,
-                                    visualDensity: VisualDensity.compact,
+                                    visualDensity: isTablet
+                                        ? VisualDensity.standard
+                                        : VisualDensity.compact,
                                     onSelected: (sel) => setState(
                                       () => _selectedCategory = sel
                                           ? cat
@@ -481,7 +496,7 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
+                    SizedBox(height: isTablet ? AppSpacing.sm : 6),
                   ],
 
                   // Área principal: Grid de Produtos ocupando toda a largura
@@ -538,9 +553,11 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                               gridDelegate:
                                   SliverGridDelegateWithFixedCrossAxisCount(
                                     crossAxisCount: cols,
-                                    mainAxisSpacing: AppSpacing.xs,
-                                    crossAxisSpacing: AppSpacing.xs,
-                                    mainAxisExtent: 86,
+                                    mainAxisSpacing:
+                                        isTablet ? AppSpacing.sm : AppSpacing.xs,
+                                    crossAxisSpacing:
+                                        isTablet ? AppSpacing.sm : AppSpacing.xs,
+                                    mainAxisExtent: isTablet ? 108 : 86,
                                   ),
                               itemCount: filteredProducts.length,
                               itemBuilder: (context, index) {
@@ -569,9 +586,11 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                                       product,
                                     ),
                                     child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: AppSpacing.sm,
-                                        vertical: 8,
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: isTablet
+                                            ? AppSpacing.md
+                                            : AppSpacing.sm,
+                                        vertical: isTablet ? 12 : 8,
                                       ),
                                       child: Column(
                                         crossAxisAlignment:
@@ -593,7 +612,9 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                                                       ?.copyWith(
                                                         fontWeight:
                                                             FontWeight.w900,
-                                                        fontSize: 13,
+                                                        fontSize: isTablet
+                                                            ? 15
+                                                            : 13,
                                                         color: isCurrent
                                                             ? colorScheme
                                                                   .onPrimaryContainer
@@ -605,20 +626,20 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                                               if (isCurrent)
                                                 Icon(
                                                   Icons.check_circle_rounded,
-                                                  size: 16,
+                                                  size: isTablet ? 20 : 16,
                                                   color: colorScheme.primary,
                                                 )
                                               else if (isLocked)
                                                 Icon(
                                                   Icons.swap_horiz_rounded,
-                                                  size: 16,
+                                                  size: isTablet ? 20 : 16,
                                                   color: colorScheme.primary,
                                                 )
                                               else
                                                 Icon(
                                                   Icons
                                                       .play_circle_outline_rounded,
-                                                  size: 16,
+                                                  size: isTablet ? 20 : 16,
                                                   color: colorScheme.primary,
                                                 ),
                                             ],
@@ -637,6 +658,9 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                                                       .textTheme
                                                       .bodySmall
                                                       ?.copyWith(
+                                                        fontSize: isTablet
+                                                            ? 13
+                                                            : null,
                                                         fontWeight:
                                                             FontWeight.w700,
                                                         color: isCurrent
@@ -655,11 +679,10 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                                               ),
                                               const SizedBox(width: 4),
                                               Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 6,
-                                                      vertical: 2,
-                                                    ),
+                                                padding: EdgeInsets.symmetric(
+                                                  horizontal: isTablet ? 8 : 6,
+                                                  vertical: isTablet ? 4 : 2,
+                                                ),
                                                 decoration: BoxDecoration(
                                                   color: colorScheme
                                                       .surfaceContainer,
@@ -670,7 +693,8 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                                                   product.category
                                                       .toUpperCase(),
                                                   style: TextStyle(
-                                                    fontSize: 9.5,
+                                                    fontSize:
+                                                        isTablet ? 11 : 9.5,
                                                     fontWeight: FontWeight.w800,
                                                     color: colorScheme
                                                         .onSurfaceVariant,

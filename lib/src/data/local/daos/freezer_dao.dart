@@ -307,10 +307,27 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
     String? batchId,
     required String freezerId,
     required int expectedSeconds,
+    DateTime? startedAt,
     double? baselineTemp,
     double? initialPeakTemp,
   }) => Result.catchInAsync(
     fn: () async {
+      final now = DateTime.now();
+      final effectiveStart = startedAt ?? now;
+
+      // Encerra qualquer ciclo anterior que tenha ficado aberto para este freezer
+      await (update(coolingCyclesTable)
+            ..where(
+              (c) => c.freezerId.equals(freezerId) & c.finishedAt.isNull(),
+            ))
+          .write(
+            CoolingCyclesTableCompanion(
+              finishedAt: Value(now),
+              feedback: const Value('superseded'),
+              syncStatus: const Value(SyncStatusEnum.updating),
+            ),
+          );
+
       final cycleId = GeneratorId.getid();
 
       await into(coolingCyclesTable).insert(
@@ -318,6 +335,7 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
           id: cycleId,
           batchId: Value(batchId),
           freezerId: freezerId,
+          startedAt: Value(effectiveStart),
           expectedDurationSeconds: expectedSeconds,
           baselineTemp: Value(baselineTemp),
           initialPeakTemp: Value(initialPeakTemp),
@@ -330,6 +348,7 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
 
   Future<Result<Unit>> updateCoolingCycleMetrics({
     required String cycleId,
+    int? expectedDurationSeconds,
     required int accumulatedDoorOpenSeconds,
     required int accumulatedPenaltySeconds,
     required int doorOpenCount,
@@ -339,6 +358,9 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
         coolingCyclesTable,
       )..where((c) => c.id.equals(cycleId))).write(
         CoolingCyclesTableCompanion(
+          expectedDurationSeconds: expectedDurationSeconds != null
+              ? Value(expectedDurationSeconds)
+              : const Value.absent(),
           accumulatedDoorOpenSeconds: Value(accumulatedDoorOpenSeconds),
           accumulatedPenaltySeconds: Value(accumulatedPenaltySeconds),
           doorOpenCount: Value(doorOpenCount),
@@ -350,6 +372,26 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
     },
     tag: 'FreezerDao.updateCoolingCycleMetrics',
   );
+
+  /// Encerra no SQLite qualquer ciclo aberto do freezer quando o operador informa "Freezer Vazio / Sem Ovos"
+  Future<Result<Unit>> cancelActiveCoolingCycles(String freezerId) =>
+      Result.catchInAsync(
+        fn: () async {
+          await (update(coolingCyclesTable)
+                ..where(
+                  (c) => c.freezerId.equals(freezerId) & c.finishedAt.isNull(),
+                ))
+              .write(
+                CoolingCyclesTableCompanion(
+                  finishedAt: Value(DateTime.now()),
+                  feedback: const Value('cancelled_empty'),
+                  syncStatus: const Value(SyncStatusEnum.updating),
+                ),
+              );
+          return unit;
+        },
+        tag: 'FreezerDao.cancelActiveCoolingCycles',
+      );
 
   Future<Result<Unit>> finishCoolingCycle({
     required String cycleId,

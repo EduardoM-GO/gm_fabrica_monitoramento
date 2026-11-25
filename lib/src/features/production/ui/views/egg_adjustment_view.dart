@@ -55,6 +55,7 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isTablet = AppBreakpoints.isTabletKiosk(context);
     final isAddition = _selectedReason.isAddition;
     final signPrefix = isAddition ? '+' : '-';
     final actionColor = isAddition ? AppTheme.successGreen : colorScheme.error;
@@ -71,9 +72,9 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
         top: false,
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm,
-            vertical: 6,
+          padding: EdgeInsets.symmetric(
+            horizontal: isTablet ? AppSpacing.md : AppSpacing.sm,
+            vertical: isTablet ? AppSpacing.xs : 6,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -95,17 +96,17 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
                     icon: isAddition
                         ? Icons.add_circle_outline_rounded
                         : Icons.remove_circle_outline_rounded,
-                    compact: true,
+                    compact: !isTablet,
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
+              SizedBox(height: isTablet ? AppSpacing.sm : 6),
 
               // Faixa de Resumo Ao Vivo da Produção
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.sm,
-                  vertical: 6,
+                padding: EdgeInsets.symmetric(
+                  horizontal: isTablet ? AppSpacing.md : AppSpacing.sm,
+                  vertical: isTablet ? 10 : 6,
                 ),
                 decoration: BoxDecoration(
                   color: colorScheme.surfaceContainer,
@@ -255,6 +256,8 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
     ThemeData theme,
     ColorScheme colorScheme,
   ) {
+    final isTablet = AppBreakpoints.isTabletKiosk(context);
+
     return Card.filled(
       color: colorScheme.surfaceContainer,
       shape: RoundedRectangleBorder(
@@ -262,26 +265,27 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
         side: BorderSide(color: colorScheme.outlineVariant),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.sm),
+        padding: EdgeInsets.all(isTablet ? AppSpacing.md : AppSpacing.sm),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               '1. TIPO DE LANÇAMENTO / MOTIVO',
               style: theme.textTheme.labelSmall?.copyWith(
+                fontSize: isTablet ? 13 : null,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 0.4,
                 color: colorScheme.primary,
               ),
             ),
-            const SizedBox(height: 6),
+            SizedBox(height: isTablet ? AppSpacing.sm : 6),
             DropdownButtonFormField<AdjustmentReasonEnum>(
               key: const ValueKey('adjustment_reason_dropdown'),
               initialValue: _selectedReason,
               isExpanded: true,
               decoration: InputDecoration(
                 labelText: 'Tipo de Lançamento',
-                isDense: true,
+                isDense: !isTablet,
                 filled: true,
                 fillColor: colorScheme.surfaceContainerHighest,
                 border: OutlineInputBorder(
@@ -298,7 +302,7 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
                           : '${reason.label} (Subtrair -)',
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 12.5,
+                        fontSize: isTablet ? 14 : 12.5,
                         fontWeight: FontWeight.w700,
                         color: reason.isAddition
                             ? AppTheme.successGreen
@@ -313,18 +317,18 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
                 }
               },
             ),
-            const SizedBox(height: AppSpacing.xs),
+            SizedBox(height: isTablet ? AppSpacing.sm : AppSpacing.xs),
             Text(
               'Ou toque direto em um motivo abaixo:',
               style: theme.textTheme.bodySmall?.copyWith(
-                fontSize: 10.5,
+                fontSize: isTablet ? 12.5 : 10.5,
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 6),
+            SizedBox(height: isTablet ? AppSpacing.sm : 6),
             Wrap(
-              spacing: 6,
-              runSpacing: 6,
+              spacing: isTablet ? 10 : 6,
+              runSpacing: isTablet ? 10 : 6,
               children: [
                 for (final reason in AdjustmentReasonEnum.values)
                   ChoiceChip(
@@ -333,7 +337,7 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
                           ? '+ ${reason.label}'
                           : '- ${reason.label}',
                       style: TextStyle(
-                        fontSize: 11.5,
+                        fontSize: isTablet ? 13.5 : 11.5,
                         fontWeight: FontWeight.w800,
                         color: _selectedReason == reason
                             ? (reason.isAddition
@@ -342,11 +346,17 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
                             : colorScheme.onSurface,
                       ),
                     ),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: isTablet ? 12 : 6,
+                      vertical: isTablet ? 8 : 2,
+                    ),
                     selected: _selectedReason == reason,
                     selectedColor: reason.isAddition
                         ? AppTheme.successGreen.withValues(alpha: 0.24)
                         : colorScheme.errorContainer,
-                    visualDensity: VisualDensity.compact,
+                    visualDensity: isTablet
+                        ? VisualDensity.standard
+                        : VisualDensity.compact,
                     onSelected: (_) {
                       setState(() => _selectedReason = reason);
                     },
@@ -369,6 +379,9 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
     required Color buttonBgColor,
     required Color buttonFgColor,
   }) {
+    final isTablet = AppBreakpoints.isTabletKiosk(context);
+    final quickValues = isTablet ? const [1, 2, 5, 10] : const [1, 2, 5];
+
     return Card.filled(
       color: colorScheme.surfaceContainer,
       shape: RoundedRectangleBorder(
@@ -376,27 +389,29 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
         side: BorderSide(color: colorScheme.outlineVariant),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(AppSpacing.sm),
+        padding: EdgeInsets.all(isTablet ? AppSpacing.md : AppSpacing.sm),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               '2. ATALHOS DE LANÇAMENTO IMEDIATO (1 TOQUE)',
               style: theme.textTheme.labelSmall?.copyWith(
+                fontSize: isTablet ? 13 : null,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 0.4,
                 color: actionColor,
               ),
             ),
-            const SizedBox(height: 6),
+            SizedBox(height: isTablet ? AppSpacing.sm : 6),
             Row(
               children: [
-                for (final qty in [1, 2, 5]) ...[
-                  if (qty > 1) const SizedBox(width: AppSpacing.xs),
+                for (final qty in quickValues) ...[
+                  if (qty > 1)
+                    SizedBox(width: isTablet ? AppSpacing.sm : AppSpacing.xs),
                   Expanded(
                     child: FilledButton.tonal(
                       style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(48),
+                        minimumSize: Size.fromHeight(isTablet ? 60 : 48),
                         backgroundColor: buttonBgColor,
                         foregroundColor: buttonFgColor,
                       ),
@@ -411,10 +426,10 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
                         fit: BoxFit.scaleDown,
                         child: Text(
                           '$signPrefix$qty ${qty == 1 ? "Ovo" : "Ovos"}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w900,
-                            fontSize: 14,
-                            fontFeatures: [FontFeature.tabularFigures()],
+                            fontSize: isTablet ? 16 : 14,
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
                         ),
                       ),
@@ -423,30 +438,36 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
                 ],
               ],
             ),
-            const SizedBox(height: AppSpacing.sm),
+            SizedBox(height: isTablet ? AppSpacing.md : AppSpacing.sm),
             const Divider(height: 1),
-            const SizedBox(height: AppSpacing.sm),
+            SizedBox(height: isTablet ? AppSpacing.md : AppSpacing.sm),
             Text(
               '3. QUANTIDADE PERSONALIZADA',
               style: theme.textTheme.labelSmall?.copyWith(
+                fontSize: isTablet ? 13 : null,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 0.4,
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
-            const SizedBox(height: 6),
+            SizedBox(height: isTablet ? AppSpacing.sm : 6),
             Row(
               children: [
                 IconButton.filledTonal(
-                  visualDensity: VisualDensity.compact,
+                  visualDensity: isTablet
+                      ? VisualDensity.standard
+                      : VisualDensity.compact,
+                  style: isTablet
+                      ? IconButton.styleFrom(minimumSize: const Size(52, 52))
+                      : null,
                   tooltip: 'Diminuir quantidade',
                   onPressed: () => _stepCustomQty(-1),
-                  icon: const Icon(Icons.remove_rounded, size: 18),
+                  icon: Icon(Icons.remove_rounded, size: isTablet ? 22 : 18),
                 ),
-                const SizedBox(width: AppSpacing.xs),
+                SizedBox(width: isTablet ? AppSpacing.sm : AppSpacing.xs),
                 Expanded(
                   child: SizedBox(
-                    height: 46,
+                    height: isTablet ? 54 : 46,
                     child: TextField(
                       key: const ValueKey('discard_custom_qty_input'),
                       controller: _customQtyController,
@@ -454,21 +475,22 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
                       textInputAction: TextInputAction.done,
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       onSubmitted: (_) => _submitCustomQty(),
-                      style: const TextStyle(
+                      style: TextStyle(
+                        fontSize: isTablet ? 16 : null,
                         fontWeight: FontWeight.w800,
-                        fontFeatures: [FontFeature.tabularFigures()],
+                        fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                       decoration: InputDecoration(
                         labelText: isAddition
                             ? 'Qtd. a somar (+)'
                             : 'Qtd. a descontar (-)',
                         hintText: 'Ex: 5',
-                        isDense: true,
+                        isDense: !isTablet,
                         filled: true,
                         fillColor: colorScheme.surfaceContainerHighest,
-                        contentPadding: const EdgeInsets.symmetric(
+                        contentPadding: EdgeInsets.symmetric(
                           horizontal: AppSpacing.sm,
-                          vertical: 10,
+                          vertical: isTablet ? 14 : 10,
                         ),
                         border: OutlineInputBorder(
                           borderRadius: AppSpacing.borderRadiusSm,
@@ -479,6 +501,7 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
                           onPressed: _submitCustomQty,
                           icon: Icon(
                             Icons.check_circle_rounded,
+                            size: isTablet ? 24 : 20,
                             color: actionColor,
                           ),
                         ),
@@ -486,12 +509,17 @@ class _EggAdjustmentViewState extends State<EggAdjustmentView> {
                     ),
                   ),
                 ),
-                const SizedBox(width: AppSpacing.xs),
+                SizedBox(width: isTablet ? AppSpacing.sm : AppSpacing.xs),
                 IconButton.filledTonal(
-                  visualDensity: VisualDensity.compact,
+                  visualDensity: isTablet
+                      ? VisualDensity.standard
+                      : VisualDensity.compact,
+                  style: isTablet
+                      ? IconButton.styleFrom(minimumSize: const Size(52, 52))
+                      : null,
                   tooltip: 'Aumentar quantidade',
                   onPressed: () => _stepCustomQty(1),
-                  icon: const Icon(Icons.add_rounded, size: 18),
+                  icon: Icon(Icons.add_rounded, size: isTablet ? 22 : 18),
                 ),
               ],
             ),

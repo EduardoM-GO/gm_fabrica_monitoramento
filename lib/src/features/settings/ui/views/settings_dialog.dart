@@ -756,48 +756,60 @@ final class _SoundSettingRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isTablet = AppBreakpoints.isTabletKiosk(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: EdgeInsets.symmetric(vertical: isTablet ? 6 : 2),
       child: Row(
         children: [
           Expanded(
             child: Text(
               title,
-              style: const TextStyle(
-                fontSize: 12.5,
+              style: TextStyle(
+                fontSize: isTablet ? 14 : 12.5,
                 fontWeight: FontWeight.w700,
               ),
             ),
           ),
           TextButton.icon(
             style: TextButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              minimumSize: const Size(0, 28),
+              visualDensity:
+                  isTablet ? VisualDensity.standard : VisualDensity.compact,
+              padding: EdgeInsets.symmetric(
+                horizontal: isTablet ? 10 : 6,
+                vertical: isTablet ? 4 : 2,
+              ),
+              minimumSize: Size(0, isTablet ? 36 : 28),
               foregroundColor: colorScheme.primary,
             ),
             onPressed: onTestPrimary,
-            icon: const Icon(Icons.volume_up_rounded, size: 14),
+            icon: Icon(Icons.volume_up_rounded, size: isTablet ? 16 : 14),
             label: Text(
               testPrimaryLabel,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+              style: TextStyle(
+                fontSize: isTablet ? 12.5 : 11,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
           if (onTestSecondary != null && testSecondaryLabel != null) ...[
-            const SizedBox(width: 2),
+            SizedBox(width: isTablet ? 6 : 2),
             TextButton.icon(
               style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                minimumSize: const Size(0, 28),
+                visualDensity:
+                    isTablet ? VisualDensity.standard : VisualDensity.compact,
+                padding: EdgeInsets.symmetric(
+                  horizontal: isTablet ? 10 : 6,
+                  vertical: isTablet ? 4 : 2,
+                ),
+                minimumSize: Size(0, isTablet ? 36 : 28),
                 foregroundColor: colorScheme.secondary,
               ),
               onPressed: onTestSecondary,
-              icon: const Icon(Icons.volume_up_rounded, size: 14),
+              icon: Icon(Icons.volume_up_rounded, size: isTablet ? 16 : 14),
               label: Text(
                 testSecondaryLabel!,
-                style: const TextStyle(
-                  fontSize: 11,
+                style: TextStyle(
+                  fontSize: isTablet ? 12.5 : 11,
                   fontWeight: FontWeight.w800,
                 ),
               ),

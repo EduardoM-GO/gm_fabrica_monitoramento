@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:gm_fabrica_monitoramento/src/core/themes/app_breakpoints.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_spacing.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_theme.dart';
 import 'package:gm_fabrica_monitoramento/src/core/widgets/status_badge.dart';
@@ -9,6 +10,7 @@ import 'package:signals/signals_flutter.dart';
 /// Cabeçalho compacto full-screen para as telas operacionais do Kiosk.
 /// Exibe botão Voltar amplo, título da tela, alertas ao vivo (Alarme Térmico de Porta
 /// ou Esteira sem Lote) e ações primárias à direita.
+/// Otimizado tanto para Kiosk compacto quanto para Tablet 11" Lenovo Idea Tab TB336FU.
 final class KioskSubpageHeader extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -35,11 +37,12 @@ final class KioskSubpageHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isTablet = AppBreakpoints.isTabletKiosk(context);
 
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: AppSpacing.sm,
-        vertical: 6,
+      padding: EdgeInsets.symmetric(
+        horizontal: isTablet ? AppSpacing.md : AppSpacing.sm,
+        vertical: isTablet ? 10 : 6,
       ),
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHigh,
@@ -51,38 +54,42 @@ final class KioskSubpageHeader extends StatelessWidget {
           // Botão Voltar / Fechar com área de toque ampla para chão de fábrica
           FilledButton.tonalIcon(
             style: FilledButton.styleFrom(
-              visualDensity: VisualDensity.compact,
-              minimumSize: const Size(0, 36),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              visualDensity:
+                  isTablet ? VisualDensity.standard : VisualDensity.compact,
+              minimumSize: Size(0, isTablet ? 44 : 36),
+              padding: EdgeInsets.symmetric(
+                horizontal: isTablet ? 16 : 12,
+                vertical: isTablet ? 10 : 6,
+              ),
               backgroundColor: colorScheme.surfaceContainerHighest,
               foregroundColor: colorScheme.onSurface,
             ),
             onPressed: onBack ?? () => Navigator.of(context).pop(),
-            icon: const Icon(Icons.arrow_back_rounded, size: 16),
+            icon: Icon(Icons.arrow_back_rounded, size: isTablet ? 18 : 16),
             label: Text(
               backLabel,
-              style: const TextStyle(
-                fontSize: 12,
+              style: TextStyle(
+                fontSize: isTablet ? 13.5 : 12,
                 fontWeight: FontWeight.w800,
               ),
             ),
           ),
-          const SizedBox(width: AppSpacing.sm),
+          SizedBox(width: isTablet ? AppSpacing.md : AppSpacing.sm),
 
           // Ícone + Título + Subtítulo
           Container(
-            padding: const EdgeInsets.all(6),
+            padding: EdgeInsets.all(isTablet ? 8 : 6),
             decoration: BoxDecoration(
               color: colorScheme.primaryContainer,
               borderRadius: AppSpacing.borderRadiusXs,
             ),
             child: Icon(
               icon,
-              size: 16,
+              size: isTablet ? 20 : 16,
               color: colorScheme.onPrimaryContainer,
             ),
           ),
-          const SizedBox(width: AppSpacing.xs),
+          SizedBox(width: isTablet ? AppSpacing.sm : AppSpacing.xs),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -95,7 +102,7 @@ final class KioskSubpageHeader extends StatelessWidget {
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontFamily: AppTheme.fontHeading,
                     fontWeight: FontWeight.w900,
-                    fontSize: 13.5,
+                    fontSize: isTablet ? 16 : 13.5,
                     letterSpacing: 0.4,
                   ),
                 ),
@@ -105,7 +112,7 @@ final class KioskSubpageHeader extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodySmall?.copyWith(
-                      fontSize: 10.5,
+                      fontSize: isTablet ? 12 : 10.5,
                       color: colorScheme.onSurfaceVariant,
                     ),
                   ),
@@ -150,7 +157,7 @@ final class KioskSubpageHeader extends StatelessWidget {
             ),
 
           for (var i = 0; i < actions.length; i++) ...[
-            if (i > 0) const SizedBox(width: AppSpacing.xs),
+            if (i > 0) SizedBox(width: isTablet ? AppSpacing.sm : AppSpacing.xs),
             actions[i],
           ],
         ],

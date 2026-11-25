@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:signals/signals_flutter.dart';
+import 'package:gm_fabrica_monitoramento/src/core/themes/app_breakpoints.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_motion.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_spacing.dart';
 import 'package:gm_fabrica_monitoramento/src/core/themes/app_theme.dart';
@@ -14,8 +15,8 @@ import 'package:gm_fabrica_monitoramento/src/features/freezer/domain/models/free
 import 'package:gm_fabrica_monitoramento/src/features/freezer/ui/view_models/freezer_monitoring_view_model.dart';
 import 'package:gm_fabrica_monitoramento/src/features/freezer/ui/views/freezer_config_view.dart';
 
-/// Card de monitoramento do Freezer otimizado para Kiosk Horizontal (SM-A055M/DS)
-/// com arquitetura de **Micro-States (atualização direcionada por campo)**:
+/// Card de monitoramento do Freezer otimizado para Tablet 11" (Lenovo Idea Tab TB336FU 16:10)
+/// e Kiosk Horizontal (SM-A055M/DS) com arquitetura de **Micro-States (atualização direcionada por campo)**:
 /// - Cada campo individual (Título, Badge de Porta, Botões de Ação, Cronômetro MM:SS,
 ///   Temperatura °C, Barra de Progresso, Cabeçalho de Perda Térmica e Gráfico CustomPaint)
 ///   possui seu próprio [SignalBuilder] isolado em [FreezerItemSignals].
@@ -57,6 +58,7 @@ class FreezerMonitoringCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isTablet = AppBreakpoints.isTabletKiosk(context);
     final id = _resolvedFreezerId;
     final item =
         viewModel.itemSignalsOf(id) ??
@@ -69,13 +71,16 @@ class FreezerMonitoringCard extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, cardConstraints) {
         final hasBoundedHeight = cardConstraints.maxHeight.isFinite;
+        final isTallFreezerCard =
+            hasBoundedHeight && cardConstraints.maxHeight >= 240;
+        final useLargeMetrics = isTablet || isTallFreezerCard;
 
         // O conteúdo interno do card é construído uma única vez e passado como `child`
         // para que mudanças na borda/cor do Card jamais reconstruam a árvore interna.
         final cardBody = Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm,
-            vertical: 6,
+          padding: EdgeInsets.symmetric(
+            horizontal: useLargeMetrics ? AppSpacing.md : AppSpacing.sm,
+            vertical: useLargeMetrics ? 12 : 6,
           ),
           child: Column(
             mainAxisSize:
@@ -84,9 +89,15 @@ class FreezerMonitoringCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // --- 1. Topo: Nome + Porta + Ações Rápidas (Cada um com seu próprio Micro-State) ---
-              _buildHeaderRow(context, theme, colorScheme, item),
+              _buildHeaderRow(
+                context,
+                theme,
+                colorScheme,
+                item,
+                useLargeMetrics: useLargeMetrics,
+              ),
 
-              const SizedBox(height: 4),
+              SizedBox(height: useLargeMetrics ? 8 : 4),
 
               // --- 2. Faixa Principal: Alterna entre Timer/Temp e Prompt de Feedback apenas quando `status == feedbackPending` muda ---
               SignalBuilder(
@@ -100,7 +111,12 @@ class FreezerMonitoringCard extends StatelessWidget {
                     child: isFeedback
                         ? KeyedSubtree(
                             key: const ValueKey('panel_feedback'),
-                            child: _buildFeedbackPrompt(context, theme, item),
+                            child: _buildFeedbackPrompt(
+                              context,
+                              theme,
+                              item,
+                              useLargeMetrics: useLargeMetrics,
+                            ),
                           )
                         : KeyedSubtree(
                             key: const ValueKey('panel_timer_live'),
@@ -109,13 +125,14 @@ class FreezerMonitoringCard extends StatelessWidget {
                               theme,
                               colorScheme,
                               item,
+                              useLargeMetrics: useLargeMetrics,
                             ),
                           ),
                   );
                 },
               ),
 
-              const SizedBox(height: 4),
+              SizedBox(height: useLargeMetrics ? 8 : 4),
 
               // --- 3. Gráfico Térmico junto com o Tempo de Porta Aberta (isolado em micro-states térmicos) ---
               if (hasBoundedHeight)
@@ -123,10 +140,14 @@ class FreezerMonitoringCard extends StatelessWidget {
                   child: FreezerThermalCurvePanel(
                     itemSignals: item,
                     expandGraph: true,
+                    isLarge: useLargeMetrics,
                   ),
                 )
               else
-                FreezerThermalCurvePanel(itemSignals: item),
+                FreezerThermalCurvePanel(
+                  itemSignals: item,
+                  isLarge: useLargeMetrics,
+                ),
             ],
           ),
         );
@@ -192,8 +213,9 @@ class FreezerMonitoringCard extends StatelessWidget {
     BuildContext context,
     ThemeData theme,
     ColorScheme colorScheme,
-    FreezerItemSignals item,
-  ) {
+    FreezerItemSignals item, {
+    required bool useLargeMetrics,
+  }) {
     return Row(
       children: [
         // Micro-state do ícone de gelo
@@ -215,11 +237,11 @@ class FreezerMonitoringCard extends StatelessWidget {
             return Icon(
               Icons.ac_unit_rounded,
               color: isActive ? accentColor : AppTheme.textMuted,
-              size: 13,
+              size: useLargeMetrics ? 18 : 13,
             );
           },
         ),
-        const SizedBox(width: 4),
+        SizedBox(width: useLargeMetrics ? 6 : 4),
         Expanded(
           child: FittedBox(
             fit: BoxFit.scaleDown,
@@ -239,7 +261,7 @@ class FreezerMonitoringCard extends StatelessWidget {
                         fontFamily: AppTheme.fontHeading,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.4,
-                        fontSize: 11,
+                        fontSize: useLargeMetrics ? 15 : 11,
                         color: hasLinked
                             ? colorScheme.primary
                             : AppTheme.textSecondary,
@@ -247,7 +269,7 @@ class FreezerMonitoringCard extends StatelessWidget {
                     );
                   },
                 ),
-                const SizedBox(width: 6),
+                SizedBox(width: useLargeMetrics ? 8 : 6),
                 // Micro-state do Badge de Porta (só reconstrói quando isDoorOpen muda)
                 SignalBuilder(
                   builder: (context) {
@@ -267,7 +289,7 @@ class FreezerMonitoringCard extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 4),
+        SizedBox(width: useLargeMetrics ? 6 : 4),
 
         // Ações Rápidas: "Pronto" (micro-state de status), "Reiniciar" (100% estático) e "Configurar" (100% estático)
         FittedBox(
@@ -291,7 +313,7 @@ class FreezerMonitoringCard extends StatelessWidget {
                   final emphasize = isReady || hasOvertime || isOpen;
 
                   return Padding(
-                    padding: const EdgeInsets.only(right: 4),
+                    padding: EdgeInsets.only(right: useLargeMetrics ? 6 : 4),
                     child: Material(
                       color: Colors.transparent,
                       child: InkWell(
@@ -301,9 +323,9 @@ class FreezerMonitoringCard extends StatelessWidget {
                           item.freezerId,
                         ),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 9,
-                            vertical: 5,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: useLargeMetrics ? 12 : 9,
+                            vertical: useLargeMetrics ? 7 : 5,
                           ),
                           decoration: BoxDecoration(
                             color: AppTheme.successGreen.withValues(
@@ -316,19 +338,19 @@ class FreezerMonitoringCard extends StatelessWidget {
                               ),
                             ),
                           ),
-                          child: const Row(
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
                                 Icons.check_circle_rounded,
-                                size: 13,
+                                size: useLargeMetrics ? 16 : 13,
                                 color: AppTheme.successGreen,
                               ),
-                              SizedBox(width: 4),
+                              SizedBox(width: useLargeMetrics ? 5 : 4),
                               Text(
                                 'Pronto',
                                 style: TextStyle(
-                                  fontSize: 10.5,
+                                  fontSize: useLargeMetrics ? 12.5 : 10.5,
                                   fontWeight: FontWeight.w800,
                                   color: AppTheme.successGreen,
                                 ),
@@ -343,31 +365,34 @@ class FreezerMonitoringCard extends StatelessWidget {
               ),
               // Botão Reiniciar estático — NUNCA sofre rebuild durante ticks do cronômetro ou telemetria!
               Material(
-                color: Colors.transparent,
+                color: useLargeMetrics
+                    ? colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
+                    : Colors.transparent,
+                borderRadius: AppSpacing.borderRadiusXs,
                 child: InkWell(
                   key: ValueKey('freezer_restart_${item.freezerId}'),
                   borderRadius: AppSpacing.borderRadiusXs,
                   onTap: () => viewModel.restartCycle(item.freezerId),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 5,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: useLargeMetrics ? 11 : 8,
+                      vertical: useLargeMetrics ? 7 : 5,
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           Icons.refresh_rounded,
-                          size: 13,
-                          color: AppTheme.textMuted.withValues(alpha: 0.8),
+                          size: useLargeMetrics ? 16 : 13,
+                          color: AppTheme.textMuted.withValues(alpha: 0.85),
                         ),
-                        const SizedBox(width: 3),
+                        SizedBox(width: useLargeMetrics ? 5 : 3),
                         Text(
                           'Reiniciar',
                           style: TextStyle(
-                            fontSize: 10.5,
+                            fontSize: useLargeMetrics ? 12.5 : 10.5,
                             fontWeight: FontWeight.w700,
-                            color: AppTheme.textMuted.withValues(alpha: 0.8),
+                            color: AppTheme.textMuted.withValues(alpha: 0.85),
                           ),
                         ),
                       ],
@@ -375,20 +400,23 @@ class FreezerMonitoringCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 2),
+              SizedBox(width: useLargeMetrics ? 4 : 2),
               // Botão Configurar estático — NUNCA sofre rebuild durante ticks do cronômetro ou telemetria!
               Material(
-                color: Colors.transparent,
+                color: useLargeMetrics
+                    ? colorScheme.surfaceContainerHighest.withValues(alpha: 0.5)
+                    : Colors.transparent,
+                borderRadius: AppSpacing.borderRadiusXs,
                 child: InkWell(
                   key: ValueKey('freezer_config_${item.freezerId}'),
                   borderRadius: AppSpacing.borderRadiusXs,
                   onTap: () => _showDoorTimingConfigDialog(context, item),
                   child: Padding(
-                    padding: const EdgeInsets.all(6),
+                    padding: EdgeInsets.all(useLargeMetrics ? 8 : 6),
                     child: Icon(
                       Icons.tune_rounded,
-                      size: 15,
-                      color: AppTheme.textMuted.withValues(alpha: 0.75),
+                      size: useLargeMetrics ? 18 : 15,
+                      color: AppTheme.textMuted.withValues(alpha: 0.85),
                     ),
                   ),
                 ),
@@ -404,8 +432,9 @@ class FreezerMonitoringCard extends StatelessWidget {
     BuildContext context,
     ThemeData theme,
     ColorScheme colorScheme,
-    FreezerItemSignals item,
-  ) {
+    FreezerItemSignals item, {
+    required bool useLargeMetrics,
+  }) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -447,7 +476,7 @@ class FreezerMonitoringCard extends StatelessWidget {
                             text: elapsed,
                             style: TextStyle(
                               fontFamily: AppTheme.fontHeading,
-                              fontSize: 30,
+                              fontSize: useLargeMetrics ? 42 : 30,
                               height: 1.0,
                               fontWeight: FontWeight.w900,
                               color: elapsedColor,
@@ -458,12 +487,14 @@ class FreezerMonitoringCard extends StatelessWidget {
                             children: [
                               TextSpan(
                                 text: ' / $target',
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontFamily: AppTheme.fontBody,
-                                  fontSize: 16,
+                                  fontSize: useLargeMetrics ? 21 : 16,
                                   fontWeight: FontWeight.w700,
                                   color: AppTheme.textSecondary,
-                                  fontFeatures: [FontFeature.tabularFigures()],
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
                                 ),
                               ),
                             ],
@@ -472,7 +503,7 @@ class FreezerMonitoringCard extends StatelessWidget {
                         );
                       },
                     ),
-                    const SizedBox(width: 8),
+                    SizedBox(width: useLargeMetrics ? 12 : 8),
                     // Micro-state 2: Rótulo de status operacional (só reconstrói quando status ou porta mudam)
                     SignalBuilder(
                       builder: (context) {
@@ -502,7 +533,9 @@ class FreezerMonitoringCard extends StatelessWidget {
                         return Text(
                           statusLabel,
                           style: TextStyle(
-                            fontSize: isIdle ? 9.5 : 10,
+                            fontSize: useLargeMetrics
+                                ? (isIdle ? 12 : 13)
+                                : (isIdle ? 9.5 : 10),
                             fontWeight: isIdle
                                 ? FontWeight.w600
                                 : FontWeight.w900,
@@ -516,7 +549,7 @@ class FreezerMonitoringCard extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            SizedBox(width: useLargeMetrics ? 12 : 8),
             // Micro-state 3: Temperatura atual (°C) — só reconstrói quando a temperatura muda em 0.1 °C
             SignalBuilder(
               builder: (context) {
@@ -530,7 +563,7 @@ class FreezerMonitoringCard extends StatelessWidget {
                   pulseScale: 1.03,
                   style: TextStyle(
                     fontFamily: AppTheme.fontHeading,
-                    fontSize: 20,
+                    fontSize: useLargeMetrics ? 28 : 20,
                     height: 1.0,
                     fontWeight: FontWeight.w900,
                     color: !isProbeOk || isOpen
@@ -545,7 +578,7 @@ class FreezerMonitoringCard extends StatelessWidget {
             ),
           ],
         ),
-        const SizedBox(height: 5),
+        SizedBox(height: useLargeMetrics ? 8 : 5),
         // Micro-state 4: Barra de progresso do ciclo
         SignalBuilder(
           builder: (context) {
@@ -555,14 +588,14 @@ class FreezerMonitoringCard extends StatelessWidget {
 
             return SmoothProgressBar(
               value: progress,
-              minHeight: 5,
+              minHeight: useLargeMetrics ? 8 : 5,
               progressColor: isReady
                   ? AppTheme.successGreen
                   : (isOpen ? colorScheme.error : colorScheme.tertiary),
               backgroundColor: colorScheme.surfaceContainerHighest.withValues(
                 alpha: 0.5,
               ),
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(useLargeMetrics ? 6 : 4),
               duration: AppMotion.durationStandard,
               curve: AppMotion.easeOut,
             );
@@ -575,10 +608,16 @@ class FreezerMonitoringCard extends StatelessWidget {
   Widget _buildFeedbackPrompt(
     BuildContext context,
     ThemeData theme,
-    FreezerItemSignals item,
-  ) {
+    FreezerItemSignals item, {
+    required bool useLargeMetrics,
+  }) {
+    final btnMinHeight = useLargeMetrics ? 42.0 : 32.0;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      padding: EdgeInsets.symmetric(
+        horizontal: useLargeMetrics ? 12 : 8,
+        vertical: useLargeMetrics ? 8 : 5,
+      ),
       decoration: BoxDecoration(
         color: AppTheme.warningAmber.withValues(alpha: 0.16),
         borderRadius: AppSpacing.borderRadiusSm,
@@ -589,11 +628,11 @@ class FreezerMonitoringCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
+              Text(
                 'Ponto do Chocolate?',
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
-                  fontSize: 10.5,
+                  fontSize: useLargeMetrics ? 13 : 10.5,
                   color: AppTheme.warningAmber,
                 ),
               ),
@@ -603,26 +642,28 @@ class FreezerMonitoringCard extends StatelessWidget {
                   final countdown = item.feedbackCountdownSeconds.value;
                   return Text(
                     '${countdown}s → OK Automático',
-                    style: const TextStyle(
-                      fontSize: 10,
+                    style: TextStyle(
+                      fontSize: useLargeMetrics ? 12 : 10,
                       fontWeight: FontWeight.w800,
                       color: AppTheme.warningAmber,
-                      fontFeatures: [FontFeature.tabularFigures()],
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   );
                 },
               ),
             ],
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: useLargeMetrics ? 8 : 4),
           Row(
             children: [
               Expanded(
                 child: PressableScale(
                   child: FilledButton.tonal(
                     style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      minimumSize: const Size(0, 32),
+                      padding: EdgeInsets.symmetric(
+                        vertical: useLargeMetrics ? 8 : 4,
+                      ),
+                      minimumSize: Size(0, btnMinHeight),
                       backgroundColor: AppTheme.successGreen.withValues(
                         alpha: 0.28,
                       ),
@@ -633,12 +674,12 @@ class FreezerMonitoringCard extends StatelessWidget {
                         FreezerFeedbackEnum.onPoint,
                       );
                     },
-                    child: const FittedBox(
+                    child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
                         'No Ponto',
                         style: TextStyle(
-                          fontSize: 10,
+                          fontSize: useLargeMetrics ? 12.5 : 10,
                           fontWeight: FontWeight.w800,
                           color: AppTheme.successGreen,
                         ),
@@ -647,13 +688,15 @@ class FreezerMonitoringCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
+              SizedBox(width: useLargeMetrics ? 8 : 4),
               Expanded(
                 child: PressableScale(
                   child: FilledButton.tonal(
                     style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      minimumSize: const Size(0, 32),
+                      padding: EdgeInsets.symmetric(
+                        vertical: useLargeMetrics ? 8 : 4,
+                      ),
+                      minimumSize: Size(0, btnMinHeight),
                       backgroundColor: AppTheme.warningAmber.withValues(
                         alpha: 0.28,
                       ),
@@ -664,28 +707,30 @@ class FreezerMonitoringCard extends StatelessWidget {
                         FreezerFeedbackEnum.soft,
                       );
                     },
-                    child: const FittedBox(
+                    child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
                         'Ainda Mole (+3m)',
                         style: TextStyle(
-                          fontSize: 9.5,
+                          fontSize: useLargeMetrics ? 12 : 9.5,
                           fontWeight: FontWeight.w800,
                           color: AppTheme.warningAmber,
-                          fontFeatures: [FontFeature.tabularFigures()],
+                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
+              SizedBox(width: useLargeMetrics ? 8 : 4),
               Expanded(
                 child: PressableScale(
                   child: FilledButton.tonal(
                     style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      minimumSize: const Size(0, 32),
+                      padding: EdgeInsets.symmetric(
+                        vertical: useLargeMetrics ? 8 : 4,
+                      ),
+                      minimumSize: Size(0, btnMinHeight),
                       backgroundColor: AppTheme.primaryBlue.withValues(
                         alpha: 0.25,
                       ),
@@ -696,12 +741,12 @@ class FreezerMonitoringCard extends StatelessWidget {
                         FreezerFeedbackEnum.overchilled,
                       );
                     },
-                    child: const FittedBox(
+                    child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
                         'Muito Gelado',
                         style: TextStyle(
-                          fontSize: 9.5,
+                          fontSize: useLargeMetrics ? 12 : 9.5,
                           fontWeight: FontWeight.w800,
                           color: AppTheme.primaryBlue,
                         ),
@@ -990,12 +1035,14 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
   final FreezerLiveState? freezer;
   final FreezerItemSignals? itemSignals;
   final bool expandGraph;
+  final bool isLarge;
 
   const FreezerThermalCurvePanel({
     super.key,
     this.freezer,
     this.itemSignals,
     this.expandGraph = false,
+    this.isLarge = false,
   }) : assert(
          freezer != null || itemSignals != null,
          'Informe freezer ou itemSignals',
@@ -1019,6 +1066,7 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final item = itemSignals ?? FreezerItemSignals(freezer!);
+    final effectiveLarge = isLarge || AppBreakpoints.isTabletKiosk(context);
 
     final graphWidget = RepaintBoundary(
       child: SignalBuilder(
@@ -1090,7 +1138,7 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
             }
 
             return Padding(
-              padding: const EdgeInsets.only(bottom: 2),
+              padding: EdgeInsets.only(bottom: effectiveLarge ? 4 : 2),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -1104,17 +1152,17 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
                           if (isOpen) ...[
                             Icon(
                               Icons.timer_outlined,
-                              size: 11,
+                              size: effectiveLarge ? 14 : 11,
                               color: colorScheme.error,
                             ),
-                            const SizedBox(width: 3),
+                            SizedBox(width: effectiveLarge ? 4 : 3),
                             // Micro-state aninhado exclusivamente para os segundos da porta aberta
                             SignalBuilder(
                               builder: (context) {
                                 return Text(
                                   'ABERTA HÁ ${item.currentDoorOpenFormatted.value}',
                                   style: TextStyle(
-                                    fontSize: 9.5,
+                                    fontSize: effectiveLarge ? 12 : 9.5,
                                     fontWeight: FontWeight.w900,
                                     color: colorScheme.error,
                                     fontFeatures: const [
@@ -1124,21 +1172,21 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
                                 );
                               },
                             ),
-                            const SizedBox(width: 6),
+                            SizedBox(width: effectiveLarge ? 8 : 6),
                           ],
                           if (isOpen || hasDoorShift) ...[
                             Icon(
                               isOpen
                                   ? Icons.trending_up_rounded
                                   : Icons.trending_down_rounded,
-                              size: 12,
+                              size: effectiveLarge ? 15 : 12,
                               color: indicatorColor,
                             ),
-                            const SizedBox(width: 3),
+                            SizedBox(width: effectiveLarge ? 4 : 3),
                             Text(
                               doorShiftLabel,
                               style: theme.textTheme.labelSmall?.copyWith(
-                                fontSize: 10,
+                                fontSize: effectiveLarge ? 12.5 : 10,
                                 fontWeight: FontWeight.w800,
                                 color: indicatorColor,
                                 fontFeatures: const [
@@ -1158,7 +1206,7 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
                       child: Text(
                         '+${penaltySec}s no alvo',
                         style: TextStyle(
-                          fontSize: 9,
+                          fontSize: effectiveLarge ? 11.5 : 9,
                           fontWeight: FontWeight.w600,
                           color: AppTheme.warningAmber.withValues(alpha: 0.8),
                           fontFeatures: const [FontFeature.tabularFigures()],
@@ -1173,13 +1221,13 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
         if (expandGraph)
           Expanded(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 18),
+              constraints: BoxConstraints(minHeight: effectiveLarge ? 36 : 18),
               child: graphWidget,
             ),
           )
         else
           SizedBox(
-            height: 24,
+            height: effectiveLarge ? 48 : 24,
             child: graphWidget,
           ),
       ],
@@ -1419,6 +1467,8 @@ class FreezerMonitoringZone extends StatelessWidget {
       );
     }
 
+    final isTablet = AppBreakpoints.isTabletKiosk(context);
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final hasBoundedHeight = constraints.maxHeight.isFinite;
@@ -1442,7 +1492,8 @@ class FreezerMonitoringZone extends StatelessWidget {
           children: [
             if (hasF1)
               if (hasBoundedHeight) Expanded(child: card1) else card1,
-            if (hasF1 && hasF2) const SizedBox(height: 6),
+            if (hasF1 && hasF2)
+              SizedBox(height: isTablet ? AppSpacing.sm : 6),
             if (hasF2)
               if (hasBoundedHeight) Expanded(child: card2) else card2,
           ],

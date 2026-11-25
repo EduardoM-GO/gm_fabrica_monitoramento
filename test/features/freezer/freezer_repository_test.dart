@@ -276,5 +276,41 @@ void main() {
       expect(f1.elapsedSeconds, greaterThanOrEqualTo(1));
       expect(f1.remainingSeconds, lessThanOrEqualTo(f1.expectedDurationSeconds - 1));
     });
+
+    test('mantém o status e o tempo decorrido do freezer ao fechar e reabrir o app', () async {
+      // 1. Inicia ciclo em f1 e inicia+cancela ("Freezer Vazio") em f2
+      await freezerRepo.startManualCycle('f1');
+      await freezerRepo.startManualCycle('f2');
+      freezerRepo.cancelCycle('f2');
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+
+      // 2. Simula fechar o app (dispose do repositório atual) e abrir novamente (nova instância)
+      freezerRepo.dispose();
+
+      final reopenedRepo = FreezerRepository(
+        freezerDao: db.freezerDao,
+        wsService: ws,
+        productionRepo: prodRepo,
+        engine: const FreezerAdaptiveEngine(),
+      );
+      await reopenedRepo.ready;
+
+      final restoredF1 = reopenedRepo.getFreezer('f1')!;
+      final restoredF2 = reopenedRepo.getFreezer('f2')!;
+
+      expect(restoredF1.status, equals(FreezerStatusEnum.cooling));
+      expect(restoredF1.activeCycleId, isNotNull);
+      expect(restoredF1.elapsedSeconds, greaterThanOrEqualTo(1));
+      expect(
+        restoredF1.remainingSeconds,
+        lessThanOrEqualTo(restoredF1.expectedDurationSeconds - 1),
+      );
+
+      // f2 foi marcado como vazio antes de fechar o app, então deve permanecer idle
+      expect(restoredF2.status, equals(FreezerStatusEnum.idle));
+      expect(restoredF2.activeCycleId, isNull);
+
+      reopenedRepo.dispose();
+    });
   });
 }

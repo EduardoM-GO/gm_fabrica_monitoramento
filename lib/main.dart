@@ -111,6 +111,9 @@ void main() async {
     inspectionThresholdSeconds:
         settingsViewModel.doorInspectionThresholdSeconds,
   );
+  // Aguarda restauração dos ciclos ativos de resfriamento dos freezers no SQLite/SharedPreferences
+  // para que o status ("CRISTALIZANDO", "LOTE PRONTO", etc.) e o tempo decorrido permaneçam ao reabrir o app
+  await freezerRepo.ready;
 
   // Inscreve no Supabase Realtime para atualizar produtos e freezers ao vivo
   if (isSupabaseReady) {
@@ -154,7 +157,11 @@ void main() async {
       ],
       child: FactoryMonitoringApp(
         requireSupabaseAuth: isSupabaseReady,
-        skipSplashIfActiveBatch: productionRepo.currentActiveBatch != null,
+        skipSplashIfActiveBatch:
+            productionRepo.currentActiveBatch != null ||
+            freezerRepo.currentFreezers.values.any(
+              (f) => f.activeCycleId != null,
+            ),
       ),
     ),
   );
@@ -193,13 +200,16 @@ class _FactoryMonitoringAppState extends State<FactoryMonitoringApp>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final prodRepo = context.read<ProductionRepository>();
+    final freezerRepo = context.read<FreezerRepository>();
     if (state == AppLifecycleState.resumed) {
       KioskWakeLockService.ensureAlwaysAwake();
       prodRepo.onAppLifecycleStateChanged(isResumed: true);
+      freezerRepo.onAppLifecycleStateChanged(isResumed: true);
     } else if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached) {
       prodRepo.onAppLifecycleStateChanged(isResumed: false);
+      freezerRepo.onAppLifecycleStateChanged(isResumed: false);
     }
   }
 

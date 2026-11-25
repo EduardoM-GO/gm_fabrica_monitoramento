@@ -13,7 +13,8 @@ import 'package:gm_fabrica_monitoramento/src/features/settings/ui/views/settings
 import 'package:provider/provider.dart';
 import 'package:signals/signals_flutter.dart';
 
-/// Painel principal Kiosk Zero-Navegação (60/40) para chão de fábrica.
+/// Painel principal Kiosk Zero-Navegação (50/50 em Tablet 11" Lenovo Idea Tab TB336FU,
+/// 52/48 em Kiosk Compacto) para chão de fábrica.
 /// Segue estritamente Material Design 3, superfícies tonais e alta densidade visual.
 final class DashboardView extends StatelessWidget {
   const DashboardView({super.key});
@@ -33,14 +34,15 @@ final class DashboardView extends StatelessWidget {
             final isLandscape = AppBreakpoints.isLandscape(context);
             final isWideEnough =
                 constraints.maxWidth >= AppBreakpoints.compactMax;
+            final isTablet = AppBreakpoints.isTabletKiosk(context);
 
-            // Modo Kiosk Horizontal (ex: Samsung Galaxy A05 SM-A055M/DS ~800x360 dp):
-            // 100% fixo na tela sem scroll, proporção 52% Contagem / 48% Freezers.
+            // Modo Kiosk Horizontal (Lenovo Idea Tab TB336FU 11" 2560x1600 16:10 ou Galaxy A05 ~800x360 dp):
+            // 100% fixo na tela sem scroll, aproveitando toda a altura 16:10 do tablet.
             if (isLandscape && isWideEnough) {
               return Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.xs,
-                  vertical: 4,
+                padding: EdgeInsets.symmetric(
+                  horizontal: isTablet ? AppSpacing.md : AppSpacing.xs,
+                  vertical: isTablet ? AppSpacing.xs : 4,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -50,26 +52,55 @@ final class DashboardView extends StatelessWidget {
                       freezerViewModel: freezerViewModel,
                       settingsViewModel: settingsViewModel,
                     ),
-                    const SizedBox(height: 4),
+                    SizedBox(height: isTablet ? AppSpacing.xs : 4),
                     Expanded(
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          // Zona Esquerda (52%): Embalagem e Contagem de Ovos (0ms)
+                          // Zona Esquerda: Embalagem e Contagem de Ovos (0ms)
                           Expanded(
-                            flex: 52,
+                            flex: isTablet ? 50 : 52,
                             child: EggCountCard(viewModel: eggViewModel),
                           ),
-                          const SizedBox(width: AppSpacing.xs),
-                          // Zona Direita (48%): Monitoramento Adaptativo dos 2 Freezers
+                          SizedBox(
+                            width: isTablet ? AppSpacing.sm : AppSpacing.xs,
+                          ),
+                          // Zona Direita: Monitoramento Adaptativo dos 2 Freezers
                           Expanded(
-                            flex: 48,
+                            flex: isTablet ? 50 : 48,
                             child: FreezerMonitoringZone(
                               viewModel: freezerViewModel,
                             ),
                           ),
                         ],
                       ),
+                    ),
+                  ],
+                ),
+              );
+            }
+
+            // Modo Retrato em Tablet (ex.: 800x1280 dp no TB336FU): preenche 100% da altura sem scroll se houver espaço vertical suficiente
+            if (!isLandscape && constraints.maxHeight >= 900) {
+              return Padding(
+                padding: const EdgeInsets.all(AppSpacing.md),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _TopKioskStatusStrip(
+                      eggViewModel: eggViewModel,
+                      freezerViewModel: freezerViewModel,
+                      settingsViewModel: settingsViewModel,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Expanded(
+                      flex: 46,
+                      child: EggCountCard(viewModel: eggViewModel),
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Expanded(
+                      flex: 54,
+                      child: FreezerMonitoringZone(viewModel: freezerViewModel),
                     ),
                   ],
                 ),
@@ -119,24 +150,33 @@ final class _TopKioskStatusStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isTablet = AppBreakpoints.isTabletKiosk(context);
 
     return SignalBuilder(
       builder: (context) {
         final hasDoorAlarm = freezerViewModel.hasDoorAlarm.value;
 
         return Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.xs,
-            vertical: 2,
+          padding: EdgeInsets.symmetric(
+            horizontal: isTablet ? AppSpacing.sm : AppSpacing.xs,
+            vertical: isTablet ? 6 : 2,
           ),
           decoration: BoxDecoration(
             color: hasDoorAlarm
                 ? colorScheme.errorContainer.withValues(alpha: 0.35)
-                : Colors.transparent,
+                : (isTablet
+                      ? colorScheme.surfaceContainerLow
+                      : Colors.transparent),
             borderRadius: AppSpacing.borderRadiusSm,
             border: hasDoorAlarm
                 ? Border.all(color: colorScheme.error.withValues(alpha: 0.7))
-                : null,
+                : (isTablet
+                      ? Border.all(
+                          color: colorScheme.outlineVariant.withValues(
+                            alpha: 0.5,
+                          ),
+                        )
+                      : null),
           ),
           child: Row(
             children: [
@@ -147,10 +187,10 @@ final class _TopKioskStatusStrip extends StatelessWidget {
                   children: [
                     Icon(
                       Icons.factory_rounded,
-                      size: 12,
-                      color: AppTheme.textMuted.withValues(alpha: 0.75),
+                      size: isTablet ? 16 : 12,
+                      color: AppTheme.textMuted.withValues(alpha: 0.85),
                     ),
-                    const SizedBox(width: 5),
+                    SizedBox(width: isTablet ? 8 : 5),
                     Flexible(
                       child: Text(
                         'G&M CHOCOLATES',
@@ -158,7 +198,7 @@ final class _TopKioskStatusStrip extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.labelSmall?.copyWith(
                           fontFamily: AppTheme.fontHeading,
-                          fontSize: 10.5,
+                          fontSize: isTablet ? 13 : 10.5,
                           fontWeight: FontWeight.w800,
                           letterSpacing: 0.6,
                           color: AppTheme.textMuted,
@@ -178,7 +218,7 @@ final class _TopKioskStatusStrip extends StatelessWidget {
                   icon: Icons.warning_amber_rounded,
                   compact: true,
                 ),
-                const SizedBox(width: AppSpacing.xs),
+                SizedBox(width: isTablet ? AppSpacing.sm : AppSpacing.xs),
               ],
 
               // Clima da Sala isolado em seu próprio micro-state textual (`roomSummaryText`)
@@ -190,21 +230,23 @@ final class _TopKioskStatusStrip extends StatelessWidget {
                     children: [
                       Icon(
                         Icons.thermostat_rounded,
-                        size: 12,
-                        color: AppTheme.textMuted.withValues(alpha: 0.8),
+                        size: isTablet ? 16 : 12,
+                        color: AppTheme.textMuted.withValues(alpha: 0.85),
                       ),
-                      const SizedBox(width: 3),
+                      SizedBox(width: isTablet ? 5 : 3),
                       SignalBuilder(
                         builder: (context) {
                           return Text(
                             eggViewModel.roomSummaryText.value,
                             style: theme.textTheme.labelSmall?.copyWith(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
+                              fontSize: isTablet ? 13.5 : 11,
+                              fontWeight: FontWeight.w700,
                               fontFeatures: const [
                                 FontFeature.tabularFigures(),
                               ],
-                              color: AppTheme.textMuted,
+                              color: isTablet
+                                  ? AppTheme.textSecondary
+                                  : AppTheme.textMuted,
                             ),
                           );
                         },
@@ -214,7 +256,7 @@ final class _TopKioskStatusStrip extends StatelessWidget {
                 ),
               ),
 
-              const SizedBox(width: AppSpacing.sm),
+              SizedBox(width: isTablet ? AppSpacing.md : AppSpacing.sm),
 
               // Semáforo WebSocket + Ação de Configurações (um único InkWell com hitbox amplo e sem IconButton aninhado competindo pelo toque)
               Flexible(
@@ -224,9 +266,9 @@ final class _TopKioskStatusStrip extends StatelessWidget {
                     borderRadius: AppSpacing.borderRadiusXs,
                     onTap: () => _openSettings(context),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 4,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: isTablet ? 10 : 6,
+                        vertical: isTablet ? 6 : 4,
                       ),
                       child: SignalBuilder(
                         builder: (context) {
@@ -274,10 +316,10 @@ final class _TopKioskStatusStrip extends StatelessWidget {
                                   subtle: isHealthy,
                                 ),
                               ),
-                              const SizedBox(width: 6),
+                              SizedBox(width: isTablet ? 8 : 6),
                               Icon(
                                 Icons.settings_rounded,
-                                size: 16,
+                                size: isTablet ? 20 : 16,
                                 color: AppTheme.textMuted.withValues(
                                   alpha: 0.85,
                                 ),

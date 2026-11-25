@@ -24,12 +24,13 @@ final class StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isTablet = MediaQuery.sizeOf(context).shortestSide >= 540.0;
     final effectiveColor = subtle ? color.withValues(alpha: 0.72) : color;
 
     return Container(
       padding: EdgeInsets.symmetric(
-        horizontal: compact ? 6 : AppSpacing.xs,
-        vertical: compact ? 2 : 4,
+        horizontal: compact ? (isTablet ? 9 : 6) : (isTablet ? 12 : AppSpacing.xs),
+        vertical: compact ? (isTablet ? 4 : 2) : (isTablet ? 6 : 4),
       ),
       decoration: BoxDecoration(
         color: color.withValues(alpha: subtle ? 0.06 : 0.16),
@@ -46,21 +47,21 @@ final class StatusBadge extends StatelessWidget {
         children: [
           if (showDot) ...[
             Container(
-              width: compact ? 5 : 6,
-              height: compact ? 5 : 6,
+              width: compact ? (isTablet ? 7 : 5) : (isTablet ? 8 : 6),
+              height: compact ? (isTablet ? 7 : 5) : (isTablet ? 8 : 6),
               decoration: BoxDecoration(
                 color: effectiveColor,
                 shape: BoxShape.circle,
               ),
             ),
-            SizedBox(width: compact ? 4 : 6),
+            SizedBox(width: compact ? (isTablet ? 6 : 4) : 6),
           ] else if (icon != null) ...[
             Icon(
               icon,
-              size: compact ? 10 : 13,
+              size: compact ? (isTablet ? 13 : 10) : (isTablet ? 15 : 13),
               color: effectiveColor,
             ),
-            SizedBox(width: compact ? 3 : 5),
+            SizedBox(width: compact ? (isTablet ? 5 : 3) : 5),
           ],
           Flexible(
             child: Text(
@@ -68,7 +69,7 @@ final class StatusBadge extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.labelSmall?.copyWith(
-                fontSize: compact ? 8.5 : 10.5,
+                fontSize: compact ? (isTablet ? 11.0 : 8.5) : (isTablet ? 12.5 : 10.5),
                 fontWeight: subtle ? FontWeight.w700 : FontWeight.w900,
                 letterSpacing: subtle ? 0.2 : 0.4,
                 color: effectiveColor,

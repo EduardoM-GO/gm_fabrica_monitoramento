@@ -25,8 +25,10 @@ final class FreezerRepository {
 
   StreamSubscription? _wsSubscription;
   Timer? _tickerTimer;
+  late final Future<void> _readyFuture;
 
   final Map<String, FreezerLiveState> _freezers = {};
+  final Map<String, DateTime> _cycleStartedAt = {};
   final Map<String, DateTime> _doorOpenSince = {};
   final Map<String, double> _tempWhenOpened = {};
   final Map<String, double> _baselineTempBeforeLoad = {};
@@ -62,8 +64,11 @@ final class FreezerRepository {
     _initDefaultFreezers();
     _startTicker();
     _listenWebsocket();
-    _restoreActiveCyclesAndSync();
+    _readyFuture = _restoreActiveCyclesAndSync();
   }
+
+  /// Aguarda a restauração dos ciclos ativos e configurações locais no SQLite/SharedPreferences
+  Future<void> get ready => _readyFuture;
 
   Stream<Map<String, FreezerLiveState>> get freezersStream =>
       _freezersStreamController.stream;
@@ -169,35 +174,123 @@ final class FreezerRepository {
         );
       }
 
-      // 2. Restaura ciclo ativo se houver
+      // 2. Restaura ciclo ativo se houver (SQLite + fallback SharedPreferences)
       final cycleResult = await _freezerDao.getActiveCoolingCycle(id);
+      final savedLastOpenTemp = prefs?.getDouble('freezer_${id}_last_open_temp');
+      final savedLastCloseTemp = prefs?.getDouble('freezer_${id}_last_close_temp');
+      final savedLastCloseMs = prefs?.getInt('freezer_${id}_last_close_ms');
+      final savedLastTemp = prefs?.getDouble('freezer_${id}_last_temp');
+      final savedLastCloseAt = savedLastCloseMs != null
+          ? DateTime.fromMillisecondsSinceEpoch(savedLastCloseMs)
+          : null;
+
       if (cycleResult.isOk && cycleResult.valueOrThrow != null) {
         final cycle = cycleResult.valueOrThrow!;
-        final elapsed = DateTime.now().difference(cycle.startedAt).inSeconds;
+        final elapsed = max(
+          0,
+          DateTime.now().difference(cycle.startedAt).inSeconds,
+        );
         final remaining = max(0, cycle.expectedDurationSeconds - elapsed);
         final afterCal = _freezers[id];
         if (afterCal != null) {
+          _cycleStartedAt[id] = cycle.startedAt;
+          _executedSecondsInCycle[id] = elapsed;
           _freezers[id] = afterCal.copyWith(
+            currentTemp: savedLastTemp ?? afterCal.currentTemp,
             status: remaining == 0
                 ? FreezerStatusEnum.ready
                 : FreezerStatusEnum.cooling,
             expectedDurationSeconds: cycle.expectedDurationSeconds,
             remainingSeconds: remaining,
+            elapsedSeconds: elapsed,
             activeCycleId: cycle.id,
             baselineTemp: cycle.baselineTemp,
             peakTemp: cycle.initialPeakTemp,
+            lastDoorOpenTemp: savedLastOpenTemp,
+            lastDoorCloseTemp: savedLastCloseTemp,
+            lastDoorCloseAt: savedLastCloseAt,
             accumulatedDoorOpenSeconds: cycle.accumulatedDoorOpenSeconds,
             accumulatedPenaltySeconds: cycle.accumulatedPenaltySeconds,
             doorOpenCount: cycle.doorOpenCount,
           );
-          _executedSecondsInCycle[id] = elapsed;
+        }
+      } else {
+        // Fallback: caso o ciclo tenha sido salvo nas SharedPreferences ou apenas o contexto térmico
+        final savedCycleStartMs = prefs?.getInt('freezer_${id}_active_start_ms');
+        final savedCycleExpected = prefs?.getInt(
+          'freezer_${id}_active_expected_sec',
+        );
+        final afterCal = _freezers[id];
+        if (afterCal != null) {
+          if (savedCycleStartMs != null && savedCycleExpected != null) {
+            final startedAt = DateTime.fromMillisecondsSinceEpoch(
+              savedCycleStartMs,
+            );
+            final elapsed = max(0, DateTime.now().difference(startedAt).inSeconds);
+            final remaining = max(0, savedCycleExpected - elapsed);
+            _cycleStartedAt[id] = startedAt;
+            _executedSecondsInCycle[id] = elapsed;
+            _freezers[id] = afterCal.copyWith(
+              currentTemp: savedLastTemp ?? afterCal.currentTemp,
+              status: remaining == 0
+                  ? FreezerStatusEnum.ready
+                  : FreezerStatusEnum.cooling,
+              expectedDurationSeconds: savedCycleExpected,
+              remainingSeconds: remaining,
+              elapsedSeconds: elapsed,
+              baselineTemp: prefs?.getDouble('freezer_${id}_active_base_temp'),
+              peakTemp: prefs?.getDouble('freezer_${id}_active_peak_temp'),
+              lastDoorOpenTemp: savedLastOpenTemp,
+              lastDoorCloseTemp: savedLastCloseTemp,
+              lastDoorCloseAt: savedLastCloseAt,
+            );
+          } else if (savedLastTemp != null || savedLastCloseAt != null) {
+            _freezers[id] = afterCal.copyWith(
+              currentTemp: savedLastTemp ?? afterCal.currentTemp,
+              lastDoorOpenTemp: savedLastOpenTemp,
+              lastDoorCloseTemp: savedLastCloseTemp,
+              lastDoorCloseAt: savedLastCloseAt,
+            );
+          }
         }
       }
     }
     _emitState();
 
-    // 3. Sincroniza equipamentos (`cost_centers`) e vínculos (`freezer_sensor_bindings`) do Supabase
-    await refreshEquipmentsAndBindingsFromSupabase();
+    // 3. Sincroniza equipamentos (`cost_centers`) e vínculos (`freezer_sensor_bindings`) do Supabase em background
+    unawaited(refreshEquipmentsAndBindingsFromSupabase());
+  }
+
+  /// Recalcula imediatamente o tempo decorrido dos ciclos ativos ao retomar o app do background
+  Future<void> onAppLifecycleStateChanged({required bool isResumed}) async {
+    if (!isResumed) return;
+
+    final now = DateTime.now();
+    bool changed = false;
+    for (final entry in _freezers.entries) {
+      final id = entry.key;
+      final s = entry.value;
+      final startedAt = _cycleStartedAt[id];
+      if (startedAt != null &&
+          (s.status == FreezerStatusEnum.cooling ||
+              s.status == FreezerStatusEnum.doorOpen ||
+              s.status == FreezerStatusEnum.ready)) {
+        final elapsed = max(0, now.difference(startedAt).inSeconds);
+        final rem = max(0, s.expectedDurationSeconds - elapsed);
+        _executedSecondsInCycle[id] = elapsed;
+        _freezers[id] = s.copyWith(
+          elapsedSeconds: elapsed,
+          remainingSeconds: rem,
+          status: (s.status == FreezerStatusEnum.cooling && rem == 0)
+              ? FreezerStatusEnum.ready
+              : s.status,
+        );
+        changed = true;
+      }
+    }
+    if (changed) {
+      _emitState();
+    }
   }
 
   /// Busca equipamentos reais (`public.cost_centers` onde `type = 'equipamento'`)
@@ -401,6 +494,7 @@ final class FreezerRepository {
     }
 
     _freezers[raw.id] = updated;
+    unawaited(_persistThermalSnapshot(updated));
     _emitState();
   }
 
@@ -489,13 +583,7 @@ final class FreezerRepository {
           final baseline = _baselineTempBeforeLoad[id] ?? openedTemp;
           final peakTemp = recordedPeak;
 
-          _startAdaptiveCycleInternal(
-            freezerId: id,
-            baselineTemp: baseline,
-            peakTemp: peakTemp,
-          );
-
-          return state.copyWith(
+          final preStart = state.copyWith(
             isDoorOpen: false,
             baselineTemp: baseline,
             peakTemp: peakTemp,
@@ -504,9 +592,20 @@ final class FreezerRepository {
             lastDoorCloseAt: now,
             doorTransitions: transitions,
           );
+          _freezers[id] = preStart;
+
+          unawaited(
+            _startAdaptiveCycleInternal(
+              freezerId: id,
+              baselineTemp: baseline,
+              peakTemp: peakTemp,
+            ),
+          );
+
+          return _freezers[id] ?? preStart;
         }
 
-        return state.copyWith(
+        final afterInspect = state.copyWith(
           isDoorOpen: false,
           baselineTemp: state.baselineTemp ?? openedTemp,
           peakTemp: recordedPeak,
@@ -515,18 +614,15 @@ final class FreezerRepository {
           lastDoorCloseAt: now,
           doorTransitions: transitions,
         );
+        unawaited(_persistThermalSnapshot(afterInspect));
+        return afterInspect;
       }
 
       // CASO 2: Estava em RESFRIAMENTO (COOLING ou DOOR_OPEN)
       if (state.status == FreezerStatusEnum.cooling ||
           state.status == FreezerStatusEnum.doorOpen) {
         if (openSeconds >= state.reloadMinSeconds) {
-          _startAdaptiveCycleInternal(
-            freezerId: id,
-            baselineTemp: state.baselineTemp ?? openedTemp,
-            peakTemp: recordedPeak,
-          );
-          return state.copyWith(
+          final preReload = state.copyWith(
             isDoorOpen: false,
             status: FreezerStatusEnum.cooling,
             peakTemp: recordedPeak,
@@ -535,6 +631,16 @@ final class FreezerRepository {
             lastDoorCloseAt: now,
             doorTransitions: transitions,
           );
+          _freezers[id] = preReload;
+
+          unawaited(
+            _startAdaptiveCycleInternal(
+              freezerId: id,
+              baselineTemp: state.baselineTemp ?? openedTemp,
+              peakTemp: recordedPeak,
+            ),
+          );
+          return _freezers[id] ?? preReload;
         }
 
         final penaltySeconds = _engine.calculateDoorPenalty(
@@ -552,13 +658,14 @@ final class FreezerRepository {
         if (state.activeCycleId != null) {
           _freezerDao.updateCoolingCycleMetrics(
             cycleId: state.activeCycleId!,
+            expectedDurationSeconds: newExpected,
             accumulatedDoorOpenSeconds: newAccDoorOpen,
             accumulatedPenaltySeconds: newAccPenalty,
             doorOpenCount: newDoorOpenCount,
           );
         }
 
-        return state.copyWith(
+        final afterPenalty = state.copyWith(
           isDoorOpen: false,
           status: FreezerStatusEnum.cooling,
           expectedDurationSeconds: newExpected,
@@ -572,6 +679,9 @@ final class FreezerRepository {
           lastDoorCloseAt: now,
           doorTransitions: transitions,
         );
+        unawaited(_persistActiveCyclePrefs(afterPenalty));
+        unawaited(_persistThermalSnapshot(afterPenalty));
+        return afterPenalty;
       }
 
       // CASO 3: Estava PRONTO (READY)
@@ -585,10 +695,22 @@ final class FreezerRepository {
             tempRise: tempRise,
           );
           final extraSec = extensionSec + penaltySec;
-          return state.copyWith(
+          final newExpected = state.expectedDurationSeconds + extraSec;
+          if (state.activeCycleId != null) {
+            _freezerDao.updateCoolingCycleMetrics(
+              cycleId: state.activeCycleId!,
+              expectedDurationSeconds: newExpected,
+              accumulatedDoorOpenSeconds:
+                  state.accumulatedDoorOpenSeconds + openSeconds,
+              accumulatedPenaltySeconds:
+                  state.accumulatedPenaltySeconds + penaltySec,
+              doorOpenCount: state.doorOpenCount + 1,
+            );
+          }
+          final afterSoftDoor = state.copyWith(
             isDoorOpen: false,
             status: FreezerStatusEnum.cooling,
-            expectedDurationSeconds: state.expectedDurationSeconds + extraSec,
+            expectedDurationSeconds: newExpected,
             remainingSeconds: extraSec,
             accumulatedPenaltySeconds:
                 state.accumulatedPenaltySeconds + penaltySec,
@@ -602,18 +724,13 @@ final class FreezerRepository {
             lastDoorCloseAt: now,
             doorTransitions: transitions,
           );
+          unawaited(_persistActiveCyclePrefs(afterSoftDoor));
+          unawaited(_persistThermalSnapshot(afterSoftDoor));
+          return afterSoftDoor;
         }
 
         if (openSeconds >= state.reloadMinSeconds) {
-          unawaited(recordFeedback(id, FreezerFeedbackEnum.autoOk));
-          unawaited(
-            _startAdaptiveCycleInternal(
-              freezerId: id,
-              baselineTemp: state.baselineTemp ?? openedTemp,
-              peakTemp: recordedPeak,
-            ),
-          );
-          return state.copyWith(
+          final preReadyReload = state.copyWith(
             isDoorOpen: false,
             status: FreezerStatusEnum.cooling,
             peakTemp: recordedPeak,
@@ -622,9 +739,20 @@ final class FreezerRepository {
             lastDoorCloseAt: now,
             doorTransitions: transitions,
           );
+          _freezers[id] = preReadyReload;
+          unawaited(
+            recordFeedback(id, FreezerFeedbackEnum.autoOk).then((_) {
+              return _startAdaptiveCycleInternal(
+                freezerId: id,
+                baselineTemp: state.baselineTemp ?? openedTemp,
+                peakTemp: recordedPeak,
+              );
+            }),
+          );
+          return _freezers[id] ?? preReadyReload;
         }
 
-        return state.copyWith(
+        final afterReadyClose = state.copyWith(
           isDoorOpen: false,
           status: FreezerStatusEnum.feedbackPending,
           feedbackCountdownSeconds: 30,
@@ -634,9 +762,11 @@ final class FreezerRepository {
           lastDoorCloseAt: now,
           doorTransitions: transitions,
         );
+        unawaited(_persistThermalSnapshot(afterReadyClose));
+        return afterReadyClose;
       }
 
-      return state.copyWith(
+      final afterClose = state.copyWith(
         isDoorOpen: false,
         peakTemp: recordedPeak,
         lastDoorOpenTemp: openedTemp,
@@ -644,6 +774,8 @@ final class FreezerRepository {
         lastDoorCloseAt: now,
         doorTransitions: transitions,
       );
+      unawaited(_persistThermalSnapshot(afterClose));
+      return afterClose;
     }
   }
 
@@ -727,32 +859,49 @@ final class FreezerRepository {
     final initialStatus = initialRemaining == 0
         ? FreezerStatusEnum.ready
         : FreezerStatusEnum.cooling;
-
-    final startRes = await _freezerDao.startCoolingCycle(
-      batchId: activeBatch?.id,
-      freezerId: freezerId,
-      expectedSeconds: baseSeconds,
-      baselineTemp: baselineTemp,
-      initialPeakTemp: peakTemp,
+    final effectiveStartedAt = DateTime.now().subtract(
+      Duration(seconds: safeElapsed),
     );
 
-    final cycleId = startRes.valueOrNull;
-
+    // 1. Hot Path (0ms): Atualiza estado em memória imediatamente antes do await do SQLite
+    _cycleStartedAt[freezerId] = effectiveStartedAt;
     _executedSecondsInCycle[freezerId] = safeElapsed;
-    _freezers[freezerId] = current.copyWith(
+    final updatedImmediate = current.copyWith(
       status: initialStatus,
       expectedDurationSeconds: baseSeconds,
       remainingSeconds: initialRemaining,
       elapsedSeconds: safeElapsed,
       baselineTemp: baselineTemp,
       peakTemp: peakTemp,
-      activeCycleId: cycleId,
       accumulatedPenaltySeconds: 0,
       accumulatedDoorOpenSeconds: 0,
       doorOpenCount: 0,
       clearFeedbackCountdown: true,
       calibratedBaseSeconds: baseSeconds,
     );
+    _freezers[freezerId] = updatedImmediate;
+    _emitState();
+
+    unawaited(_persistActiveCyclePrefs(updatedImmediate, startedAt: effectiveStartedAt));
+    unawaited(_persistThermalSnapshot(updatedImmediate));
+
+    // 2. Warm Path: Persiste no SQLite garantindo que f1/f2 existam na tabela pai
+    await _freezerDao.ensureSensorFreezersExist();
+    final startRes = await _freezerDao.startCoolingCycle(
+      batchId: activeBatch?.id,
+      freezerId: freezerId,
+      expectedSeconds: baseSeconds,
+      startedAt: effectiveStartedAt,
+      baselineTemp: baselineTemp,
+      initialPeakTemp: peakTemp,
+    );
+
+    final cycleId = startRes.valueOrNull;
+    final latest = _freezers[freezerId];
+    if (latest != null && cycleId != null) {
+      _freezers[freezerId] = latest.copyWith(activeCycleId: cycleId);
+      _emitState();
+    }
 
     if (initialStatus == FreezerStatusEnum.ready) {
       if (!_cycleReadyController.isClosed) {
@@ -761,8 +910,6 @@ final class FreezerRepository {
     } else if (!_cycleStartedController.isClosed) {
       _cycleStartedController.add(freezerId);
     }
-
-    _emitState();
   }
 
   /// Inicia um novo ciclo descontando o tempo já decorrido desde o último fechamento da porta.
@@ -851,9 +998,20 @@ final class FreezerRepository {
         lastFeedback: feedback.code,
       );
 
-      _freezers[freezerId] = current.copyWith(
+      final newExpected = current.expectedDurationSeconds + extensionSec;
+      if (current.activeCycleId != null) {
+        await _freezerDao.updateCoolingCycleMetrics(
+          cycleId: current.activeCycleId!,
+          expectedDurationSeconds: newExpected,
+          accumulatedDoorOpenSeconds: current.accumulatedDoorOpenSeconds,
+          accumulatedPenaltySeconds: current.accumulatedPenaltySeconds,
+          doorOpenCount: current.doorOpenCount,
+        );
+      }
+
+      final afterSoft = current.copyWith(
         status: FreezerStatusEnum.cooling,
-        expectedDurationSeconds: current.expectedDurationSeconds + extensionSec,
+        expectedDurationSeconds: newExpected,
         remainingSeconds: extensionSec,
         elapsedSeconds: executedSeconds,
         clearFeedbackCountdown: true,
@@ -861,6 +1019,8 @@ final class FreezerRepository {
         calibratedBaseSeconds: newCalibrated,
         isCalibrated: true,
       );
+      _freezers[freezerId] = afterSoft;
+      unawaited(_persistActiveCyclePrefs(afterSoft));
 
       _emitState();
       return;
@@ -875,6 +1035,8 @@ final class FreezerRepository {
         doorOpenCount: current.doorOpenCount,
         feedback: feedback.code,
       );
+    } else {
+      await _freezerDao.cancelActiveCoolingCycles(freezerId);
     }
 
     final newCalibrated = _engine.adaptCalibration(
@@ -895,7 +1057,9 @@ final class FreezerRepository {
       await prefs.setInt('freezer_${freezerId}_target_sec', newCalibrated);
     } catch (_) {}
 
+    _cycleStartedAt.remove(freezerId);
     _executedSecondsInCycle.remove(freezerId);
+    unawaited(_clearActiveCyclePrefs(freezerId));
     _freezers[freezerId] = current.copyWith(
       status: FreezerStatusEnum.idle,
       remainingSeconds: newCalibrated,
@@ -916,7 +1080,11 @@ final class FreezerRepository {
     final current = _freezers[freezerId];
     if (current == null) return;
 
+    _cycleStartedAt.remove(freezerId);
     _executedSecondsInCycle.remove(freezerId);
+    unawaited(_freezerDao.cancelActiveCoolingCycles(freezerId));
+    unawaited(_clearActiveCyclePrefs(freezerId));
+
     _freezers[freezerId] = current.copyWith(
       status: FreezerStatusEnum.idle,
       elapsedSeconds: 0,
@@ -930,6 +1098,76 @@ final class FreezerRepository {
     );
 
     _emitState();
+  }
+
+  Future<void> _persistActiveCyclePrefs(
+    FreezerLiveState state, {
+    DateTime? startedAt,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final id = state.freezerId;
+      final resolvedStart =
+          startedAt ??
+          _cycleStartedAt[id] ??
+          DateTime.now().subtract(Duration(seconds: state.elapsedSeconds));
+      await prefs.setInt(
+        'freezer_${id}_active_start_ms',
+        resolvedStart.millisecondsSinceEpoch,
+      );
+      await prefs.setInt(
+        'freezer_${id}_active_expected_sec',
+        state.expectedDurationSeconds,
+      );
+      if (state.baselineTemp != null) {
+        await prefs.setDouble(
+          'freezer_${id}_active_base_temp',
+          state.baselineTemp!,
+        );
+      }
+      if (state.peakTemp != null) {
+        await prefs.setDouble(
+          'freezer_${id}_active_peak_temp',
+          state.peakTemp!,
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _clearActiveCyclePrefs(String freezerId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('freezer_${freezerId}_active_start_ms');
+      await prefs.remove('freezer_${freezerId}_active_expected_sec');
+      await prefs.remove('freezer_${freezerId}_active_base_temp');
+      await prefs.remove('freezer_${freezerId}_active_peak_temp');
+    } catch (_) {}
+  }
+
+  Future<void> _persistThermalSnapshot(FreezerLiveState state) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final id = state.freezerId;
+      await prefs.setDouble('freezer_${id}_last_temp', state.currentTemp);
+      if (state.lastDoorOpenTemp != null) {
+        await prefs.setDouble(
+          'freezer_${id}_last_open_temp',
+          state.lastDoorOpenTemp!,
+        );
+      }
+      if (state.lastDoorCloseTemp != null) {
+        await prefs.setDouble(
+          'freezer_${id}_last_close_temp',
+          state.lastDoorCloseTemp!,
+        );
+      }
+      if (state.lastDoorCloseAt != null) {
+        await prefs.setInt(
+          'freezer_${id}_last_close_ms',
+          state.lastDoorCloseAt!.millisecondsSinceEpoch,
+        );
+      }
+    } catch (_) {}
   }
 
   /// Reinicia manualmente a contagem do ciclo
