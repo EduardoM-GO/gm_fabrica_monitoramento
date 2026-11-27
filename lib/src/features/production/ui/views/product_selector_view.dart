@@ -26,6 +26,7 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   String? _selectedCategory = _eggFilterKey;
+  bool _forceCarryOverPrompt = false;
 
   @override
   void initState() {
@@ -155,13 +156,212 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
     }
   }
 
+  /// Pergunta ao operador se deseja continuar a última caixa aberta (ex: 23 un. do lote anterior -> faltam 27)
+  /// ou começar uma caixa nova do zero (0 / 50).
+  /// Retorna `null` se o operador cancelar o diálogo, `0` para caixa nova ou `> 0` para continuar caixa aberta.
+  Future<int?> _promptCarryOverUnitsDialog(
+    BuildContext context, {
+    required ProductModel product,
+    required int suggestedCarryOver,
+    String? sourceProductName,
+  }) async {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final boxCap = product.defaultBoxCapacity > 0
+        ? product.defaultBoxCapacity
+        : 50;
+    int selectedCarry = suggestedCarryOver > 0
+        ? suggestedCarryOver.clamp(1, boxCap - 1)
+        : (boxCap ~/ 2);
+
+    return showDialog<int>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            final remainingForFirst = (boxCap - selectedCarry).clamp(
+              1,
+              boxCap - 1,
+            );
+            return AlertDialog(
+              key: const ValueKey('carry_over_box_dialog'),
+              backgroundColor: colorScheme.surfaceContainerHigh,
+              shape: RoundedRectangleBorder(
+                borderRadius: AppSpacing.borderRadiusLg,
+                side: BorderSide(color: colorScheme.outlineVariant),
+              ),
+              title: Row(
+                children: [
+                  Icon(
+                    Icons.inventory_2_rounded,
+                    color: AppTheme.cocoaGold,
+                    size: 22,
+                  ),
+                  const SizedBox(width: AppSpacing.xs),
+                  Expanded(
+                    child: Text(
+                      'Continuar Última Caixa Aberta?',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      suggestedCarryOver > 0
+                          ? 'A última caixa de ${sourceProductName ?? product.name} terminou com $suggestedCarryOver un. (capacidade: $boxCap un.).'
+                          : 'Informe quantos ovos da produção anterior já estão na caixa aberta (capacidade: $boxCap un.):',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: AppSpacing.sm),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceContainerHighest,
+                        borderRadius: AppSpacing.borderRadiusMd,
+                        border: Border.all(
+                          color: AppTheme.cocoaGold.withValues(alpha: 0.55),
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              IconButton.filledTonal(
+                                key: const ValueKey('carry_over_dec_btn'),
+                                onPressed: selectedCarry > 1
+                                    ? () => setDialogState(
+                                        () => selectedCarry -= 1,
+                                      )
+                                    : null,
+                                icon: const Icon(Icons.remove_rounded),
+                              ),
+                              const SizedBox(width: AppSpacing.md),
+                              Column(
+                                children: [
+                                  Text(
+                                    '$selectedCarry un. na caixa',
+                                    style: theme.textTheme.titleLarge?.copyWith(
+                                      fontFamily: AppTheme.fontHeading,
+                                      fontWeight: FontWeight.w900,
+                                      color: AppTheme.cocoaGold,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                                  ),
+                                  Text(
+                                    '1ª caixa fecha com +$remainingForFirst ovos (0 / $remainingForFirst)',
+                                    style: theme.textTheme.labelSmall?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      color: colorScheme.onSurfaceVariant,
+                                      fontFeatures: const [
+                                        FontFeature.tabularFigures(),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(width: AppSpacing.md),
+                              IconButton.filledTonal(
+                                key: const ValueKey('carry_over_inc_btn'),
+                                onPressed: selectedCarry < boxCap - 1
+                                    ? () => setDialogState(
+                                        () => selectedCarry += 1,
+                                      )
+                                    : null,
+                                icon: const Icon(Icons.add_rounded),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '• O contador TOTAL do dia começará em 0 (contando apenas os ovos produzidos hoje).\n• Após fechar essa 1ª caixa (+$remainingForFirst un.), as próximas voltam para 0 / $boxCap.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 11.5,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, null),
+                  child: const Text('Cancelar'),
+                ),
+                OutlinedButton(
+                  key: const ValueKey('start_fresh_box_btn'),
+                  onPressed: () => Navigator.pop(dialogContext, 0),
+                  child: Text(
+                    'Caixa Nova (0 / $boxCap)',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                FilledButton.icon(
+                  key: const ValueKey('confirm_carry_over_box_btn'),
+                  onPressed: () => Navigator.pop(dialogContext, selectedCarry),
+                  icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
+                  label: Text(
+                    'Continuar Caixa (0 / $remainingForFirst)',
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _confirmAndSwitchProduct(
     BuildContext context,
     ProductModel newProduct,
   ) async {
     final activeBatch = widget.viewModel.activeBatch.value;
+    final boxCap = newProduct.defaultBoxCapacity > 0
+        ? newProduct.defaultBoxCapacity
+        : 50;
+
     if (activeBatch == null) {
-      await widget.viewModel.startBatch(newProduct);
+      int carryOver = 0;
+      final remRes = await widget.viewModel.getLastOpenBoxRemainder(
+        productId: newProduct.id,
+        targetBoxCapacity: boxCap,
+      );
+      final detectedCarry = remRes.valueOrNull?.carryOverUnits ?? 0;
+      final sourceName = remRes.valueOrNull?.sourceProductName;
+
+      if ((detectedCarry > 0 || _forceCarryOverPrompt) && context.mounted) {
+        final chosen = await _promptCarryOverUnitsDialog(
+          context,
+          product: newProduct,
+          suggestedCarryOver: detectedCarry,
+          sourceProductName: sourceName,
+        );
+        if (chosen == null || !context.mounted) return;
+        carryOver = chosen;
+      }
+
+      await widget.viewModel.startBatch(
+        newProduct,
+        carryOverUnits: carryOver,
+      );
       if (context.mounted) Navigator.pop(context);
       return;
     }
@@ -171,6 +371,25 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
       return;
     }
 
+    // Se o lote atual tem uma caixa incompleta (ou se havia sobra anterior deste novo produto),
+    // calcula a sugestão de sobra para oferecer no modal de troca
+    final currentBoxOpenUnits = widget.viewModel.currentBoxCount.value;
+    final currentCarry = widget.viewModel.carryOverUnits.value;
+    final currentPhysicalInBox = widget.viewModel.isCompletingCarryOverBox.value
+        ? (currentCarry + currentBoxOpenUnits)
+        : currentBoxOpenUnits;
+
+    final remRes = await widget.viewModel.getLastOpenBoxRemainder(
+      productId: newProduct.id,
+      targetBoxCapacity: boxCap,
+    );
+    final pastProductCarry = remRes.valueOrNull?.carryOverUnits ?? 0;
+    final suggestedCarry = currentPhysicalInBox > 0 &&
+            currentPhysicalInBox < boxCap
+        ? currentPhysicalInBox
+        : pastProductCarry;
+
+    if (!context.mounted) return;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
@@ -223,7 +442,24 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
     );
 
     if (confirmed == true && context.mounted) {
-      await widget.viewModel.switchProduct(newProduct);
+      int carryOver = 0;
+      if ((suggestedCarry > 0 || _forceCarryOverPrompt) && context.mounted) {
+        final chosen = await _promptCarryOverUnitsDialog(
+          context,
+          product: newProduct,
+          suggestedCarryOver: suggestedCarry,
+          sourceProductName: currentPhysicalInBox > 0
+              ? activeBatch.product.name
+              : remRes.valueOrNull?.sourceProductName,
+        );
+        if (chosen == null || !context.mounted) return;
+        carryOver = chosen;
+      }
+
+      await widget.viewModel.switchProduct(
+        newProduct,
+        carryOverUnits: carryOver,
+      );
       if (context.mounted) Navigator.pop(context);
     }
   }
@@ -490,6 +726,33 @@ class _ProductSelectorViewState extends State<ProductSelectorView> {
                                     ),
                                   ),
                                 ],
+                                const SizedBox(width: 6),
+                                FilterChip(
+                                  key: const ValueKey(
+                                    'toggle_continue_open_box_chip',
+                                  ),
+                                  selected: _forceCarryOverPrompt,
+                                  visualDensity: isTablet
+                                      ? VisualDensity.standard
+                                      : VisualDensity.compact,
+                                  avatar: Icon(
+                                    Icons.inventory_2_outlined,
+                                    size: isTablet ? 18 : 15,
+                                    color: _forceCarryOverPrompt
+                                        ? AppTheme.cocoaGold
+                                        : colorScheme.onSurfaceVariant,
+                                  ),
+                                  label: Text(
+                                    'Continuar Caixa Aberta',
+                                    style: TextStyle(
+                                      fontSize: isTablet ? 12.5 : 11,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  onSelected: (val) => setState(
+                                    () => _forceCarryOverPrompt = val,
+                                  ),
+                                ),
                               ],
                             ),
                           ),

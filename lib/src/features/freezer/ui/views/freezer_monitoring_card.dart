@@ -1187,6 +1187,7 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
             final recovered = item.recoveredDegrees.value;
             final doorOpenCount = item.doorOpenCount.value;
             final penaltySec = item.accumulatedPenaltySeconds.value;
+            final thermalCompSec = item.thermalCompensationSeconds.value;
             final currentTemp = item.currentTemp.value;
             final hasDoorShift =
                 delta.abs() >= 0.1 || recovered >= 0.1 || doorOpenCount > 0;
@@ -1195,6 +1196,7 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
                 isDefrosting ||
                 hasDoorShift ||
                 penaltySec > 0 ||
+                thermalCompSec != 0 ||
                 accDefrostSec > 0;
 
             if (!showHeaderRow) {
@@ -1308,18 +1310,34 @@ final class FreezerThermalCurvePanel extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (penaltySec > 0 || accDefrostSec > 0)
+                  if (penaltySec > 0 ||
+                      accDefrostSec > 0 ||
+                      thermalCompSec != 0)
                     FittedBox(
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerRight,
-                      child: Text(
-                        '+${penaltySec + accDefrostSec}s no alvo',
-                        style: TextStyle(
-                          fontSize: effectiveLarge ? 11.5 : 9,
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.warningAmber.withValues(alpha: 0.8),
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
+                      child: Builder(
+                        builder: (_) {
+                          final totalDeltaSec =
+                              penaltySec + accDefrostSec + thermalCompSec;
+                          if (totalDeltaSec == 0) {
+                            return const SizedBox.shrink();
+                          }
+                          final prefix = totalDeltaSec > 0 ? '+' : '';
+                          return Text(
+                            '$prefix${totalDeltaSec}s no alvo',
+                            style: TextStyle(
+                              fontSize: effectiveLarge ? 11.5 : 9,
+                              fontWeight: FontWeight.w600,
+                              color: totalDeltaSec > 0
+                                  ? AppTheme.warningAmber.withValues(alpha: 0.8)
+                                  : colorScheme.tertiary,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          );
+                        },
                       ),
                     ),
                 ],

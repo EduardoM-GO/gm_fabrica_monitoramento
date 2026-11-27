@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:drift/drift.dart';
 import 'package:gm_fabrica_monitoramento/src/data/local/enum/trigger_freezer_enum.dart';
 import 'package:gm_fabrica_monitoramento/src/domain/models/freezer_event_model.dart';
@@ -45,7 +47,7 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
                 idSensor: 1,
                 name: 'Sensor 1 (F1)',
                 defaultCoolingSeconds: const Value(480),
-                targetTemperature: const Value(4.0),
+                targetTemperature: const Value(-2.0),
               ),
             );
           }
@@ -57,12 +59,13 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
                 idSensor: 2,
                 name: 'Sensor 2 (F2)',
                 defaultCoolingSeconds: const Value(480),
-                targetTemperature: const Value(-18.0),
+                targetTemperature: const Value(-2.0),
               ),
             );
           }
 
           // Atualiza registros legados (1200s / 900s) para o novo padrão inicial de 8 minutos (480s)
+          // e unifica targetTemperature legado (-18.0) para a faixa real de cristalização (-2.0 °C)
           await (update(freezersTable)
                 ..where(
                   (f) => f.defaultCoolingSeconds.isIn(const [900, 1200]),
@@ -70,6 +73,13 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
               .write(
                 const FreezersTableCompanion(
                   defaultCoolingSeconds: Value(480),
+                ),
+              );
+          await (update(freezersTable)
+                ..where((f) => f.targetTemperature.equals(-18.0)))
+              .write(
+                const FreezersTableCompanion(
+                  targetTemperature: Value(-2.0),
                 ),
               );
 
@@ -342,18 +352,44 @@ final class FreezerDao extends DatabaseAccessor<AppDatabase>
       final now = DateTime.now();
       final effectiveStart = startedAt ?? now;
 
-      // Encerra qualquer ciclo anterior que tenha ficado aberto para este freezer
-      await (update(coolingCyclesTable)
+      // Encerra qualquer ciclo anterior que tenha ficado aberto para este freezer.
+      // Se o ciclo anterior já havia atingido >= 85% do tempo esperado (e não é um ciclo zumbi > 2h),
+      // preserva o actualDurationSeconds real e marca como 'auto_ok' em vez de 'superseded' com NULL!
+      final openCycles = await (select(coolingCyclesTable)
             ..where(
               (c) => c.freezerId.equals(freezerId) & c.finishedAt.isNull(),
             ))
-          .write(
-            CoolingCyclesTableCompanion(
-              finishedAt: Value(now),
-              feedback: const Value('superseded'),
-              syncStatus: const Value(SyncStatusEnum.updating),
-            ),
-          );
+          .get();
+
+      for (final open in openCycles) {
+        final elapsedWall = max(0, now.difference(open.startedAt).inSeconds);
+        final isStaleZombie = elapsedWall > 7200; // > 2 horas sem fechar (ex: virada de turno/noite)
+        final completedEnough =
+            !isStaleZombie &&
+            open.expectedDurationSeconds > 0 &&
+            elapsedWall >= (open.expectedDurationSeconds * 0.85).round();
+
+        final resolvedFinishAt = isStaleZombie
+            ? open.startedAt.add(
+                Duration(seconds: open.expectedDurationSeconds),
+              )
+            : now;
+        final resolvedActualSec = isStaleZombie
+            ? open.expectedDurationSeconds
+            : elapsedWall;
+
+        await (update(coolingCyclesTable)..where((c) => c.id.equals(open.id)))
+            .write(
+              CoolingCyclesTableCompanion(
+                finishedAt: Value(resolvedFinishAt),
+                actualDurationSeconds: Value(resolvedActualSec),
+                feedback: Value(
+                  (completedEnough || isStaleZombie) ? 'auto_ok' : 'superseded',
+                ),
+                syncStatus: const Value(SyncStatusEnum.updating),
+              ),
+            );
+      }
 
       final cycleId = GeneratorId.getid();
 

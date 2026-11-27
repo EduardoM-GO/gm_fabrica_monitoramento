@@ -25,17 +25,20 @@ final class FreezerRepository {
   final CatalogRemoteDatasource? remoteDatasource;
 
   StreamSubscription? _wsSubscription;
+  StreamSubscription? _activeBatchSub;
   Timer? _tickerTimer;
   late final Future<void> _readyFuture;
 
   final Map<String, FreezerLiveState> _freezers = {};
   final Map<String, DateTime> _cycleStartedAt = {};
+  final Map<String, DateTime> _cycleBecameReadyAt = {};
   final Map<String, DateTime> _doorOpenSince = {};
   final Map<String, double> _tempWhenOpened = {};
   final Map<String, double> _baselineTempBeforeLoad = {};
   final Map<String, int> _executedSecondsInCycle = {};
   final Map<String, double> _lastLoggedEventTemp = {};
   final Map<String, DateTime> _lastLoggedEventAt = {};
+  final Map<String, bool> _postCloseInertiaApplied = {};
 
   List<EquipmentModel> _availableEquipments = const [];
   bool _isSyncingEquipments = false;
@@ -69,6 +72,7 @@ final class FreezerRepository {
     _initDefaultFreezers();
     _startTicker();
     _listenWebsocket();
+    _listenActiveBatchProduct();
     _readyFuture = _restoreActiveCyclesAndSync();
   }
 
@@ -115,7 +119,7 @@ final class FreezerRepository {
       freezerId: 'f2',
       sensorIndex: 2,
       name: 'Sensor 2 (F2)',
-      currentTemp: -18.0,
+      currentTemp: 2.0,
       isDoorOpen: false,
       isSensorOk: true,
       status: FreezerStatusEnum.idle,
@@ -156,24 +160,31 @@ final class FreezerRepository {
       prefs = null;
     }
 
+    final activeProductId = _productionRepo.currentActiveBatch?.product.id;
+
     for (final id in ['f1', 'f2']) {
       final savedUnload = prefs?.getInt('freezer_${id}_unload_sec');
       final savedReload = prefs?.getInt('freezer_${id}_reload_sec');
       final savedTarget = prefs?.getInt('freezer_${id}_target_sec');
+      final savedLead = prefs?.getInt('freezer_${id}_door_lead_sec') ?? 10;
 
-      // 1. Carrega calibração/tempo base salvo
-      final calResult = await _freezerDao.getCalibration(id);
+      // 1. Carrega calibração/tempo base salvo vinculado ao produto ativo (com fallback genérico)
+      final calResult = await _freezerDao.getCalibration(
+        id,
+        productId: activeProductId,
+      );
       final current = _freezers[id];
       if (current != null) {
         final cal = calResult.valueOrNull;
         final resolvedBase =
-            savedTarget ??
             cal?.calibratedDurationSeconds ??
+            savedTarget ??
             current.calibratedBaseSeconds;
 
         _freezers[id] = current.copyWith(
           unloadMinSeconds: savedUnload ?? current.unloadMinSeconds,
           reloadMinSeconds: savedReload ?? current.reloadMinSeconds,
+          predictedDoorLeadSeconds: savedLead.clamp(5, 20),
           calibratedBaseSeconds: resolvedBase,
           expectedDurationSeconds: resolvedBase,
           remainingSeconds: resolvedBase,
@@ -193,34 +204,54 @@ final class FreezerRepository {
 
       if (cycleResult.isOk && cycleResult.valueOrThrow != null) {
         final cycle = cycleResult.valueOrThrow!;
-        final elapsed = max(
+        final rawElapsed = max(
           0,
           DateTime.now().difference(cycle.startedAt).inSeconds,
         );
-        final remaining = max(0, cycle.expectedDurationSeconds - elapsed);
-        final afterCal = _freezers[id];
-        if (afterCal != null) {
-          _cycleStartedAt[id] = cycle.startedAt;
-          _executedSecondsInCycle[id] = elapsed;
-          _freezers[id] = afterCal.copyWith(
-            currentTemp: savedLastTemp ?? afterCal.currentTemp,
-            status: remaining == 0
-                ? FreezerStatusEnum.ready
-                : FreezerStatusEnum.cooling,
-            expectedDurationSeconds: cycle.expectedDurationSeconds,
-            remainingSeconds: remaining,
-            elapsedSeconds: elapsed,
-            activeCycleId: cycle.id,
-            baselineTemp: cycle.baselineTemp,
-            peakTemp: cycle.initialPeakTemp,
-            lastDoorOpenTemp: savedLastOpenTemp,
-            lastDoorCloseTemp: savedLastCloseTemp,
-            lastDoorCloseAt: savedLastCloseAt,
+        // Se um ciclo ficou esquecido aberto por > 2h (ex: da noite anterior), encerra automaticamente no banco
+        if (rawElapsed > 7200) {
+          await _freezerDao.finishCoolingCycle(
+            cycleId: cycle.id,
+            actualSeconds: cycle.expectedDurationSeconds,
             accumulatedDoorOpenSeconds: cycle.accumulatedDoorOpenSeconds,
             accumulatedPenaltySeconds: cycle.accumulatedPenaltySeconds,
             doorOpenCount: cycle.doorOpenCount,
             accumulatedDefrostSeconds: cycle.accumulatedDefrostSeconds,
+            feedback: 'auto_ok',
           );
+          unawaited(_clearActiveCyclePrefs(id));
+        } else {
+          final elapsed = min(rawElapsed, cycle.expectedDurationSeconds);
+          final remaining = max(0, cycle.expectedDurationSeconds - elapsed);
+          final afterCal = _freezers[id];
+          if (afterCal != null) {
+            _cycleStartedAt[id] = cycle.startedAt;
+            _executedSecondsInCycle[id] = elapsed;
+            if (remaining == 0) {
+              _cycleBecameReadyAt[id] = cycle.startedAt.add(
+                Duration(seconds: cycle.expectedDurationSeconds),
+              );
+            }
+            _freezers[id] = afterCal.copyWith(
+              currentTemp: savedLastTemp ?? afterCal.currentTemp,
+              status: remaining == 0
+                  ? FreezerStatusEnum.ready
+                  : FreezerStatusEnum.cooling,
+              expectedDurationSeconds: cycle.expectedDurationSeconds,
+              remainingSeconds: remaining,
+              elapsedSeconds: elapsed,
+              activeCycleId: cycle.id,
+              baselineTemp: cycle.baselineTemp,
+              peakTemp: cycle.initialPeakTemp,
+              lastDoorOpenTemp: savedLastOpenTemp,
+              lastDoorCloseTemp: savedLastCloseTemp,
+              lastDoorCloseAt: savedLastCloseAt,
+              accumulatedDoorOpenSeconds: cycle.accumulatedDoorOpenSeconds,
+              accumulatedPenaltySeconds: cycle.accumulatedPenaltySeconds,
+              doorOpenCount: cycle.doorOpenCount,
+              accumulatedDefrostSeconds: cycle.accumulatedDefrostSeconds,
+            );
+          }
         }
       } else {
         // Fallback: caso o ciclo tenha sido salvo nas SharedPreferences ou apenas o contexto térmico
@@ -470,8 +501,8 @@ final class FreezerRepository {
         sensorIndex: current.sensorIndex,
         costCenterId: equipment?.id,
         costCenterName: equipment?.name,
-        targetTemperature: sensorKey == 'f2' ? -18.0 : 4.0,
-        criticalTemperature: sensorKey == 'f2' ? -5.0 : 8.0,
+        targetTemperature: -2.0,
+        criticalTemperature: 8.0,
         defaultCoolingSeconds: current.calibratedBaseSeconds,
         unloadMinSeconds: current.unloadMinSeconds,
         reloadMinSeconds: current.reloadMinSeconds,
@@ -491,6 +522,49 @@ final class FreezerRepository {
     },
     tag: 'FreezerRepository.bindEquipmentToSensor',
   );
+
+  void _listenActiveBatchProduct() {
+    _activeBatchSub = _productionRepo.activeBatchStream.listen((batch) {
+      if (batch == null) {
+        // Quando o lote do dia é encerrado, finaliza ciclos de freezer deixados em ready/feedbackPending
+        for (final id in ['f1', 'f2']) {
+          final current = _freezers[id];
+          if (current != null &&
+              (current.status == FreezerStatusEnum.ready ||
+                  current.status == FreezerStatusEnum.feedbackPending)) {
+            unawaited(recordFeedback(id, FreezerFeedbackEnum.autoOk));
+          }
+        }
+        return;
+      }
+      unawaited(_reloadCalibrationForProduct(batch.product.id));
+    });
+  }
+
+  Future<void> _reloadCalibrationForProduct(String productId) async {
+    bool changed = false;
+    for (final id in ['f1', 'f2']) {
+      final calRes = await _freezerDao.getCalibration(id, productId: productId);
+      final cal = calRes.valueOrNull;
+      final current = _freezers[id];
+      if (current != null && cal != null) {
+        final isIdle = current.status == FreezerStatusEnum.idle;
+        final newBase = cal.calibratedDurationSeconds;
+        if (current.calibratedBaseSeconds != newBase) {
+          _freezers[id] = current.copyWith(
+            calibratedBaseSeconds: newBase,
+            expectedDurationSeconds: isIdle
+                ? newBase
+                : current.expectedDurationSeconds,
+            remainingSeconds: isIdle ? newBase : current.remainingSeconds,
+            isCalibrated: cal.sampleCount > 0,
+          );
+          changed = true;
+        }
+      }
+    }
+    if (changed) _emitState();
+  }
 
   void _listenWebsocket() {
     _wsSubscription = _wsService.rawDataStream.listen((data) {
@@ -548,6 +622,38 @@ final class FreezerRepository {
 
     if (doorChanged) {
       updated = _handleDoorTransition(updated, raw.isDoorOpen, raw.temp, now);
+    } else if (!raw.isDoorOpen &&
+        updated.status == FreezerStatusEnum.cooling &&
+        updated.lastDoorCloseAt != null &&
+        !(_postCloseInertiaApplied[raw.id] ?? false)) {
+      // Captura a inércia térmica pós-fechamento da porta (ex: F2 que continua subindo +1.5 a +3.5 °C
+      // nos primeiros 15-40s após fechar a porta) e ajusta o tempo dinâmico do ciclo uma única vez.
+      final sinceClose = now.difference(updated.lastDoorCloseAt!).inSeconds;
+      final closeTemp = updated.lastDoorCloseTemp ?? raw.temp;
+      final postCloseRise = raw.temp - closeTemp;
+      if (sinceClose >= 10 && sinceClose <= 45 && postCloseRise >= 1.2) {
+        _postCloseInertiaApplied[raw.id] = true;
+        final extraInertiaSec = (postCloseRise * 18.0).round().clamp(15, 120);
+        final newExpected = updated.expectedDurationSeconds + extraInertiaSec;
+        final newRemaining = updated.remainingSeconds + extraInertiaSec;
+        final newComp = updated.thermalCompensationSeconds + extraInertiaSec;
+        updated = updated.copyWith(
+          expectedDurationSeconds: newExpected,
+          remainingSeconds: newRemaining,
+          thermalCompensationSeconds: newComp,
+        );
+        if (updated.activeCycleId != null) {
+          unawaited(
+            _freezerDao.updateCoolingCycleMetrics(
+              cycleId: updated.activeCycleId!,
+              expectedDurationSeconds: newExpected,
+              accumulatedDoorOpenSeconds: updated.accumulatedDoorOpenSeconds,
+              accumulatedPenaltySeconds: updated.accumulatedPenaltySeconds,
+              doorOpenCount: updated.doorOpenCount,
+            ),
+          );
+        }
+      }
     }
 
     updated = _evaluateDefrostState(updated, now);
@@ -817,8 +923,24 @@ final class FreezerRepository {
     if (isNowOpen) {
       _doorOpenSince[id] = now;
       _tempWhenOpened[id] = temp;
+      _postCloseInertiaApplied[id] = false;
 
-      if (state.status == FreezerStatusEnum.idle) {
+      // Se estava PRONTO (ready), aprende o tempo real que o operador levou entre o alarme tocar
+      // e abrir a porta, calibrando a antecipação (predictedDoorLeadSeconds, ex: ~10s antes)
+      var currentLead = state.predictedDoorLeadSeconds;
+      final readyAt = _cycleBecameReadyAt[id];
+      if (state.status == FreezerStatusEnum.ready && readyAt != null) {
+        final reactionSec = now.difference(readyAt).inSeconds;
+        currentLead = _engine.updatePredictedDoorLeadSeconds(
+          currentLeadSeconds: currentLead,
+          observedReactionSeconds: reactionSec,
+        );
+        _cycleBecameReadyAt.remove(id);
+        unawaited(_persistDoorLeadSeconds(id, currentLead));
+      }
+
+      if (state.status == FreezerStatusEnum.idle ||
+          state.status == FreezerStatusEnum.feedbackPending) {
         _baselineTempBeforeLoad[id] = temp;
       }
 
@@ -830,6 +952,7 @@ final class FreezerRepository {
           baselineTemp: state.baselineTemp ?? temp,
           lastDoorOpenTemp: temp,
           peakTemp: temp,
+          predictedDoorLeadSeconds: currentLead,
           doorTransitions: transitions,
         );
       }
@@ -840,6 +963,7 @@ final class FreezerRepository {
         baselineTemp: state.baselineTemp ?? temp,
         lastDoorOpenTemp: temp,
         peakTemp: temp,
+        predictedDoorLeadSeconds: currentLead,
         doorTransitions: transitions,
       );
     } else {
@@ -853,10 +977,13 @@ final class FreezerRepository {
       _doorOpenSince.remove(id);
       _tempWhenOpened.remove(id);
 
-      // CASO 1: Estava OCIOSO (IDLE) -> Avalia se foi carregamento de formas
-      if (state.status == FreezerStatusEnum.idle) {
+      // CASO 1: Estava OCIOSO (IDLE) ou AGUARDANDO FEEDBACK PÓS-RETIRADA (FEEDBACK_PENDING)
+      // -> Se a operadora abriu a porta novamente para abastecer formas novas, inicia o novo ciclo!
+      if (state.status == FreezerStatusEnum.idle ||
+          state.status == FreezerStatusEnum.feedbackPending) {
         final isInspection = _engine.isInspectionOnly(
           doorOpenSeconds: openSeconds,
+          tempRise: tempRise,
           inspectionThresholdSeconds: inspectionThresholdSeconds,
         );
 
@@ -871,17 +998,30 @@ final class FreezerRepository {
             lastDoorOpenTemp: openedTemp,
             lastDoorCloseTemp: temp,
             lastDoorCloseAt: now,
+            clearFeedbackCountdown: true,
             doorTransitions: transitions,
           );
           _freezers[id] = preStart;
 
-          unawaited(
-            _startAdaptiveCycleInternal(
-              freezerId: id,
-              baselineTemp: baseline,
-              peakTemp: peakTemp,
-            ),
-          );
+          if (state.status == FreezerStatusEnum.feedbackPending) {
+            unawaited(
+              recordFeedback(id, FreezerFeedbackEnum.autoOk).then((_) {
+                return _startAdaptiveCycleInternal(
+                  freezerId: id,
+                  baselineTemp: baseline,
+                  peakTemp: peakTemp,
+                );
+              }),
+            );
+          } else {
+            unawaited(
+              _startAdaptiveCycleInternal(
+                freezerId: id,
+                baselineTemp: baseline,
+                peakTemp: peakTemp,
+              ),
+            );
+          }
 
           return _freezers[id] ?? preStart;
         }
@@ -902,7 +1042,19 @@ final class FreezerRepository {
       // CASO 2: Estava em RESFRIAMENTO (COOLING ou DOOR_OPEN)
       if (state.status == FreezerStatusEnum.cooling ||
           state.status == FreezerStatusEnum.doorOpen) {
-        if (openSeconds >= state.reloadMinSeconds) {
+        // Verifica se o ciclo já estava na reta final (>= 85% concluído) e se a abertura foi uma
+        // troca completa (Retirou + Reabasteceu)
+        final progressRatio = state.expectedDurationSeconds > 0
+            ? (state.elapsedSeconds / state.expectedDurationSeconds)
+            : 0.0;
+        final readyAction = _engine.classifyReadyDoorInteraction(
+          doorOpenSeconds: openSeconds,
+          tempRise: tempRise,
+        );
+
+        if (openSeconds >= state.reloadMinSeconds ||
+            (progressRatio >= 0.85 &&
+                readyAction == DoorReadyActionEnum.unloadAndReload)) {
           final preReload = state.copyWith(
             isDoorOpen: false,
             status: FreezerStatusEnum.cooling,
@@ -917,16 +1069,18 @@ final class FreezerRepository {
           unawaited(
             _startAdaptiveCycleInternal(
               freezerId: id,
-              baselineTemp: state.baselineTemp ?? openedTemp,
+              baselineTemp: openedTemp,
               peakTemp: recordedPeak,
             ),
           );
           return _freezers[id] ?? preReload;
         }
 
+        final roomTemp = _productionRepo.currentRoom?.temp;
         final penaltySeconds = _engine.calculateDoorPenalty(
           doorOpenSeconds: openSeconds,
           tempRise: tempRise,
+          roomTemp: roomTemp,
         );
 
         final newRemaining = state.remainingSeconds + penaltySeconds;
@@ -965,52 +1119,16 @@ final class FreezerRepository {
         return afterPenalty;
       }
 
-      // CASO 3: Estava PRONTO (READY)
+      // CASO 3: Estava PRONTO (READY) -> Auto-reconhecimento inteligente de Retirada vs. Retirada + Recarga
       if (state.status == FreezerStatusEnum.ready) {
-        if (openSeconds > 0 && openSeconds < state.unloadMinSeconds) {
-          final extensionSec = _engine.immediateExtensionSeconds(
-            feedback: FreezerFeedbackEnum.soft,
-          );
-          final penaltySec = _engine.calculateDoorPenalty(
-            doorOpenSeconds: openSeconds,
-            tempRise: tempRise,
-          );
-          final extraSec = extensionSec + penaltySec;
-          final newExpected = state.expectedDurationSeconds + extraSec;
-          if (state.activeCycleId != null) {
-            _freezerDao.updateCoolingCycleMetrics(
-              cycleId: state.activeCycleId!,
-              expectedDurationSeconds: newExpected,
-              accumulatedDoorOpenSeconds:
-                  state.accumulatedDoorOpenSeconds + openSeconds,
-              accumulatedPenaltySeconds:
-                  state.accumulatedPenaltySeconds + penaltySec,
-              doorOpenCount: state.doorOpenCount + 1,
-            );
-          }
-          final afterSoftDoor = state.copyWith(
-            isDoorOpen: false,
-            status: FreezerStatusEnum.cooling,
-            expectedDurationSeconds: newExpected,
-            remainingSeconds: extraSec,
-            accumulatedPenaltySeconds:
-                state.accumulatedPenaltySeconds + penaltySec,
-            accumulatedDoorOpenSeconds:
-                state.accumulatedDoorOpenSeconds + openSeconds,
-            doorOpenCount: state.doorOpenCount + 1,
-            lastFeedback: FreezerFeedbackEnum.soft,
-            peakTemp: recordedPeak,
-            lastDoorOpenTemp: openedTemp,
-            lastDoorCloseTemp: temp,
-            lastDoorCloseAt: now,
-            doorTransitions: transitions,
-          );
-          unawaited(_persistActiveCyclePrefs(afterSoftDoor));
-          unawaited(_persistThermalSnapshot(afterSoftDoor));
-          return afterSoftDoor;
-        }
+        final action = _engine.classifyReadyDoorInteraction(
+          doorOpenSeconds: openSeconds,
+          tempRise: tempRise,
+        );
 
-        if (openSeconds >= state.reloadMinSeconds) {
+        // 3.A: Retirou o lote pronto e já reabasteceu com formas novas na mesma abertura (>= 22s ou ΔT >= 2.3 °C)
+        if (action == DoorReadyActionEnum.unloadAndReload ||
+            openSeconds >= state.reloadMinSeconds) {
           final preReadyReload = state.copyWith(
             isDoorOpen: false,
             status: FreezerStatusEnum.cooling,
@@ -1025,7 +1143,7 @@ final class FreezerRepository {
             recordFeedback(id, FreezerFeedbackEnum.autoOk).then((_) {
               return _startAdaptiveCycleInternal(
                 freezerId: id,
-                baselineTemp: state.baselineTemp ?? openedTemp,
+                baselineTemp: openedTemp,
                 peakTemp: recordedPeak,
               );
             }),
@@ -1033,6 +1151,8 @@ final class FreezerRepository {
           return _freezers[id] ?? preReadyReload;
         }
 
+        // 3.B: Só retirou as formas prontas (ou verificou) -> abre janela de 30s de feedback (com auto_ok neutro).
+        // Se durante esses 30s ela reabrir a porta para abastecer, o CASO 1 já inicia o novo ciclo automaticamente!
         final afterReadyClose = state.copyWith(
           isDoorOpen: false,
           status: FreezerStatusEnum.feedbackPending,
@@ -1105,12 +1225,27 @@ final class FreezerRepository {
             _freezers[id] = s;
             changed = true;
           } else {
+            // Se o ciclo já atingiu READY, congela o contador de resfriamento (não soma o tempo que a porta
+            // permaneceu fechada esperando a operadora retirar, para não poluir métricas nem calibração!).
+            if (s.status == FreezerStatusEnum.ready) {
+              continue;
+            }
+
             final newElapsed =
                 (_executedSecondsInCycle[id] ?? s.elapsedSeconds) + 1;
             _executedSecondsInCycle[id] = newElapsed;
             final rem = max(0, s.expectedDurationSeconds - newElapsed);
 
-            if (s.status == FreezerStatusEnum.cooling && rem == 0) {
+            // Antecipação inteligente (predictedDoorLeadSeconds): se o ciclo tem >= 180s de duração,
+            // avisa que está PRONTO faltando [leadSec] (ex: 10s antes, aos 11:50 de 12:00),
+            // pois até a operadora caminhar e abrir a porta fecharão os 12:00 exatos!
+            final effectiveLead = s.expectedDurationSeconds >= 180
+                ? s.predictedDoorLeadSeconds.clamp(0, 20)
+                : 0;
+
+            if (s.status == FreezerStatusEnum.cooling &&
+                rem <= effectiveLead) {
+              _cycleBecameReadyAt[id] = now;
               s = s.copyWith(
                 elapsedSeconds: newElapsed,
                 remainingSeconds: 0,
@@ -1157,14 +1292,24 @@ final class FreezerRepository {
     required double baselineTemp,
     required double peakTemp,
     int initialElapsedSeconds = 0,
+    bool applyDynamicThermalCompensation = true,
   }) async {
     final current = _freezers[freezerId];
     if (current == null) return;
 
     final activeBatch = _productionRepo.currentActiveBatch;
     final baseSeconds = current.calibratedBaseSeconds;
+    final dynamicExpected = applyDynamicThermalCompensation
+        ? _engine.predictCycleDuration(
+            baseCalibratedSeconds: baseSeconds,
+            baselineTemp: baselineTemp,
+            peakTemp: peakTemp,
+          )
+        : baseSeconds;
+    final thermalCompSec = dynamicExpected - baseSeconds;
+
     final safeElapsed = max(0, initialElapsedSeconds);
-    final initialRemaining = max(0, baseSeconds - safeElapsed);
+    final initialRemaining = max(0, dynamicExpected - safeElapsed);
     final initialStatus = initialRemaining == 0
         ? FreezerStatusEnum.ready
         : FreezerStatusEnum.cooling;
@@ -1175,9 +1320,16 @@ final class FreezerRepository {
     // 1. Hot Path (0ms): Atualiza estado em memória imediatamente antes do await do SQLite
     _cycleStartedAt[freezerId] = effectiveStartedAt;
     _executedSecondsInCycle[freezerId] = safeElapsed;
+    _postCloseInertiaApplied[freezerId] = false;
+    if (initialStatus == FreezerStatusEnum.ready) {
+      _cycleBecameReadyAt[freezerId] = DateTime.now();
+    } else {
+      _cycleBecameReadyAt.remove(freezerId);
+    }
+
     final updatedImmediate = current.copyWith(
       status: initialStatus,
-      expectedDurationSeconds: baseSeconds,
+      expectedDurationSeconds: dynamicExpected,
       remainingSeconds: initialRemaining,
       elapsedSeconds: safeElapsed,
       baselineTemp: baselineTemp,
@@ -1185,6 +1337,7 @@ final class FreezerRepository {
       accumulatedPenaltySeconds: 0,
       accumulatedDoorOpenSeconds: 0,
       doorOpenCount: 0,
+      thermalCompensationSeconds: thermalCompSec,
       accumulatedDefrostSeconds: 0,
       clearFeedbackCountdown: true,
       calibratedBaseSeconds: baseSeconds,
@@ -1192,7 +1345,12 @@ final class FreezerRepository {
     _freezers[freezerId] = updatedImmediate;
     _emitState();
 
-    unawaited(_persistActiveCyclePrefs(updatedImmediate, startedAt: effectiveStartedAt));
+    unawaited(
+      _persistActiveCyclePrefs(
+        updatedImmediate,
+        startedAt: effectiveStartedAt,
+      ),
+    );
     unawaited(_persistThermalSnapshot(updatedImmediate));
 
     // 2. Warm Path: Persiste no SQLite garantindo que f1/f2 existam na tabela pai
@@ -1200,7 +1358,7 @@ final class FreezerRepository {
     final startRes = await _freezerDao.startCoolingCycle(
       batchId: activeBatch?.id,
       freezerId: freezerId,
-      expectedSeconds: baseSeconds,
+      expectedSeconds: dynamicExpected,
       startedAt: effectiveStartedAt,
       baselineTemp: baselineTemp,
       initialPeakTemp: peakTemp,
@@ -1263,23 +1421,32 @@ final class FreezerRepository {
       freezerId: freezerId,
       baselineTemp: current.currentTemp,
       peakTemp: current.currentTemp,
+      applyDynamicThermalCompensation: false,
     );
   }
 
   /// Marca manualmente que os ovos já estão prontos ("Pronto"), encerrando o ciclo
-  /// e usando o tempo real corrido para calibrar o próximo ciclo.
+  /// e usando o tempo real corrido para calibrar o próximo ciclo caso tenha sido acionado antes do fim.
   Future<void> markBatchReadyAndCalibrate(String freezerId) async {
     final current = _freezers[freezerId];
     if (current == null || current.status == FreezerStatusEnum.idle) return;
 
-    await recordFeedback(freezerId, FreezerFeedbackEnum.onPoint);
+    final isEarlyManual =
+        current.status == FreezerStatusEnum.cooling ||
+        current.status == FreezerStatusEnum.doorOpen;
+    await recordFeedback(
+      freezerId,
+      FreezerFeedbackEnum.onPoint,
+      isEarlyManualReady: isEarlyManual,
+    );
   }
 
   /// Registra o feedback do operador ('No Ponto', 'Ainda Mole', 'Muito Gelado')
   Future<void> recordFeedback(
     String freezerId,
-    FreezerFeedbackEnum feedback,
-  ) async {
+    FreezerFeedbackEnum feedback, {
+    bool isEarlyManualReady = false,
+  }) async {
     final current = _freezers[freezerId];
     if (current == null) return;
 
@@ -1352,20 +1519,30 @@ final class FreezerRepository {
       await _freezerDao.cancelActiveCoolingCycles(freezerId);
     }
 
-    // Protege a calibração automática: se o ciclo sofreu pausa por degelo (Frost Free desligado),
-    // não altera o tempo base calibrado dos próximos ciclos para que um degelo de ~20-30 min
-    // não distorça o tempo normal de 10-12 min das próximas fornadas.
+    // Regra estrita de calibração:
+    // - Se houve degelo, protege a calibração base.
+    // - Se o feedback é `autoOk` ou `onPoint` normal pós-alarme, mantém o tempo base inalterado!
+    // - Só altera o tempo calibrado na tabela `freezer_calibrations` se o feedback for
+    //   fora de "tudo ok" (`soft`, `overchilled` ou `isEarlyManualReady`).
     final hadDefrostAnomaly =
         current.isDefrosting || current.accumulatedDefrostSeconds > 0;
-    final newCalibrated = hadDefrostAnomaly
-        ? current.calibratedBaseSeconds
-        : _engine.adaptCalibration(
+    final shouldAdaptCalibration =
+        !hadDefrostAnomaly &&
+        (feedback == FreezerFeedbackEnum.soft ||
+            feedback == FreezerFeedbackEnum.overchilled ||
+            (feedback == FreezerFeedbackEnum.onPoint && isEarlyManualReady));
+
+    final newCalibrated = shouldAdaptCalibration
+        ? _engine.adaptCalibration(
             currentCalibratedSeconds: current.calibratedBaseSeconds,
             executedEffectiveSeconds: executedSeconds,
             feedback: feedback,
-          );
+            isEarlyManualReady: isEarlyManualReady,
+          )
+        : current.calibratedBaseSeconds;
 
-    if (!hadDefrostAnomaly) {
+    if (!hadDefrostAnomaly &&
+        (shouldAdaptCalibration || feedback == FreezerFeedbackEnum.onPoint)) {
       await _freezerDao.upsertCalibration(
         freezerId: freezerId,
         productId: productId,
@@ -1373,13 +1550,16 @@ final class FreezerRepository {
         lastFeedback: feedback.code,
       );
 
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setInt('freezer_${freezerId}_target_sec', newCalibrated);
-      } catch (_) {}
+      if (shouldAdaptCalibration) {
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt('freezer_${freezerId}_target_sec', newCalibrated);
+        } catch (_) {}
+      }
     }
 
     _cycleStartedAt.remove(freezerId);
+    _cycleBecameReadyAt.remove(freezerId);
     _executedSecondsInCycle.remove(freezerId);
     unawaited(_clearActiveCyclePrefs(freezerId));
     _freezers[freezerId] = current.copyWith(
@@ -1387,12 +1567,16 @@ final class FreezerRepository {
       remainingSeconds: newCalibrated,
       expectedDurationSeconds: newCalibrated,
       elapsedSeconds: 0,
+      thermalCompensationSeconds: 0,
       accumulatedDefrostSeconds: 0,
       clearFeedbackCountdown: true,
       clearActiveCycleId: true,
       lastFeedback: feedback,
       calibratedBaseSeconds: newCalibrated,
-      isCalibrated: true,
+      isCalibrated:
+          current.isCalibrated ||
+          shouldAdaptCalibration ||
+          feedback == FreezerFeedbackEnum.onPoint,
     );
 
     _emitState();
@@ -1404,6 +1588,7 @@ final class FreezerRepository {
     if (current == null) return;
 
     _cycleStartedAt.remove(freezerId);
+    _cycleBecameReadyAt.remove(freezerId);
     _executedSecondsInCycle.remove(freezerId);
     unawaited(_freezerDao.cancelActiveCoolingCycles(freezerId));
     unawaited(_clearActiveCyclePrefs(freezerId));
@@ -1416,12 +1601,20 @@ final class FreezerRepository {
       accumulatedPenaltySeconds: 0,
       accumulatedDoorOpenSeconds: 0,
       doorOpenCount: 0,
+      thermalCompensationSeconds: 0,
       accumulatedDefrostSeconds: 0,
       clearFeedbackCountdown: true,
       clearActiveCycleId: true,
     );
 
     _emitState();
+  }
+
+  Future<void> _persistDoorLeadSeconds(String freezerId, int leadSec) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('freezer_${freezerId}_door_lead_sec', leadSec);
+    } catch (_) {}
   }
 
   Future<void> _persistActiveCyclePrefs(
@@ -1530,7 +1723,7 @@ final class FreezerRepository {
     } catch (_) {}
   }
 
-  /// Reinicia manualmente a contagem do ciclo
+  /// Reinicia manualmente a contagem do ciclo (do 00:00 com o tempo alvo base configurado)
   Future<void> restartCycle(String freezerId) async {
     final current = _freezers[freezerId];
     if (current == null) return;
@@ -1539,14 +1732,15 @@ final class FreezerRepository {
       freezerId: freezerId,
       baselineTemp: current.effectiveBaselineTemp,
       peakTemp: current.currentTemp,
+      applyDynamicThermalCompensation: false,
     );
   }
 
   /// Atualiza os parâmetros de tempo de porta do sensor, tempo alvo base e opcionalmente o equipamento vinculado
   Future<void> updateDoorTimingConfig(
     String freezerId, {
-    required int unloadMinSeconds,
-    required int reloadMinSeconds,
+    int? unloadMinSeconds,
+    int? reloadMinSeconds,
     int? targetDurationSeconds,
     EquipmentModel? linkedEquipment,
     bool updateEquipmentBinding = false,
@@ -1554,8 +1748,12 @@ final class FreezerRepository {
     final current = _freezers[freezerId];
     if (current == null) return;
 
-    final safeUnload = unloadMinSeconds.clamp(10, 300);
-    final safeReload = max(safeUnload + 10, reloadMinSeconds.clamp(20, 600));
+    final safeUnload =
+        (unloadMinSeconds ?? current.unloadMinSeconds).clamp(5, 300);
+    final safeReload = max(
+      safeUnload + 5,
+      (reloadMinSeconds ?? current.reloadMinSeconds).clamp(15, 600),
+    );
     final newBase = targetDurationSeconds != null
         ? targetDurationSeconds.clamp(60, 7200)
         : current.calibratedBaseSeconds;
@@ -1622,8 +1820,8 @@ final class FreezerRepository {
       sensorIndex: current.sensorIndex,
       costCenterId: resolvedEquipmentId,
       costCenterName: resolvedEquipmentName,
-      targetTemperature: freezerId == 'f2' ? -18.0 : 4.0,
-      criticalTemperature: freezerId == 'f2' ? -5.0 : 8.0,
+      targetTemperature: -2.0,
+      criticalTemperature: 8.0,
       defaultCoolingSeconds: newBase,
       unloadMinSeconds: safeUnload,
       reloadMinSeconds: safeReload,
@@ -1691,6 +1889,7 @@ final class FreezerRepository {
 
   void dispose() {
     _wsSubscription?.cancel();
+    _activeBatchSub?.cancel();
     _tickerTimer?.cancel();
     _freezersStreamController.close();
     _equipmentsStreamController.close();

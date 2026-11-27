@@ -28,8 +28,11 @@ final class EggCountViewModel {
   // --- Signals de Contagem do Lote & Caixa ---
   late final Signal<int> batchManualAdditions;
   late final Signal<int> batchNetAdjustment;
+  late final Signal<int> carryOverUnits;
   late final Computed<int> batchGrossCount;
   late final Computed<int> batchEffectiveCount;
+  late final Computed<bool> isCompletingCarryOverBox;
+  late final Computed<int> currentBoxTargetCapacity;
   late final Computed<int> currentBoxCount;
   late final Computed<double> boxProgress;
   late final Computed<int> batchCompletedBoxes;
@@ -47,11 +50,14 @@ final class EggCountViewModel {
   late final Signal<int> lastHitSecondsAgo;
   late final Signal<int> lastHitDelta;
   late final Signal<String?> lastHitTransitionLabel;
+  late final Signal<bool> isRapidPulseWarning;
+  late final Signal<String?> rapidPulseWarningText;
   late final Computed<bool> isRecentHitHighlight;
   late final Computed<String?> lastHitConfirmationText;
   late final Signal<double> eggsPerMinute;
   late final Signal<RoomRawData?> roomTelemetry;
   late final Signal<String> roomSummaryText;
+  late final Signal<bool> isRoomClimateAlert;
 
   // Inscrições e Timers internos
   StreamSubscription? _activeBatchSub;
@@ -62,7 +68,9 @@ final class EggCountViewModel {
   StreamSubscription? _productsLoadingSub;
   StreamSubscription? _productsErrorSub;
   StreamSubscription? _roomSub;
+  StreamSubscription? _carryOverSub;
   Timer? _hitAnimationTimer;
+  Timer? _rapidPulseClearTimer;
   Timer? _speedTickerTimer;
 
   final List<DateTime> _recentHitTimestamps = [];
@@ -99,6 +107,7 @@ final class EggCountViewModel {
     // Contagem bruta e contagem efetiva líquida (baseada no Líquido do Dia dividido pelo lote)
     batchManualAdditions = signal<int>(0);
     batchNetAdjustment = signal<int>(0);
+    carryOverUnits = signal<int>(_repository.currentActiveCarryOverUnits);
     batchGrossCount = computed<int>(
       () =>
           (activeBatch.value?.producedQuantity ?? 0) +
@@ -106,25 +115,55 @@ final class EggCountViewModel {
     );
     batchEffectiveCount = computed<int>(() => dailyNetCount.value);
 
-    // Ovos na caixa atual = resto da divisão do Líquido do Dia pela capacidade do lote
+    // Indica se ainda estamos completando a 1ª caixa que veio aberta do lote anterior
+    // (ex: tinha 23 na caixa anterior -> faltam 27 -> enquanto dailyNetCount < 27, mostra 0 / 27 .. 26 / 27)
+    isCompletingCarryOverBox = computed<bool>(() {
+      final capacity = defaultBoxCapacity.value;
+      final carry = carryOverUnits.value;
+      if (capacity <= 0 || carry <= 0 || carry >= capacity) return false;
+      final remainingForFirstBox = capacity - carry;
+      return dailyNetCount.value < remainingForFirstBox;
+    });
+
+    // Capacidade alvo exibida na caixa atual:
+    // - Na 1ª caixa continuada: (capacidade - carryOver), ex: 50 - 23 = 27 (exibe "0 / 27")
+    // - Nas demais caixas (ou sem sobra): capacidade normal (exibe "0 / 50")
+    currentBoxTargetCapacity = computed<int>(() {
+      final capacity = defaultBoxCapacity.value;
+      if (capacity <= 0) return 50;
+      if (isCompletingCarryOverBox.value) {
+        return capacity - carryOverUnits.value;
+      }
+      return capacity;
+    });
+
+    // Ovos colocados hoje na caixa atual:
+    // - Enquanto completa a 1ª caixa continuada (dailyNet < 27): mostra de 0 até 26 (sobre "/ 27")
+    // - Após fechar a 1ª caixa (dailyNet >= 27): mostra (dailyNet + 23) % 50 (0 até 49 sobre "/ 50")
     currentBoxCount = computed<int>(() {
       final capacity = defaultBoxCapacity.value;
       if (capacity <= 0) return 0;
-      return dailyNetCount.value % capacity;
+      final net = dailyNetCount.value;
+      if (isCompletingCarryOverBox.value) {
+        return net;
+      }
+      final carry = carryOverUnits.value.clamp(0, capacity - 1);
+      return (net + carry) % capacity;
     });
 
-    // Progresso percentual da caixa (0.0 a 1.0)
+    // Progresso percentual da caixa atual (0.0 a 1.0)
     boxProgress = computed<double>(() {
-      final capacity = defaultBoxCapacity.value;
-      if (capacity <= 0) return 0.0;
-      return (currentBoxCount.value / capacity).clamp(0.0, 1.0);
+      final targetCap = currentBoxTargetCapacity.value;
+      if (targetCap <= 0) return 0.0;
+      return (currentBoxCount.value / targetCap).clamp(0.0, 1.0);
     });
 
-    // Caixas fechadas = inteiro da divisão do Líquido do Dia pela capacidade do lote
+    // Caixas fechadas = inteiro da divisão de (Líquido do Dia + Sobra da Caixa Anterior) pela capacidade
     batchCompletedBoxes = computed<int>(() {
       final capacity = defaultBoxCapacity.value;
       if (capacity <= 0) return 0;
-      return dailyNetCount.value ~/ capacity;
+      final carry = carryOverUnits.value.clamp(0, capacity - 1);
+      return (dailyNetCount.value + carry) ~/ capacity;
     });
     _lastCompletedBoxes = batchCompletedBoxes.value;
 
@@ -135,6 +174,8 @@ final class EggCountViewModel {
     lastHitSecondsAgo = signal<int>(0);
     lastHitDelta = signal<int>(1);
     lastHitTransitionLabel = signal<String?>(null);
+    isRapidPulseWarning = signal<bool>(false);
+    rapidPulseWarningText = signal<String?>(null);
     isRecentHitHighlight = computed<bool>(
       () => lastHitAt.value != null && lastHitSecondsAgo.value <= 5,
     );
@@ -143,6 +184,10 @@ final class EggCountViewModel {
       final transition = lastHitTransitionLabel.value;
       if (hitAt == null || transition == null || !hasActiveBatch.value) {
         return null;
+      }
+      final rapidWarn = rapidPulseWarningText.value;
+      if (isRapidPulseWarning.value && rapidWarn != null) {
+        return rapidWarn;
       }
       final secs = lastHitSecondsAgo.value;
       final delta = lastHitDelta.value;
@@ -161,7 +206,13 @@ final class EggCountViewModel {
     eggsPerMinute = signal<double>(0.0);
     roomTelemetry = signal<RoomRawData?>(_repository.currentRoom);
     roomSummaryText = signal<String>(_formatRoom(_repository.currentRoom));
+    isRoomClimateAlert = signal<bool>(
+      _isRoomOutOfRange(_repository.currentRoom),
+    );
   }
+
+  static bool _isRoomOutOfRange(RoomRawData? room) =>
+      room != null && (room.temp >= 25.0 || room.humidity >= 68.0);
 
   static String _formatRoom(RoomRawData? room) => room != null
       ? 'Sala: ${room.temp.toStringAsFixed(1)} °C • ${room.humidity.toStringAsFixed(0)}% UR'
@@ -225,6 +276,14 @@ final class EggCountViewModel {
       if (roomSummaryText.value != formatted) {
         roomSummaryText.value = formatted;
       }
+      final alert = _isRoomOutOfRange(room);
+      if (isRoomClimateAlert.value != alert) {
+        isRoomClimateAlert.value = alert;
+      }
+    });
+
+    _carryOverSub = _repository.activeCarryOverUnitsStream.listen((carry) {
+      carryOverUnits.value = carry;
     });
   }
 
@@ -245,25 +304,72 @@ final class EggCountViewModel {
     });
   }
 
+  int _boxDisplayCountForNet(int netValue, int cap, int carry) {
+    final safeCarry = carry.clamp(0, cap - 1);
+    if (safeCarry > 0) {
+      final remFirst = cap - safeCarry;
+      if (netValue < remFirst) {
+        return netValue;
+      }
+      if (netValue == remFirst) {
+        return remFirst;
+      }
+    }
+    final mod = (netValue + safeCarry) % cap;
+    return (netValue > 0 && mod == 0) ? cap : mod;
+  }
+
   void _recordVisualHitConfirmation({
     required int delta,
     required DateTime now,
+    bool isManualAdjustment = false,
   }) {
     final safeDelta = max(1, delta);
     final cap = defaultBoxCapacity.value > 0 ? defaultBoxCapacity.value : 50;
+    final carry = carryOverUnits.value.clamp(0, cap - 1);
     final afterNet = dailyNetCount.value;
     final beforeNet = max(0, afterNet - safeDelta);
-    final beforeBox = beforeNet % cap;
-    final afterBox =
-        (afterNet > 0 && afterNet % cap == 0) ? cap : (afterNet % cap);
+    final beforeBox = (carry > 0 && beforeNet < (cap - carry))
+        ? beforeNet
+        : ((beforeNet + carry) % cap);
+    final afterBox = _boxDisplayCountForNet(afterNet, cap, carry);
+    final transition = '$beforeBox → $afterBox';
+
+    final prevHitAt = lastHitAt.value;
+    final intervalMs = prevHitAt != null
+        ? now.difference(prevHitAt).inMilliseconds
+        : 999999;
+
+    // Detecta pulso rápido (< 2.2s entre dois ovos na esteira ou salto > 1 de hardware):
+    // avisa visualmente o operador para conferir se foram 2 operadores ou repique do sensor.
+    final isRapid =
+        !isManualAdjustment && (intervalMs <= 2200 || safeDelta > 1);
 
     batch(() {
       lastHitDelta.value = safeDelta;
-      lastHitTransitionLabel.value = '$beforeBox → $afterBox';
+      lastHitTransitionLabel.value = transition;
       lastHitSecondsAgo.value = 0;
       lastHitAt.value = now;
       isHitAnimating.value = true;
+
+      if (isRapid) {
+        final secsSpan = max(0, (intervalMs / 1000).round());
+        final qtyInBurst = safeDelta > 1 ? safeDelta : 2;
+        isRapidPulseWarning.value = true;
+        rapidPulseWarningText.value =
+            '⚡ PULSO RÁPIDO (+$qtyInBurst em ${secsSpan}s • $transition) • Confira';
+      }
     });
+
+    if (isRapid) {
+      _rapidPulseClearTimer?.cancel();
+      _rapidPulseClearTimer = Timer(const Duration(seconds: 8), () {
+        if (!_isDisposed) {
+          isRapidPulseWarning.value = false;
+          rapidPulseWarningText.value = null;
+        }
+      });
+    }
 
     _hitAnimationTimer?.cancel();
     _hitAnimationTimer = Timer(const Duration(milliseconds: 1200), () {
@@ -275,8 +381,11 @@ final class EggCountViewModel {
 
   void _clearVisualHitConfirmation() {
     _hitAnimationTimer?.cancel();
+    _rapidPulseClearTimer?.cancel();
     batch(() {
       isHitAnimating.value = false;
+      isRapidPulseWarning.value = false;
+      rapidPulseWarningText.value = null;
       lastHitAt.value = null;
       lastHitSecondsAgo.value = 0;
       lastHitTransitionLabel.value = null;
@@ -326,12 +435,35 @@ final class EggCountViewModel {
     return _repository.refreshProductsFromSupabase();
   }
 
+  /// Consulta quantos ovos sobraram na última caixa aberta do lote anterior
+  Future<Result<({int carryOverUnits, String? sourceProductName})>>
+  getLastOpenBoxRemainder({
+    String? productId,
+    int? targetBoxCapacity,
+  }) {
+    return _repository.getLastOpenBoxRemainder(
+      productId: productId,
+      targetBoxCapacity: targetBoxCapacity,
+    );
+  }
+
   /// Inicia um novo lote de produção com o produto selecionado
-  Future<Result<ProductionBatchModel>> startBatch(ProductModel product) async {
-    final result = await _repository.startProductionBatch(product: product);
+  /// [carryOverUnits]: ovos que já estavam na última caixa aberta da produção anterior (ex: 23)
+  Future<Result<ProductionBatchModel>> startBatch(
+    ProductModel product, {
+    int carryOverUnits = 0,
+  }) async {
+    final result = await _repository.startProductionBatch(
+      product: product,
+      carryOverUnits: carryOverUnits,
+    );
     if (result.isOk) {
+      final cap = product.defaultBoxCapacity > 0
+          ? product.defaultBoxCapacity
+          : 50;
       batchManualAdditions.value = 0;
       batchNetAdjustment.value = 0;
+      this.carryOverUnits.value = carryOverUnits.clamp(0, cap - 1);
       defaultBoxCapacity.value = product.defaultBoxCapacity;
       _lastCompletedBoxes = batchCompletedBoxes.value;
       _clearVisualHitConfirmation();
@@ -342,14 +474,20 @@ final class EggCountViewModel {
   /// Troca o produto ativo do dia (fecha o lote anterior com a contagem atual e abre
   /// o novo produto imediatamente, mantendo a produção aberta até o final do dia)
   Future<Result<ProductionBatchModel>> switchProduct(
-    ProductModel newProduct,
-  ) async {
+    ProductModel newProduct, {
+    int carryOverUnits = 0,
+  }) async {
     final result = await _repository.switchActiveBatchProduct(
       newProduct: newProduct,
+      carryOverUnits: carryOverUnits,
     );
     if (result.isOk) {
+      final cap = newProduct.defaultBoxCapacity > 0
+          ? newProduct.defaultBoxCapacity
+          : 50;
       batchManualAdditions.value = 0;
       batchNetAdjustment.value = 0;
+      this.carryOverUnits.value = carryOverUnits.clamp(0, cap - 1);
       defaultBoxCapacity.value = newProduct.defaultBoxCapacity;
       _lastCompletedBoxes = batchCompletedBoxes.value;
       _clearVisualHitConfirmation();
@@ -365,6 +503,7 @@ final class EggCountViewModel {
     if (res.isOk) {
       batchManualAdditions.value = 0;
       batchNetAdjustment.value = 0;
+      carryOverUnits.value = 0;
       _clearVisualHitConfirmation();
     }
     return res;
@@ -391,6 +530,7 @@ final class EggCountViewModel {
     final signedDelta = reason.isAddition ? absQty : -absQty;
     final rawProduced = current.producedQuantity;
     final boxCap = defaultBoxCapacity.value > 0 ? defaultBoxCapacity.value : 50;
+    final carry = carryOverUnits.value.clamp(0, boxCap - 1);
 
     if (reason.isAddition) {
       batchManualAdditions.value += absQty;
@@ -399,10 +539,14 @@ final class EggCountViewModel {
       batch(() {
         dailyGrossCount.value += absQty;
         dailyNetCount.value = newNet;
-        dailyCompletedBoxes.value = newNet ~/ boxCap;
+        dailyCompletedBoxes.value = (newNet + carry) ~/ boxCap;
       });
       _audioService?.playEggHit();
-      _recordVisualHitConfirmation(delta: absQty, now: DateTime.now());
+      _recordVisualHitConfirmation(
+        delta: absQty,
+        now: DateTime.now(),
+        isManualAdjustment: true,
+      );
     } else {
       batchNetAdjustment.value = max(
         -rawProduced,
@@ -412,7 +556,7 @@ final class EggCountViewModel {
       batch(() {
         dailyDiscardsCount.value += absQty;
         dailyNetCount.value = newNet;
-        dailyCompletedBoxes.value = newNet ~/ boxCap;
+        dailyCompletedBoxes.value = (newNet + carry) ~/ boxCap;
       });
       _audioService?.playEggUndo();
     }
@@ -443,7 +587,9 @@ final class EggCountViewModel {
     _productsLoadingSub?.cancel();
     _productsErrorSub?.cancel();
     _roomSub?.cancel();
+    _carryOverSub?.cancel();
     _hitAnimationTimer?.cancel();
+    _rapidPulseClearTimer?.cancel();
     _speedTickerTimer?.cancel();
   }
 }

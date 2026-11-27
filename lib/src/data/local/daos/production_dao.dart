@@ -199,22 +199,83 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
   );
 
   /// Retorna o último lote concluído
-  Future<Result<ProductionBatch?>> getLastCompletedBatch() =>
-      Result.catchInAsync(
-        fn: () async {
-          return await (select(productionBatchesTable)
-                ..where((b) => b.finishedAt.isNotNull())
-                ..orderBy([
-                  (b) => OrderingTerm(
-                    expression: b.finishedAt,
-                    mode: OrderingMode.desc,
-                  ),
-                ])
-                ..limit(1))
-              .getSingleOrNull();
-        },
-        tag: 'ProductionDao.getLastCompletedBatch',
+  Future<Result<ProductionBatch?>> getLastCompletedBatch({
+    String? productId,
+  }) => Result.catchInAsync(
+    fn: () async {
+      final query = select(productionBatchesTable)
+        ..where(
+          (b) =>
+              b.finishedAt.isNotNull() &
+              (productId != null
+                  ? b.productId.equals(productId)
+                  : const Constant(true)),
+        )
+        ..orderBy([
+          (b) => OrderingTerm(
+            expression: b.finishedAt,
+            mode: OrderingMode.desc,
+          ),
+        ])
+        ..limit(1);
+      return await query.getSingleOrNull();
+    },
+    tag: 'ProductionDao.getLastCompletedBatch',
+  );
+
+  /// Calcula quantos ovos ficaram na última caixa incompleta (sobra < capacidade da caixa)
+  /// do último lote encerrado (priorizando o mesmo [productId], ou o último lote geral).
+  Future<Result<({int carryOverUnits, String? sourceProductName})>>
+  getLastOpenBoxRemainder({
+    String? productId,
+    int? targetBoxCapacity,
+  }) => Result.catchInAsync(
+    fn: () async {
+      // 1. Tenta buscar o último lote concluído deste produto específico
+      ProductionBatch? lastBatch;
+      if (productId != null) {
+        lastBatch = (await getLastCompletedBatch(
+          productId: productId,
+        )).valueOrNull;
+      }
+      // 2. Fallback: último lote concluído geral
+      lastBatch ??= (await getLastCompletedBatch()).valueOrNull;
+
+      if (lastBatch == null) {
+        return (carryOverUnits: 0, sourceProductName: null);
+      }
+
+      final prodRow = await (select(
+        productsTable,
+      )..where((p) => p.id.equals(lastBatch!.productId))).getSingleOrNull();
+
+      final boxCap =
+          targetBoxCapacity ??
+          ((prodRow != null && prodRow.defaultBoxCapacity > 0)
+              ? prodRow.defaultBoxCapacity
+              : 50);
+      if (boxCap <= 0) {
+        return (carryOverUnits: 0, sourceProductName: prodRow?.name);
+      }
+
+      final endCount =
+          lastBatch.finalHardwareCount ?? lastBatch.initialHardwareCount;
+      final gross = (endCount - lastBatch.initialHardwareCount).clamp(
+        0,
+        99999999,
       );
+
+      final adjs = await (select(
+        batchAdjustmentsTable,
+      )..where((a) => a.batchId.equals(lastBatch!.id))).get();
+      final netDelta = adjs.fold<int>(0, (sum, a) => sum + a.deltaQty);
+      final netProduced = (gross + netDelta).clamp(0, 99999999);
+      final remainder = netProduced % boxCap;
+
+      return (carryOverUnits: remainder, sourceProductName: prodRow?.name);
+    },
+    tag: 'ProductionDao.getLastOpenBoxRemainder',
+  );
 
   /// Retorna o lote atualmente ativo com seu respectivo produto
   Future<Result<ProductionBatchModel?>> getActiveBatch() => Result.catchInAsync(
@@ -428,6 +489,7 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
   /// - completedBoxes: Caixas fechadas computadas
   Future<Result<DailyProductionAccountingModel>> getDailyAccounting({
     DateTime? date,
+    Map<String, int> carryOverByBatchId = const {},
   }) => Result.catchInAsync(
     fn: () async {
       final targetDate = date ?? DateTime.now();
@@ -511,7 +573,8 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
         final boxCap = p.defaultBoxCapacity > 0
             ? p.defaultBoxCapacity
             : (p.unitWeightGrams >= 500 ? 40 : 50);
-        completedBoxes += (batchNet ~/ boxCap);
+        final carryOver = (carryOverByBatchId[b.id] ?? 0).clamp(0, boxCap - 1);
+        completedBoxes += ((batchNet + carryOver) ~/ boxCap);
       }
 
       final totalGross = dailyGrossCount + dailyAdditions;
@@ -603,4 +666,26 @@ final class ProductionDao extends DatabaseAccessor<AppDatabase>
       return adjustments.fold(0, (sum, adj) => sum + adj.deltaQty);
     });
   }
+
+  /// Registra um snapshot de telemetria climática da sala (`room_events_table`) vinculado ao lote ativo
+  Future<Result<Unit>> logRoomEvent({
+    required String batchId,
+    required double temperature,
+    required double humidity,
+    DateTime? recordedAt,
+  }) => Result.catchInAsync(
+    fn: () async {
+      await into(attachedDatabase.roomEventsTable).insert(
+        RoomEventsTableCompanion.insert(
+          id: GeneratorId.getid(),
+          batchId: batchId,
+          temperature: temperature,
+          humidity: humidity,
+          recordedAt: Value(recordedAt ?? DateTime.now()),
+        ),
+      );
+      return unit;
+    },
+    tag: 'ProductionDao.logRoomEvent',
+  );
 }

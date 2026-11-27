@@ -70,14 +70,19 @@ final class EggCountCard extends StatelessWidget {
                       SizedBox(
                         width: useLargeMetrics ? AppSpacing.sm : AppSpacing.xs,
                       ),
-                      // Micro-state 2: Capacidade da caixa (só muda quando troca de produto)
+                      // Micro-state 2: Capacidade alvo da caixa atual (mostra "/ 27" na 1ª caixa continuada e "/ 50" nas demais)
                       SignalBuilder(
                         builder: (context) {
-                          final boxCap = viewModel.defaultBoxCapacity.value;
+                          final boxCap =
+                              viewModel.currentBoxTargetCapacity.value;
+                          final isCarryBox =
+                              viewModel.isCompletingCarryOverBox.value;
                           return Text(
                             '/ $boxCap',
                             style: theme.textTheme.headlineSmall?.copyWith(
-                              color: AppTheme.textSecondary,
+                              color: isCarryBox
+                                  ? AppTheme.cocoaGold
+                                  : AppTheme.textSecondary,
                               fontWeight: FontWeight.w700,
                               fontSize: useLargeMetrics ? 38 : 26,
                               fontFeatures: const [
@@ -92,25 +97,52 @@ final class EggCountCard extends StatelessWidget {
                 ),
               ),
             ),
-            // Micro-state 2.5: Selo de confirmação do último ovo contado ("✓ +1 CONTADO • AGORA (23 → 24)")
+            // Micro-state 2.5: Selo de confirmação do último ovo contado, Alerta de Pulso Rápido ou Indicador de 1ª Caixa Continuada
             SignalBuilder(
               builder: (context) {
                 final text = viewModel.lastHitConfirmationText.value;
-                if (text == null) {
+                final isCarryBox = viewModel.isCompletingCarryOverBox.value;
+                final carryUnits = viewModel.carryOverUnits.value;
+                final fullCap = viewModel.defaultBoxCapacity.value;
+                final remFirst = fullCap - carryUnits;
+
+                final effectiveText =
+                    text ??
+                    (isCarryBox && viewModel.hasActiveBatch.value
+                        ? '📦 COMPLETANDO CAIXA ANTERIOR (+$carryUnits un • Faltam $remFirst para fechar $fullCap)'
+                        : null);
+
+                if (effectiveText == null) {
                   return SizedBox(height: useLargeMetrics ? 12 : 6);
                 }
-                final isVibrant = viewModel.isRecentHitHighlight.value;
-                final fgColor = isVibrant
-                    ? AppTheme.successGreen
-                    : AppTheme.textSecondary;
-                final bgColor = isVibrant
-                    ? AppTheme.successGreen.withValues(alpha: 0.20)
-                    : colorScheme.surfaceContainerHighest.withValues(
-                        alpha: 0.65,
-                      );
-                final borderColor = isVibrant
-                    ? AppTheme.successGreen.withValues(alpha: 0.65)
-                    : colorScheme.outlineVariant;
+                final isRapidWarn = viewModel.isRapidPulseWarning.value;
+                final isCarryOnly = text == null && isCarryBox;
+                final isVibrant =
+                    viewModel.isRecentHitHighlight.value ||
+                    isRapidWarn ||
+                    isCarryOnly;
+                final fgColor = isRapidWarn
+                    ? AppTheme.warningAmber
+                    : (isCarryOnly
+                          ? AppTheme.cocoaGold
+                          : (viewModel.isRecentHitHighlight.value
+                                ? AppTheme.successGreen
+                                : AppTheme.textSecondary));
+                final bgColor = isRapidWarn
+                    ? AppTheme.warningAmber.withValues(alpha: 0.22)
+                    : (isCarryOnly
+                          ? AppTheme.cocoaGold.withValues(alpha: 0.18)
+                          : (viewModel.isRecentHitHighlight.value
+                                ? AppTheme.successGreen.withValues(alpha: 0.20)
+                                : colorScheme.surfaceContainerHighest
+                                      .withValues(alpha: 0.65)));
+                final borderColor = isRapidWarn
+                    ? AppTheme.warningAmber.withValues(alpha: 0.75)
+                    : (isCarryOnly
+                          ? AppTheme.cocoaGold.withValues(alpha: 0.65)
+                          : (viewModel.isRecentHitHighlight.value
+                                ? AppTheme.successGreen.withValues(alpha: 0.65)
+                                : colorScheme.outlineVariant));
 
                 return Padding(
                   padding: EdgeInsets.only(
@@ -140,15 +172,19 @@ final class EggCountCard extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(
-                              isVibrant
-                                  ? Icons.check_circle_rounded
-                                  : Icons.history_rounded,
+                              isRapidWarn
+                                  ? Icons.bolt_rounded
+                                  : (isCarryOnly
+                                        ? Icons.inventory_2_rounded
+                                        : (viewModel.isRecentHitHighlight.value
+                                              ? Icons.check_circle_rounded
+                                              : Icons.history_rounded)),
                               size: useLargeMetrics ? 16 : 13,
                               color: fgColor,
                             ),
                             SizedBox(width: useLargeMetrics ? 7 : 5),
                             Text(
-                              text,
+                              effectiveText,
                               style: theme.textTheme.labelSmall?.copyWith(
                                 fontSize: useLargeMetrics ? 13.5 : 11,
                                 fontWeight: isVibrant

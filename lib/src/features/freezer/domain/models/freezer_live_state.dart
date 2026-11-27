@@ -28,6 +28,12 @@ final class FreezerLiveState {
   final int currentDoorOpenSeconds;
   final int doorOpenCount;
 
+  /// Compensação térmica dinâmica aplicada neste ciclo com base na temperatura real da câmara (ex: +90s a +5 °C ou -45s a -8 °C).
+  final int thermalCompensationSeconds;
+
+  /// Segundos de antecipação do aviso de "Pronto" baseados no tempo médio que o operador leva até abrir a porta (ex: 10s -> avisa aos 11:50 de 12:00).
+  final int predictedDoorLeadSeconds;
+
   // --- Estado de Degelo (Frost Free Desligado / Motor Off) ---
   final bool isDefrosting;
   final DateTime? defrostStartedAt;
@@ -70,6 +76,8 @@ final class FreezerLiveState {
     this.accumulatedDoorOpenSeconds = 0,
     this.currentDoorOpenSeconds = 0,
     this.doorOpenCount = 0,
+    this.thermalCompensationSeconds = 0,
+    this.predictedDoorLeadSeconds = 10,
     this.isDefrosting = false,
     this.defrostStartedAt,
     this.defrostStartTemp,
@@ -83,8 +91,8 @@ final class FreezerLiveState {
     this.doorTransitions = const [],
     this.isCalibrated = false,
     this.calibratedBaseSeconds = 480,
-    this.unloadMinSeconds = 30,
-    this.reloadMinSeconds = 60,
+    this.unloadMinSeconds = 10,
+    this.reloadMinSeconds = 22,
   }) : sensorIndex =
            sensorIndex ?? (freezerId == 'f2' ? 2 : 1),
        elapsedSeconds =
@@ -115,6 +123,9 @@ final class FreezerLiveState {
   double get progress {
     if (expectedDurationSeconds <= 0 || status == FreezerStatusEnum.idle) {
       return 0.0;
+    }
+    if (status == FreezerStatusEnum.ready) {
+      return 1.0;
     }
     return (elapsedSeconds / expectedDurationSeconds).clamp(0.0, 1.0);
   }
@@ -199,7 +210,9 @@ final class FreezerLiveState {
   /// Atualiza continuamente a cada leitura de telemetria após o fechamento da porta.
   double get recoveredDegrees {
     if (isDoorOpen) return 0.0;
-    if (lastDoorOpenTemp == null && peakTemp == null && lastDoorCloseTemp == null) {
+    if (lastDoorOpenTemp == null &&
+        peakTemp == null &&
+        lastDoorCloseTemp == null) {
       return 0.0;
     }
     final peak = effectivePeakTemp;
@@ -245,6 +258,8 @@ final class FreezerLiveState {
     int? accumulatedDoorOpenSeconds,
     int? currentDoorOpenSeconds,
     int? doorOpenCount,
+    int? thermalCompensationSeconds,
+    int? predictedDoorLeadSeconds,
     bool? isDefrosting,
     DateTime? defrostStartedAt,
     bool clearDefrostState = false,
@@ -274,7 +289,10 @@ final class FreezerLiveState {
         (resolvedStatus == FreezerStatusEnum.idle
             ? 0
             : (remainingSeconds != null && expectedDurationSeconds == null
-                  ? max(this.elapsedSeconds, resolvedExpected - resolvedRemaining)
+                  ? max(
+                      this.elapsedSeconds,
+                      resolvedExpected - resolvedRemaining,
+                    )
                   : this.elapsedSeconds));
 
     return FreezerLiveState(
@@ -305,6 +323,10 @@ final class FreezerLiveState {
           currentDoorOpenSeconds ??
           ((isDoorOpen ?? this.isDoorOpen) ? this.currentDoorOpenSeconds : 0),
       doorOpenCount: doorOpenCount ?? this.doorOpenCount,
+      thermalCompensationSeconds:
+          thermalCompensationSeconds ?? this.thermalCompensationSeconds,
+      predictedDoorLeadSeconds:
+          predictedDoorLeadSeconds ?? this.predictedDoorLeadSeconds,
       isDefrosting: clearDefrostState
           ? false
           : (isDefrosting ?? this.isDefrosting),
@@ -344,5 +366,5 @@ final class FreezerLiveState {
 
   @override
   String toString() =>
-      'FreezerLiveState(name: $name, equipmentId: $equipmentId, equipmentName: $equipmentName, status: $status, currentTemp: $currentTemp, isDoorOpen: $isDoorOpen, isSensorOk: $isSensorOk, baselineTemp: $baselineTemp, peakTemp: $peakTemp, lastDoorOpenTemp: $lastDoorOpenTemp, lastDoorCloseTemp: $lastDoorCloseTemp, expectedDurationSeconds: $expectedDurationSeconds, remainingSeconds: $remainingSeconds, accumulatedPenaltySeconds: $accumulatedPenaltySeconds, accumulatedDoorOpenSeconds: $accumulatedDoorOpenSeconds, doorOpenCount: $doorOpenCount, feedbackCountdownSeconds: $feedbackCountdownSeconds, lastFeedback: $lastFeedback, activeCycleId: $activeCycleId, temperatureHistory: $temperatureHistory, isCalibrated: $isCalibrated, calibratedBaseSeconds: $calibratedBaseSeconds)';
+      'FreezerLiveState(name: $name, equipmentId: $equipmentId, equipmentName: $equipmentName, status: $status, currentTemp: $currentTemp, isDoorOpen: $isDoorOpen, isSensorOk: $isSensorOk, baselineTemp: $baselineTemp, peakTemp: $peakTemp, lastDoorOpenTemp: $lastDoorOpenTemp, lastDoorCloseTemp: $lastDoorCloseTemp, expectedDurationSeconds: $expectedDurationSeconds, remainingSeconds: $remainingSeconds, accumulatedPenaltySeconds: $accumulatedPenaltySeconds, accumulatedDoorOpenSeconds: $accumulatedDoorOpenSeconds, doorOpenCount: $doorOpenCount, thermalCompensationSeconds: $thermalCompensationSeconds, predictedDoorLeadSeconds: $predictedDoorLeadSeconds, feedbackCountdownSeconds: $feedbackCountdownSeconds, lastFeedback: $lastFeedback, activeCycleId: $activeCycleId, temperatureHistory: $temperatureHistory, isCalibrated: $isCalibrated, calibratedBaseSeconds: $calibratedBaseSeconds)';
 }

@@ -6,23 +6,35 @@ void main() {
   const engine = FreezerAdaptiveEngine();
 
   group('FreezerAdaptiveEngine - predictCycleDuration', () {
-    test('sem aumento de temperatura mantém tempo base calibrado', () {
+    test('na faixa nominal (-1.0 °C) sem aumento de temperatura mantém tempo base calibrado', () {
       final duration = engine.predictCycleDuration(
         baseCalibratedSeconds: 1200,
-        baselineTemp: 4.0,
-        peakTemp: 4.0,
+        baselineTemp: -1.0,
+        peakTemp: -1.0,
       );
       expect(duration, equals(1200));
     });
 
-    test('adiciona compensação térmica proporcional ao pico de calor pós-carga', () {
-      // 4.0°C subiu para 8.0°C (deltaT = 4.0°C) -> 4.0 * 18 = 72 segundos extras
+    test('adiciona compensação térmica proporcional à câmara quente (+4.0 °C) e ao pico pós-carga (+8.0 °C)', () {
+      // Câmara a +4.0°C (5°C acima do nominal -1.0°C) -> 5.0 * 16 = +80s
+      // Salto de +4.0°C para +8.0°C (deltaT = 4.0°C) -> 4.0 * 18 = +72s
+      // Total = 1200 + 80 + 72 = 1352s
       final duration = engine.predictCycleDuration(
         baseCalibratedSeconds: 1200,
         baselineTemp: 4.0,
         peakTemp: 8.0,
       );
-      expect(duration, equals(1272));
+      expect(duration, equals(1352));
+    });
+
+    test('aplica bônus de câmara super fria (ex: -8.0 °C no 1º lote da manhã)', () {
+      // -8.0°C está 4.0°C abaixo de -4.0°C -> -4 * 12 = -48s -> 1200 - 48 = 1152s
+      final duration = engine.predictCycleDuration(
+        baseCalibratedSeconds: 1200,
+        baselineTemp: -8.0,
+        peakTemp: -8.0,
+      );
+      expect(duration, equals(1152));
     });
 
     test('respeita os limites min e max de segurança', () {
@@ -105,15 +117,33 @@ void main() {
       expect(updated, equals(1140));
     });
 
-    test('feedback "onPoint" / "autoOk" converge suavemente para tempo real executado', () {
-      final updated = engine.adaptCalibration(
+    test('feedback "autoOk" e "onPoint" após alarme mantêm a calibração base intacta (sem inflação); "onPoint" adiantado reduz', () {
+      // autoOk (timeout 30s) -> nunca aumenta o tempo
+      final afterAutoOk = engine.adaptCalibration(
         currentCalibratedSeconds: 1200,
         executedEffectiveSeconds: 1300,
-        feedback: FreezerFeedbackEnum.onPoint,
-        learningRate: 0.1,
+        feedback: FreezerFeedbackEnum.autoOk,
       );
-      // 1200 + (1300 - 1200) * 0.1 = 1210
-      expect(updated, equals(1210));
+      expect(afterAutoOk, equals(1200));
+
+      // onPoint normal após o ciclo dar pronto -> mantém 1200
+      final afterNormalOnPoint = engine.adaptCalibration(
+        currentCalibratedSeconds: 1200,
+        executedEffectiveSeconds: 1250,
+        feedback: FreezerFeedbackEnum.onPoint,
+        isEarlyManualReady: false,
+      );
+      expect(afterNormalOnPoint, equals(1200));
+
+      // onPoint acionado manualmente antes do fim (ex: aos 900s de 1200s) -> reduz suavemente
+      final afterEarlyReady = engine.adaptCalibration(
+        currentCalibratedSeconds: 1200,
+        executedEffectiveSeconds: 900,
+        feedback: FreezerFeedbackEnum.onPoint,
+        isEarlyManualReady: true,
+        learningRate: 0.2,
+      );
+      expect(afterEarlyReady, equals(1140));
     });
   });
 

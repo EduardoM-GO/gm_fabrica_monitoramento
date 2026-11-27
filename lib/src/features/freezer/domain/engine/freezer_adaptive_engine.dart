@@ -2,78 +2,205 @@ import 'dart:math';
 
 import '../models/freezer_feedback_enum.dart';
 
-/// Motor matemático e termodinâmico para estimativa, penalização
-/// e aprendizado contínuo (closed-loop) do tempo ideal de resfriamento.
+/// Classificação automática do movimento da porta quando o lote está pronto (`ready`)
+/// ou na reta final do resfriamento (`>= 85%`), eliminando parâmetros manuais de tempo.
+enum DoorReadyActionEnum {
+  /// Abertura rápida (<= 8s e ΔT < 1.2 °C): apenas olhou / verificou os ovos.
+  quickInspection,
+
+  /// Abertura moderada (9s a 21s e ΔT < 2.3 °C): apenas retirou as formas prontas e fechou o freezer vazio.
+  unloadOnly,
+
+  /// Abertura de troca completa (>= 22s ou salto térmico ΔT >= 2.3 °C): retirou o lote pronto e já reabasteceu com formas novas.
+  unloadAndReload,
+}
+
+/// Motor matemático e termodinâmico para estimativa, compensação dinâmica de temperatura,
+/// antecipação do tempo de reação da porta e aprendizado em malha fechada.
 final class FreezerAdaptiveEngine {
   const FreezerAdaptiveEngine();
 
-  /// 1. Estima a duração total do ciclo baseada no tempo calibrado e na carga térmica introduzida.
-  /// [peakTemp] é a temperatura máxima atingida após o fechamento da porta.
-  /// [baselineTemp] é a temperatura que o freezer operava antes da abertura/carga.
+  /// 1. Estima a duração total do ciclo baseada no tempo calibrado do produto,
+  /// na temperatura real da câmara no início do ciclo ([baselineTemp]) e no pico pós-porta ([peakTemp]).
+  ///
+  /// Física real extraída dos dados da fábrica (`F1` e `F2`):
+  /// - Referência nominal da câmara: `-2.0 °C`.
+  /// - Se o freezer iniciar quente (`baselineTemp > -1.0 °C`, ex: `+4 °C` ou `+6 °C` após várias trocas seguidas),
+  ///   soma `+16s` por grau acima de `-1.0 °C` + `+18s` por grau de salto térmico (`peakTemp - baselineTemp`),
+  ///   evitando ciclos curtos demais quando a câmara está em `+5 °C`.
+  /// - Se o freezer iniciar super gelado (`baselineTemp < -4.0 °C`, ex: `-9 °C` na 1ª fornada da manhã),
+  ///   concede bônus de câmara fria (`-12s` por grau abaixo de `-4.0 °C`, limitado a `-90s` ou `-15%` do base),
+  ///   evitando que o primeiro lote passe do ponto.
   int predictCycleDuration({
     required int baseCalibratedSeconds,
     required double baselineTemp,
     required double peakTemp,
-    double heatLoadCoeff = 18.0, // segundos adicionais por °C de salto térmico
-    int minDurationSeconds = 300, // 5 min mínimo
-    int maxDurationSeconds = 3600, // 60 min máximo
+    double nominalChamberTemp = -1.0,
+    double coldChamberThreshold = -4.0,
+    double chamberWarmCoeff = 16.0,
+    double chamberColdDiscountCoeff = 12.0,
+    double heatLoadCoeff = 18.0,
+    int minDurationSeconds = 300,
+    int maxDurationSeconds = 3600,
   }) {
     final deltaT = max(0.0, peakTemp - baselineTemp);
     final heatLoadAdjustment = (deltaT * heatLoadCoeff).round();
 
-    final total = baseCalibratedSeconds + heatLoadAdjustment;
+    int chamberOffset = 0;
+    if (baselineTemp > nominalChamberTemp) {
+      chamberOffset = ((baselineTemp - nominalChamberTemp) * chamberWarmCoeff)
+          .round();
+    } else if (baselineTemp < coldChamberThreshold) {
+      final maxColdDiscount = min(90, (baseCalibratedSeconds * 0.15).round());
+      final rawDiscount =
+          ((coldChamberThreshold - baselineTemp) * chamberColdDiscountCoeff)
+              .round();
+      chamberOffset = -min(maxColdDiscount, rawDiscount);
+    }
+
+    // Limita a compensação térmica inicial a +300s (5 min) para evitar saltos extremos em uma única abertura
+    final totalOffset = (chamberOffset + heatLoadAdjustment).clamp(-90, 300);
+    final total = baseCalibratedSeconds + totalOffset;
     return total.clamp(minDurationSeconds, maxDurationSeconds);
   }
 
-  /// 2. Calcula a penalidade de tempo por abertura prematura da porta do freezer.
+  /// Calcula apenas o delta de compensação térmica dinâmica (em segundos) em relação ao tempo base calibrado.
+  int calculateThermalCompensationSeconds({
+    required int baseCalibratedSeconds,
+    required double baselineTemp,
+    required double peakTemp,
+  }) {
+    final predicted = predictCycleDuration(
+      baseCalibratedSeconds: baseCalibratedSeconds,
+      baselineTemp: baselineTemp,
+      peakTemp: peakTemp,
+    );
+    return predicted - baseCalibratedSeconds;
+  }
+
+  /// 2. Calcula a penalidade de tempo por abertura prematura da porta do freezer durante a cristalização.
   /// [doorOpenSeconds]: tempo total que a porta permaneceu aberta.
-  /// [tempRise]: quanto a temperatura interna subiu durante a abertura (T_fechou - T_abriu).
-  /// [compressorRecoveryPerDegree]: segundos necessários para o compressor resfriar 1°C.
+  /// [tempRise]: quanto a temperatura interna subiu durante/após a abertura (T_pico - T_abriu).
+  /// [roomTemp]: temperatura atual da sala (se > 24 °C, agrava a perda convectiva).
   int calculateDoorPenalty({
     required int doorOpenSeconds,
     required double tempRise,
+    double? roomTemp,
     double airLossCoeff = 1.3,
     double compressorRecoveryPerDegree = 30.0,
-    int maxPenaltySeconds = 360, // Limite de 6 minutos de penalidade por evento
+    int maxPenaltySeconds = 360,
   }) {
     if (doorOpenSeconds <= 0 && tempRise <= 0) return 0;
 
-    final convectiveLossSeconds = max(0, doorOpenSeconds) * airLossCoeff;
-    final thermalRecoverySeconds = max(0.0, tempRise) * compressorRecoveryPerDegree;
+    final roomFactor = (roomTemp != null && roomTemp > 24.0)
+        ? (1.0 + ((roomTemp - 24.0) * 0.04)).clamp(1.0, 1.25)
+        : 1.0;
 
-    final totalPenalty = (convectiveLossSeconds + thermalRecoverySeconds).round();
+    final convectiveLossSeconds =
+        max(0, doorOpenSeconds) * airLossCoeff * roomFactor;
+    final thermalRecoverySeconds =
+        max(0.0, tempRise) * compressorRecoveryPerDegree;
+
+    final totalPenalty =
+        (convectiveLossSeconds + thermalRecoverySeconds).round();
     return totalPenalty.clamp(0, maxPenaltySeconds);
   }
 
-  /// 3. Avalia se a abertura foi apenas uma inspeção rápida de rotina
-  /// (ex: verificar visualmente sem descarregar nem carregar formas novas).
+  /// 3. Avalia se a abertura com freezer ocioso (`idle`) foi apenas uma inspeção rápida/esbarrão
+  /// (sem carregar formas novas).
   bool isInspectionOnly({
     required int doorOpenSeconds,
-    int inspectionThresholdSeconds = 12,
+    double tempRise = 0.0,
+    int inspectionThresholdSeconds = 8,
   }) {
+    // Se a temperatura subiu >= 2.0 °C (mesmo em abertura curta >= 1s), houve troca de calor real (carregamento)
+    if (tempRise >= 2.0 && doorOpenSeconds >= 1) return false;
     return doorOpenSeconds > 0 && doorOpenSeconds <= inspectionThresholdSeconds;
   }
 
+  /// 3.b Auto-reconhecimento inteligente de Retirada vs. Retirada + Reabastecimento quando o lote está pronto.
+  /// Baseado na assinatura real dos 194 eventos de porta da fábrica:
+  /// - Só Retirada: 9s a 21s com salto térmico moderado (< 2.3 °C).
+  /// - Retirou + Abasteceu na mesma abertura: >= 22s OU salto térmico >= 2.3 °C (com porta aberta >= 12s).
+  DoorReadyActionEnum classifyReadyDoorInteraction({
+    required int doorOpenSeconds,
+    required double tempRise,
+    int quickCheckMaxSeconds = 7,
+    int autoReloadMinSeconds = 22,
+    double autoReloadMinTempRise = 2.3,
+  }) {
+    if (doorOpenSeconds <= quickCheckMaxSeconds && tempRise < 1.2) {
+      return DoorReadyActionEnum.quickInspection;
+    }
+
+    if (doorOpenSeconds >= autoReloadMinSeconds ||
+        (doorOpenSeconds >= 12 && tempRise >= autoReloadMinTempRise)) {
+      return DoorReadyActionEnum.unloadAndReload;
+    }
+
+    return DoorReadyActionEnum.unloadOnly;
+  }
+
+  /// 3.c Atualiza a previsão do tempo de reação até abrir a porta (em segundos).
+  /// Usado para avisar que o lote está pronto um pouco antes (ex: 10s antes, aos 11:50 de 12:00),
+  /// para que o tempo de caminhada até abrir a porta feche exatamente o tempo alvo.
+  int updatePredictedDoorLeadSeconds({
+    required int currentLeadSeconds,
+    required int observedReactionSeconds,
+    double alpha = 0.25,
+    int minLeadSeconds = 5,
+    int maxLeadSeconds = 20,
+  }) {
+    // Ignora outliers (ex: operadora estava ocupada em outra bancada e demorou > 45s)
+    if (observedReactionSeconds < 2 || observedReactionSeconds > 45) {
+      return currentLeadSeconds.clamp(minLeadSeconds, maxLeadSeconds);
+    }
+    final next =
+        (currentLeadSeconds * (1.0 - alpha) +
+                observedReactionSeconds * alpha)
+            .round();
+    return next.clamp(minLeadSeconds, maxLeadSeconds);
+  }
+
   /// 4. Atualiza o tempo base calibrado para os próximos lotes usando feedback em malha fechada.
-  /// - 'onPoint' / 'autoOk': Aproxima o tempo calibrado do tempo executado efetivo (EMA).
-  /// - 'soft': Tempo foi insuficiente. Incrementa o tempo calibrado (+8% ou min 90s).
-  /// - 'overchilled': Tempo foi longo demais. Reduz o tempo calibrado (-5% ou min 60s).
+  /// REGRA ESTRITA DEFINIDA PELO USUÁRIO:
+  /// - 'autoOk' (timeout de 30s sem clicar) ou 'onPoint' após o ciclo já ter dado pronto:
+  ///   NÃO altera a calibração! Tudo correu conforme o esperado.
+  /// - 'onPoint' acionado ANTES do tempo (botão manual "Pronto" durante a cristalização):
+  ///   Aproxima o tempo calibrado do tempo real executado.
+  /// - 'soft' ("Ainda Mole"): Tempo foi insuficiente -> Incrementa o tempo calibrado (+8% ou min 90s).
+  /// - 'overchilled' ("Muito Gelado"): Tempo foi longo demais -> Reduz o tempo calibrado (-5% ou min 60s).
   int adaptCalibration({
     required int currentCalibratedSeconds,
     required int executedEffectiveSeconds,
     required FreezerFeedbackEnum feedback,
-    double learningRate = 0.12,
+    bool isEarlyManualReady = false,
+    double learningRate = 0.20,
     int minDurationSeconds = 300,
     int maxDurationSeconds = 3600,
   }) {
     int updatedSeconds;
 
     switch (feedback) {
-      case FreezerFeedbackEnum.onPoint:
       case FreezerFeedbackEnum.autoOk:
-        // Média Móvel Exponencial (EMA) suave aproximando do tempo real
+        // Se deu pronto e ninguém reclamou nos 30s, estava tudo OK: nunca infla o tempo!
+        return currentCalibratedSeconds.clamp(
+          minDurationSeconds,
+          maxDurationSeconds,
+        );
+
+      case FreezerFeedbackEnum.onPoint:
+        // Só altera a calibração se o operador marcou manualmente como "Pronto" ANTES de terminar o tempo
+        if (!isEarlyManualReady ||
+            executedEffectiveSeconds >= currentCalibratedSeconds) {
+          return currentCalibratedSeconds.clamp(
+            minDurationSeconds,
+            maxDurationSeconds,
+          );
+        }
         final diff = executedEffectiveSeconds - currentCalibratedSeconds;
-        updatedSeconds = (currentCalibratedSeconds + (diff * learningRate)).round();
+        updatedSeconds =
+            (currentCalibratedSeconds + (diff * learningRate)).round();
         break;
 
       case FreezerFeedbackEnum.soft:
@@ -101,13 +228,13 @@ final class FreezerAdaptiveEngine {
   }
 
   /// 6. Avalia se o freezer entrou no ciclo de degelo (Frost Free desligado / motor off).
-  /// Regras blindadas contra falsos positivos (baseadas nos dados reais da fábrica):
-  /// - A porta deve estar fechada e ter respeitado o período de inércia pós-fechamento ([postDoorInertiaSeconds], padrão 90s).
-  /// - Gatilho A (Subida contínua com porta fechada): na janela de [windowSeconds] (após a inércia),
-  ///   a temperatura subiu >= [minClosedDoorTempRise] (padrão 2.0 °C) desde a mínima da janela
-  ///   e não caiu mais que 0.25 °C do pico recente.
+  /// Regras blindadas contra falsos positivos e falsos negativos (baseadas nos dados reais da fábrica):
+  /// - Gatilho A (Subida contínua com porta fechada): após a inércia pós-fechamento ([postDoorInertiaSeconds], 90s),
+  ///   na janela de [windowSeconds], a temperatura subiu >= [minClosedDoorTempRise] (2.0 °C) desde a mínima da janela.
   /// - Gatilho B (Temperatura absoluta elevada sem queda): a temperatura permaneceu >= [highTempThreshold]
-  ///   (padrão 5.5 °C) durante pelo menos [highTempSustainedSeconds] (padrão 180s) sem cair >= 0.4 °C.
+  ///   (5.5 °C) durante pelo menos [highTempSustainedSeconds] (180s) sem cair >= 0.4 °C.
+  ///   Mesmo que a porta tenha sido aberta rapidamente no meio, se antes e depois da porta a câmara permaneceu
+  ///   >= 5.5 °C por >= 300s sem conseguir baixar temperatura, reconhece a perda de rendimento/degelo.
   bool detectDefrostStart({
     required double currentTemp,
     required bool isDoorOpen,
@@ -122,12 +249,15 @@ final class FreezerAdaptiveEngine {
   }) {
     if (isDoorOpen) return false;
 
-    if (lastDoorCloseAt != null &&
-        now.difference(lastDoorCloseAt).inSeconds < postDoorInertiaSeconds) {
+    final secondsSinceDoorClose = lastDoorCloseAt != null
+        ? now.difference(lastDoorCloseAt).inSeconds
+        : 999999;
+
+    if (secondsSinceDoorClose < postDoorInertiaSeconds) {
       return false;
     }
 
-    // Filtra apenas amostras ocorridas após o fim da inércia pós-porta
+    // Filtra amostras ocorridas após o fim da inércia pós-porta
     final inertiaCutoff = lastDoorCloseAt?.add(
       Duration(seconds: postDoorInertiaSeconds),
     );
@@ -138,66 +268,66 @@ final class FreezerAdaptiveEngine {
       return true;
     }).toList();
 
-    if (validSamples.length < 3) return false;
-
-    // Gatilho A: Subida contínua >= 2.0 °C na janela (ex: últimos 3 min pós-inércia)
-    final windowCutoff = now.subtract(Duration(seconds: windowSeconds));
-    final windowSamples = validSamples
-        .where((pt) => !pt.timestamp.isBefore(windowCutoff))
-        .toList();
-
-    if (windowSamples.length >= 3) {
-      final spanSeconds = now
-          .difference(windowSamples.first.timestamp)
-          .inSeconds;
-      if (spanSeconds >= 60) {
-        double minT = windowSamples.first.temperature;
-        DateTime minTs = windowSamples.first.timestamp;
-        double maxAfterMin = minT;
-
-        for (final s in windowSamples) {
-          if (s.temperature < minT) {
-            minT = s.temperature;
-            minTs = s.timestamp;
-            maxAfterMin = s.temperature;
-          } else if (s.temperature > maxAfterMin) {
-            maxAfterMin = s.temperature;
-          }
-        }
-
-        final riseFromMin = currentTemp - minT;
-        final isStillRisingOrAtPeak = (maxAfterMin - currentTemp) <= 0.25;
-        final riseDurationSec = now.difference(minTs).inSeconds;
-
-        if (riseFromMin >= minClosedDoorTempRise &&
-            isStillRisingOrAtPeak &&
-            riseDurationSec >= 60) {
-          return true;
-        }
-      }
-    }
-
-    // Gatilho B: Temperatura >= 5.5 °C sustentada por >= 180s sem resfriar
-    if (currentTemp >= highTempThreshold) {
-      final sustainedCutoff = now.subtract(
-        Duration(seconds: highTempSustainedSeconds),
-      );
-      final sustainedSamples = validSamples
-          .where((pt) => !pt.timestamp.isBefore(sustainedCutoff))
+    if (validSamples.length >= 3) {
+      // Gatilho A: Subida contínua >= 2.0 °C na janela pós-inércia
+      final windowCutoff = now.subtract(Duration(seconds: windowSeconds));
+      final windowSamples = validSamples
+          .where((pt) => !pt.timestamp.isBefore(windowCutoff))
           .toList();
 
-      if (sustainedSamples.length >= 3) {
-        final spanSec = now
-            .difference(sustainedSamples.first.timestamp)
+      if (windowSamples.length >= 3) {
+        final spanSeconds = now
+            .difference(windowSamples.first.timestamp)
             .inSeconds;
-        if (spanSec >= highTempSustainedSeconds - 15) {
-          final allAboveThreshold = sustainedSamples.every(
-            (s) => s.temperature >= highTempThreshold - 0.3,
-          );
-          final firstTemp = sustainedSamples.first.temperature;
-          final notCoolingDown = (firstTemp - currentTemp) < 0.4;
-          if (allAboveThreshold && notCoolingDown) {
+        if (spanSeconds >= 60) {
+          double minT = windowSamples.first.temperature;
+          DateTime minTs = windowSamples.first.timestamp;
+          double maxAfterMin = minT;
+
+          for (final s in windowSamples) {
+            if (s.temperature < minT) {
+              minT = s.temperature;
+              minTs = s.timestamp;
+              maxAfterMin = s.temperature;
+            } else if (s.temperature > maxAfterMin) {
+              maxAfterMin = s.temperature;
+            }
+          }
+
+          final riseFromMin = currentTemp - minT;
+          final isStillRisingOrAtPeak = (maxAfterMin - currentTemp) <= 0.25;
+          final riseDurationSec = now.difference(minTs).inSeconds;
+
+          if (riseFromMin >= minClosedDoorTempRise &&
+              isStillRisingOrAtPeak &&
+              riseDurationSec >= 60) {
             return true;
+          }
+        }
+      }
+
+      // Gatilho B1: Temperatura >= 5.5 °C sustentada por >= 180s pós-inércia sem resfriar
+      if (currentTemp >= highTempThreshold) {
+        final sustainedCutoff = now.subtract(
+          Duration(seconds: highTempSustainedSeconds),
+        );
+        final sustainedSamples = validSamples
+            .where((pt) => !pt.timestamp.isBefore(sustainedCutoff))
+            .toList();
+
+        if (sustainedSamples.length >= 3) {
+          final spanSec = now
+              .difference(sustainedSamples.first.timestamp)
+              .inSeconds;
+          if (spanSec >= highTempSustainedSeconds - 15) {
+            final allAboveThreshold = sustainedSamples.every(
+              (s) => s.temperature >= highTempThreshold - 0.3,
+            );
+            final firstTemp = sustainedSamples.first.temperature;
+            final notCoolingDown = (firstTemp - currentTemp) < 0.4;
+            if (allAboveThreshold && notCoolingDown) {
+              return true;
+            }
           }
         }
       }
@@ -207,10 +337,6 @@ final class FreezerAdaptiveEngine {
   }
 
   /// 7. Avalia se o compressor do freezer religou e já está recuperando temperatura após o degelo.
-  /// - Se o freezer tem um ciclo ativo ([hasActiveCycle] = true): destrava o ciclo assim que
-  ///   a temperatura cair >= [minDropFromPeak] (padrão 1.0 °C) abaixo do pico atingido no degelo ([defrostPeakTemp]).
-  /// - Se o freezer estava vazio/ocioso ([hasActiveCycle] = false): além de cair >= 1.0 °C do pico,
-  ///   exige que a temperatura já tenha baixado para <= [safeIdleReadyTemp] (padrão +2.5 °C) antes de liberar "Aguardando Forminhas".
   bool detectDefrostEnd({
     required double currentTemp,
     required double defrostPeakTemp,
@@ -231,7 +357,7 @@ final class FreezerAdaptiveEngine {
   }
 
   /// 8. Calcula o bônus de recuperação térmica (em segundos) somado ao alvo quando o motor religa
-  /// após um degelo durante um lote ativo, compensando os graus que a câmara subiu enquanto esteve desligada.
+  /// após um degelo durante um lote ativo.
   int calculateDefrostRecoverySeconds({
     required double defrostStartTemp,
     required double defrostPeakTemp,

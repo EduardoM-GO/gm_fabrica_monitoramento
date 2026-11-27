@@ -50,6 +50,8 @@ final class FreezerItemSignals {
   late final Signal<double> recoveredDegrees;
   late final Signal<int> doorOpenCount;
   late final Signal<int> accumulatedPenaltySeconds;
+  late final Signal<int> thermalCompensationSeconds;
+  late final Signal<int> predictedDoorLeadSeconds;
   late final Signal<List<({DateTime timestamp, double temperature})>>
   temperatureHistory;
   late final Signal<
@@ -96,6 +98,10 @@ final class FreezerItemSignals {
     recoveredDegrees = signal<double>(initial.recoveredDegrees);
     doorOpenCount = signal<int>(initial.doorOpenCount);
     accumulatedPenaltySeconds = signal<int>(initial.accumulatedPenaltySeconds);
+    thermalCompensationSeconds = signal<int>(
+      initial.thermalCompensationSeconds,
+    );
+    predictedDoorLeadSeconds = signal<int>(initial.predictedDoorLeadSeconds);
     temperatureHistory =
         signal<List<({DateTime timestamp, double temperature})>>(
           initial.temperatureHistory,
@@ -201,6 +207,12 @@ final class FreezerItemSignals {
       }
       if (accumulatedPenaltySeconds.value != next.accumulatedPenaltySeconds) {
         accumulatedPenaltySeconds.value = next.accumulatedPenaltySeconds;
+      }
+      if (thermalCompensationSeconds.value != next.thermalCompensationSeconds) {
+        thermalCompensationSeconds.value = next.thermalCompensationSeconds;
+      }
+      if (predictedDoorLeadSeconds.value != next.predictedDoorLeadSeconds) {
+        predictedDoorLeadSeconds.value = next.predictedDoorLeadSeconds;
       }
 
       final prevHist = temperatureHistory.value;
@@ -476,8 +488,8 @@ final class FreezerMonitoringViewModel {
   /// Atualiza os tempos de porta, tempo alvo base e opcionalmente o equipamento vinculado
   Future<void> updateDoorTimingConfig(
     String freezerId, {
-    required int unloadMinSeconds,
-    required int reloadMinSeconds,
+    int? unloadMinSeconds,
+    int? reloadMinSeconds,
     int? targetDurationSeconds,
     EquipmentModel? linkedEquipment,
     bool updateEquipmentBinding = false,

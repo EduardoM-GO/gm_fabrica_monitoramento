@@ -398,5 +398,57 @@ void main() {
         containsAll(['doorOpened', 'doorClosed']),
       );
     });
+
+    test('autoOk e onPoint normal pós-alarme não inflam a calibração base; apenas soft, overchilled ou Pronto adiantado calibram', () async {
+      await freezerRepo.resetCalibration('f1', defaultSeconds: 600);
+      await freezerRepo.startManualCycle('f1');
+      final initialBase = freezerRepo.getFreezer('f1')!.calibratedBaseSeconds;
+      expect(initialBase, equals(600));
+
+      // 1. Timeout automático (autoOk) após ficar pronto NÃO deve aumentar os 600s
+      await freezerRepo.recordFeedback('f1', FreezerFeedbackEnum.autoOk);
+      expect(freezerRepo.getFreezer('f1')!.calibratedBaseSeconds, equals(600));
+
+      // 2. "Muito Gelado" (overchilled) reduz a calibração base
+      await freezerRepo.startManualCycle('f1');
+      await freezerRepo.recordFeedback('f1', FreezerFeedbackEnum.overchilled);
+      expect(freezerRepo.getFreezer('f1')!.calibratedBaseSeconds, lessThan(600));
+    });
+
+    test('aplica compensação térmica dinâmica quando o freezer é reabastecido quente (+5 °C) sem sujar calibração base', () async {
+      await freezerRepo.resetCalibration('f2', defaultSeconds: 600);
+
+      // Simula abertura de porta a +5.0 °C e fechamento após carregamento a +7.5 °C
+      ws.controller.add(
+        FreezerRawData(
+          id: 'f2',
+          type: TypeRawDataEnum.telem,
+          temp: 5.0,
+          isDoorOpen: true,
+          isSensorOk: true,
+        ),
+      );
+      await pumpEventQueue();
+      await Future<void>.delayed(const Duration(milliseconds: 1100));
+
+      // Fecha a porta com deltaT = +2.5 °C (reconhecido como carregamento)
+      ws.controller.add(
+        FreezerRawData(
+          id: 'f2',
+          type: TypeRawDataEnum.telem,
+          temp: 7.5,
+          isDoorOpen: false,
+          isSensorOk: true,
+        ),
+      );
+      await pumpEventQueue();
+
+      final f2 = freezerRepo.getFreezer('f2')!;
+      expect(f2.status, equals(FreezerStatusEnum.cooling));
+      // Tempo base permanece 600s, mas o esperado dinâmico do ciclo é maior devido à câmara a +5 °C e salto para +7.5 °C
+      expect(f2.calibratedBaseSeconds, equals(600));
+      expect(f2.thermalCompensationSeconds, greaterThan(0));
+      expect(f2.expectedDurationSeconds, greaterThan(600));
+    });
   });
 }

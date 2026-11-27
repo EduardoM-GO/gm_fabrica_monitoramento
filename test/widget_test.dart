@@ -428,7 +428,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.textContaining('Recuperado: -1.4 / 2.0 °C ▼'), findsOneWidget);
 
-      // 3.c Abre modal rápido de configurar tempos da porta e vínculo do Freezer 1
+      // 3.c Abre modal rápido de configurar tempo base e vínculo do Freezer 1
       await tester.tap(find.byKey(const ValueKey('freezer_config_f1')));
       await tester.pumpAndSettle();
       expect(
@@ -436,11 +436,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey('input_unload_seconds')),
-        findsOneWidget,
-      );
-      expect(
-        find.byKey(const ValueKey('input_reload_seconds')),
+        find.text('Auto-Reconhecimento de Retirada e Recarga'),
         findsOneWidget,
       );
       await tester.enterText(

@@ -428,5 +428,125 @@ void main() {
       expect(list[1].unitWeightGrams, 350);
       expect(list[1].defaultBoxCapacity, 50);
     });
+
+    test('Persiste room_events quando há lote ativo e dispara aviso visual de Pulso Rápido (<= 2s) na esteira', () async {
+      final viewModel = EggCountViewModel(repository);
+      await viewModel.startBatch(testProduct);
+
+      // 1. Envia telemetria com dados da sala -> deve persistir na room_events_table
+      fakeWs.rawDataController.add(
+        BaseRawData.fromJson({
+          't': 'telem',
+          'boot': 1,
+          'rssi': -55,
+          'freeHeap': 200000,
+          'totalCount': 1,
+          'f1': {'temp': 2.0, 'd': 0, 'ok': 1},
+          'f2': {'temp': 1.5, 'd': 0, 'ok': 1},
+          'room': {'temp': 26.2, 'h': 58.0},
+        }),
+      );
+      await Future.delayed(const Duration(milliseconds: 60));
+
+      final roomEvents = await db.select(db.roomEventsTable).get();
+      expect(roomEvents.length, equals(1));
+      expect(roomEvents.first.temperature, closeTo(26.2, 0.01));
+      expect(viewModel.isRoomClimateAlert.value, isTrue);
+
+      // 2. Envia segundo pulso em menos de 2 segundos -> deve ativar alerta de Pulso Rápido sem perder a contagem
+      fakeWs.rawDataController.add(
+        HitRawData(type: TypeRawDataEnum.hit, totalCount: 2),
+      );
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      expect(viewModel.dailyNetCount.value, equals(2));
+      expect(viewModel.isRapidPulseWarning.value, isTrue);
+      expect(
+        viewModel.lastHitConfirmationText.value,
+        contains('PULSO RÁPIDO'),
+      );
+
+      viewModel.dispose();
+    });
+
+    test('Continuar última caixa aberta (ex: 23 un. do lote anterior): mostra 0/27 na 1ª caixa, fecha 1 caixa com +27 ovos (Total = 27) e volta para 0/50 nas demais', () async {
+      final viewModel = EggCountViewModel(repository);
+
+      // 1. Lote anterior produziu 73 ovos (1 caixa fechada de 50 + 23 na última caixa aberta) e foi encerrado
+      await viewModel.startBatch(testProduct);
+      fakeWs.rawDataController.add(
+        HitRawData(type: TypeRawDataEnum.hit, totalCount: 73),
+      );
+      await Future.delayed(const Duration(milliseconds: 50));
+      await viewModel.finishActiveBatch();
+
+      // Verifica que o DAO detecta automaticamente a sobra de 23 unidades da última caixa aberta
+      final remRes = await viewModel.getLastOpenBoxRemainder(
+        productId: testProduct.id,
+        targetBoxCapacity: 50,
+      );
+      expect(remRes.isOk, isTrue);
+      expect(remRes.valueOrThrow.carryOverUnits, equals(23));
+
+      // Move o lote anterior para ontem no banco para simular o início de um novo dia com Total = 0
+      final yesterday = DateTime.now().subtract(const Duration(days: 1));
+      await db.update(db.productionBatchesTable).write(
+        ProductionBatchesTableCompanion(
+          startedAt: Value(yesterday),
+          finishedAt: Value(yesterday.add(const Duration(hours: 8))),
+        ),
+      );
+      await viewModel.refreshDailyStats();
+
+      // 2. Inicia novo lote hoje continuando os 23 ovos da caixa aberta (faltam 27 para fechar 50)
+      final startRes = await viewModel.startBatch(
+        testProduct,
+        carryOverUnits: 23,
+      );
+      expect(startRes.isOk, isTrue);
+
+      // No início: Caixa Atual = 0 / 27, Total de hoje = 0, Caixas Fechadas = 0
+      expect(viewModel.isCompletingCarryOverBox.value, isTrue);
+      expect(viewModel.currentBoxCount.value, equals(0));
+      expect(viewModel.currentBoxTargetCapacity.value, equals(27));
+      expect(viewModel.dailyNetCount.value, equals(0));
+      expect(viewModel.batchCompletedBoxes.value, equals(0));
+
+      // Passam 10 ovos hoje (hardware vai de 73 -> 83): Caixa Atual = 10 / 27, Total = 10, Caixas = 0
+      fakeWs.rawDataController.add(
+        HitRawData(type: TypeRawDataEnum.hit, totalCount: 83),
+      );
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(viewModel.isCompletingCarryOverBox.value, isTrue);
+      expect(viewModel.currentBoxCount.value, equals(10));
+      expect(viewModel.currentBoxTargetCapacity.value, equals(27));
+      expect(viewModel.dailyNetCount.value, equals(10));
+      expect(viewModel.batchCompletedBoxes.value, equals(0));
+
+      // Passam mais 17 ovos (total hoje = 27, hardware 83 -> 100):
+      // Fecha a 1ª caixa (23 + 27 = 50)! Agora Caixas Fechadas = 1, Total = 27, e a próxima caixa volta para 0 / 50!
+      fakeWs.rawDataController.add(
+        HitRawData(type: TypeRawDataEnum.hit, totalCount: 100),
+      );
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(viewModel.isCompletingCarryOverBox.value, isFalse);
+      expect(viewModel.batchCompletedBoxes.value, equals(1));
+      expect(viewModel.dailyCompletedBoxes.value, equals(1));
+      expect(viewModel.dailyNetCount.value, equals(27));
+      expect(viewModel.currentBoxCount.value, equals(0));
+      expect(viewModel.currentBoxTargetCapacity.value, equals(50));
+
+      // Passam mais 5 ovos (total hoje = 32, hardware 100 -> 105): Caixa Atual = 5 / 50
+      fakeWs.rawDataController.add(
+        HitRawData(type: TypeRawDataEnum.hit, totalCount: 105),
+      );
+      await Future.delayed(const Duration(milliseconds: 50));
+      expect(viewModel.currentBoxCount.value, equals(5));
+      expect(viewModel.currentBoxTargetCapacity.value, equals(50));
+      expect(viewModel.dailyNetCount.value, equals(32));
+      expect(viewModel.batchCompletedBoxes.value, equals(1));
+
+      viewModel.dispose();
+    });
   });
 }

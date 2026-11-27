@@ -244,17 +244,23 @@ final class _TopKioskStatusStrip extends StatelessWidget {
                       SizedBox(width: isTablet ? 5 : 3),
                       SignalBuilder(
                         builder: (context) {
+                          final isClimateAlert =
+                              eggViewModel.isRoomClimateAlert.value;
                           return Text(
                             eggViewModel.roomSummaryText.value,
                             style: theme.textTheme.labelSmall?.copyWith(
                               fontSize: isTablet ? 13.5 : 11,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: isClimateAlert
+                                  ? FontWeight.w900
+                                  : FontWeight.w700,
                               fontFeatures: const [
                                 FontFeature.tabularFigures(),
                               ],
-                              color: isTablet
-                                  ? AppTheme.textSecondary
-                                  : AppTheme.textMuted,
+                              color: isClimateAlert
+                                  ? AppTheme.warningAmber
+                                  : (isTablet
+                                        ? AppTheme.textSecondary
+                                        : AppTheme.textMuted),
                             ),
                           );
                         },

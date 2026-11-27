@@ -26,20 +26,12 @@ final class FreezerConfigView extends StatefulWidget {
 }
 
 class _FreezerConfigViewState extends State<FreezerConfigView> {
-  late final TextEditingController _unloadController;
-  late final TextEditingController _reloadController;
   late final TextEditingController _targetMinController;
   String? _selectedEquipmentId;
 
   @override
   void initState() {
     super.initState();
-    _unloadController = TextEditingController(
-      text: widget.item.unloadMinSeconds.value.toString(),
-    );
-    _reloadController = TextEditingController(
-      text: widget.item.reloadMinSeconds.value.toString(),
-    );
     _targetMinController = TextEditingController(
       text: (widget.item.calibratedBaseSeconds.value ~/ 60).toString(),
     );
@@ -50,8 +42,6 @@ class _FreezerConfigViewState extends State<FreezerConfigView> {
 
   @override
   void dispose() {
-    _unloadController.dispose();
-    _reloadController.dispose();
     _targetMinController.dispose();
     super.dispose();
   }
@@ -70,12 +60,6 @@ class _FreezerConfigViewState extends State<FreezerConfigView> {
   }
 
   void _saveAndClose(List<EquipmentModel> equipments) {
-    final unload =
-        int.tryParse(_unloadController.text.trim()) ??
-        widget.item.unloadMinSeconds.value;
-    final reload =
-        int.tryParse(_reloadController.text.trim()) ??
-        widget.item.reloadMinSeconds.value;
     final targetMin =
         int.tryParse(_targetMinController.text.trim()) ??
         (widget.item.calibratedBaseSeconds.value ~/ 60);
@@ -89,8 +73,6 @@ class _FreezerConfigViewState extends State<FreezerConfigView> {
 
     widget.viewModel.updateDoorTimingConfig(
       widget.item.freezerId,
-      unloadMinSeconds: unload,
-      reloadMinSeconds: reload,
       targetDurationSeconds: targetMin * 60,
       linkedEquipment: chosenEq,
       updateEquipmentBinding: true,
@@ -404,6 +386,8 @@ class _FreezerConfigViewState extends State<FreezerConfigView> {
     ThemeData theme,
     ColorScheme colorScheme,
   ) {
+    final leadSec = widget.item.predictedDoorLeadSeconds.value;
+
     return Card.filled(
       color: colorScheme.surfaceContainer,
       shape: RoundedRectangleBorder(
@@ -415,66 +399,123 @@ class _FreezerConfigViewState extends State<FreezerConfigView> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              '3. DETECÇÃO AUTOMÁTICA DE PORTA (RETIRADA VS RECARGA)',
-              style: theme.textTheme.labelSmall?.copyWith(
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.4,
-                color: colorScheme.secondary,
-              ),
+            Row(
+              children: [
+                Icon(
+                  Icons.auto_awesome_rounded,
+                  size: 16,
+                  color: colorScheme.secondary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '3. MOTOR INTELIGENTE DE PORTA & TEMPERATURA (AUTOMÁTICO)',
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.4,
+                      color: colorScheme.secondary,
+                    ),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Text(
-              'Configure quantos segundos de porta aberta diferenciam uma rápida inspeção, a retirada do lote pronto ou uma nova recarga:',
+              'O sistema reconhece automaticamente retirada vs. reabastecimento pela assinatura de tempo e salto térmico (ΔT), sem precisar configurar segundos manualmente:',
               style: theme.textTheme.bodySmall?.copyWith(
-                fontSize: 11,
+                fontSize: 11.5,
                 color: colorScheme.onSurfaceVariant,
               ),
             ),
             const SizedBox(height: AppSpacing.sm),
-            _NumericStepperField(
-              fieldKey: const ValueKey('input_unload_seconds'),
-              controller: _unloadController,
-              labelText: 'Tempo mín. Só Retirada (segundos)',
-              helperText:
-                  'Abaixo disso com lote pronto = "Verificação / Ainda Mole"',
-              unitLabel: 'seg',
-              onDecrement: () => _stepController(
-                _unloadController,
-                delta: -1,
-                min: 2,
-                max: 300,
-              ),
-              onIncrement: () => _stepController(
-                _unloadController,
-                delta: 1,
-                min: 2,
-                max: 300,
-              ),
+            _AutoFeatureInfoTile(
+              icon: Icons.sync_alt_rounded,
+              title: 'Auto-Reconhecimento de Retirada e Recarga',
+              subtitle:
+                  'Aberturas de troca (≥ 22s ou salto ≥ +2,3 °C) salvam o lote anterior como OK e já iniciam o novo ciclo. Se esvaziar sem reabastecer, toque em "Reiniciar" ou segure o card para marcar "Freezer Vazio".',
+              color: colorScheme.secondary,
             ),
-            const SizedBox(height: AppSpacing.sm),
-            _NumericStepperField(
-              fieldKey: const ValueKey('input_reload_seconds'),
-              controller: _reloadController,
-              labelText: 'Tempo mín. Retirou + Abasteceu (segundos)',
-              helperText:
-                  'Acima disso = encerra o lote atual e já inicia nova contagem',
-              unitLabel: 'seg',
-              onDecrement: () => _stepController(
-                _reloadController,
-                delta: -2,
-                min: 4,
-                max: 600,
-              ),
-              onIncrement: () => _stepController(
-                _reloadController,
-                delta: 2,
-                min: 4,
-                max: 600,
-              ),
+            const SizedBox(height: 6),
+            _AutoFeatureInfoTile(
+              icon: Icons.thermostat_auto_rounded,
+              title: 'Tempo Dinâmico pela Temperatura da Câmara',
+              subtitle:
+                  'Compensa automaticamente quando o freezer inicia quente (+4 °C a +6 °C após várias trocas) ou super gelado (-8 °C no 1º lote), sem sujar a calibração base do produto.',
+              color: colorScheme.tertiary,
+            ),
+            const SizedBox(height: 6),
+            _AutoFeatureInfoTile(
+              icon: Icons.notifications_active_rounded,
+              title: 'Antecipação do Alarme de Pronto (~${leadSec}s antes)',
+              subtitle:
+                  'Avisa ${leadSec}s antes do fim para descontar o tempo de caminhada até abrir a porta. A calibração base só muda quando você marca "Ainda Mole", "Muito Gelado" ou "Pronto" adiantado.',
+              color: AppTheme.successGreen,
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+final class _AutoFeatureInfoTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+
+  const _AutoFeatureInfoTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.55),
+        borderRadius: AppSpacing.borderRadiusSm,
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(icon, size: 18, color: color),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 11,
+                    height: 1.25,
+                    color: colorScheme.onSurfaceVariant,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

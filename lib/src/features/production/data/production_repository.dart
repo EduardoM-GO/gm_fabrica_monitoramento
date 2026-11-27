@@ -13,6 +13,7 @@ import 'package:gm_fabrica_monitoramento/src/domain/models/daily_production_acco
 import 'package:gm_fabrica_monitoramento/src/domain/models/product_model.dart';
 import 'package:gm_fabrica_monitoramento/src/domain/models/production_batch_model.dart';
 import 'package:gm_fabrica_monitoramento/src/utils/result.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 final class ProductionRepository {
   final ProductionDao _dao;
@@ -31,9 +32,18 @@ final class ProductionRepository {
   bool _isSyncingProducts = false;
   String? _lastProductsSyncError;
   RoomRawData? _currentRoom;
+  double? _lastLoggedRoomTemp;
+  double? _lastLoggedRoomHumidity;
+  DateTime? _lastLoggedRoomAt;
   int? _lastHardwareCount;
   int? _lastBootId;
   int _uncountedDiscardOffset = 0;
+
+  /// Mapa de sobra da caixa anterior (`carryOverUnits`) vinculada a cada `batchId` iniciado hoje.
+  /// Permite que a 1ª caixa de um lote feche com apenas `(boxCap - carryOverUnits)` ovos sem inflar o Total do Dia.
+  final Map<String, int> _carryOverByBatchId = {};
+
+  final _carryOverUnitsController = StreamController<int>.broadcast();
 
   // Streams reativos para a UI (latência zero - Hot Path)
   final _activeBatchController =
@@ -83,8 +93,12 @@ final class ProductionRepository {
   Stream<String?> get productsSyncErrorStream =>
       _productsErrorController.stream;
   Stream<RoomRawData?> get roomStream => _roomController.stream;
+  Stream<int> get activeCarryOverUnitsStream =>
+      _carryOverUnitsController.stream;
 
   ProductionBatchModel? get currentActiveBatch => _activeBatch;
+  int get currentActiveCarryOverUnits =>
+      _activeBatch != null ? (_carryOverByBatchId[_activeBatch!.id] ?? 0) : 0;
   DailyProductionAccountingModel get currentDailyAccounting =>
       _currentAccounting;
   List<ProductModel> get currentProducts => _availableProducts;
@@ -110,6 +124,7 @@ final class ProductionRepository {
     if (activeResult.isOk) {
       final restored = activeResult.valueOrThrow;
       if (restored != null) {
+        await _restoreCarryOverForBatch(restored.id);
         // Caso já tenha chegado algum frame de telemetria do ESP32 durante o _init(),
         // reconcilia a diferença entre o hardware e a última quantidade persistida
         if (_lastHardwareCount != null &&
@@ -131,6 +146,9 @@ final class ProductionRepository {
       }
       if (!_activeBatchController.isClosed) {
         _activeBatchController.add(_activeBatch);
+      }
+      if (!_carryOverUnitsController.isClosed) {
+        _carryOverUnitsController.add(currentActiveCarryOverUnits);
       }
     }
 
@@ -289,6 +307,7 @@ final class ProductionRepository {
           if (!_roomController.isClosed) {
             _roomController.add(_currentRoom);
           }
+          _maybeLogRoomSnapshotEvent(data.room!, DateTime.now());
         }
         if (_lastBootId != null && data.bootId != _lastBootId) {
           _lastHardwareCount = null;
@@ -297,6 +316,42 @@ final class ProductionRepository {
         _handleHardwarePulse(data.totalCount, isDirectHit: false);
       }
     });
+  }
+
+  /// Persiste amostras climáticas significativas da sala (`room_events_table`) quando há lote ativo:
+  /// - Variação >= 0.5 °C ou >= 3.0% UR (com intervalo mínimo de 30s)
+  /// - Ou snapshot periódico a cada 5 minutos (300s)
+  void _maybeLogRoomSnapshotEvent(RoomRawData room, DateTime now) {
+    final batchId = _activeBatch?.id;
+    if (batchId == null) return;
+
+    final tempDiff = _lastLoggedRoomTemp != null
+        ? (room.temp - _lastLoggedRoomTemp!).abs()
+        : double.infinity;
+    final humDiff = _lastLoggedRoomHumidity != null
+        ? (room.humidity - _lastLoggedRoomHumidity!).abs()
+        : double.infinity;
+    final elapsedSec = _lastLoggedRoomAt != null
+        ? now.difference(_lastLoggedRoomAt!).inSeconds
+        : 99999;
+
+    final isSignificantShift =
+        (tempDiff >= 0.5 || humDiff >= 3.0) && elapsedSec >= 30;
+    final isPeriodicDue = elapsedSec >= 300;
+
+    if (_lastLoggedRoomAt == null || isSignificantShift || isPeriodicDue) {
+      _lastLoggedRoomTemp = room.temp;
+      _lastLoggedRoomHumidity = room.humidity;
+      _lastLoggedRoomAt = now;
+      unawaited(
+        _dao.logRoomEvent(
+          batchId: batchId,
+          temperature: room.temp,
+          humidity: room.humidity,
+          recordedAt: now,
+        ),
+      );
+    }
   }
 
   /// Processa pulso de contagem recebido do hardware com máxima segurança e velocidade (0ms Hot Path)
@@ -352,10 +407,11 @@ final class ProductionRepository {
                   _uncountedDiscardOffset -
                   _currentAccounting.discardsCount)
               .clamp(0, 99999999);
+      final carryOver = currentActiveCarryOverUnits.clamp(0, boxCap - 1);
       _currentAccounting = _currentAccounting.copyWith(
         grossCount: newDailyGross,
         netCount: newDailyNet,
-        completedBoxes: newDailyNet ~/ boxCap,
+        completedBoxes: (newDailyNet + carryOver) ~/ boxCap,
       );
       if (!_dailyAccountingController.isClosed) {
         _dailyAccountingController.add(_currentAccounting);
@@ -435,10 +491,53 @@ final class ProductionRepository {
     );
   }
 
+  /// Consulta quantos ovos sobraram na última caixa aberta do lote anterior
+  Future<Result<({int carryOverUnits, String? sourceProductName})>>
+  getLastOpenBoxRemainder({
+    String? productId,
+    int? targetBoxCapacity,
+  }) {
+    return _dao.getLastOpenBoxRemainder(
+      productId: productId,
+      targetBoxCapacity: targetBoxCapacity,
+    );
+  }
+
+  Future<void> _persistCarryOverForBatch(
+    String batchId,
+    int carryOverUnits,
+  ) async {
+    if (carryOverUnits <= 0) {
+      _carryOverByBatchId.remove(batchId);
+    } else {
+      _carryOverByBatchId[batchId] = carryOverUnits;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (carryOverUnits > 0) {
+        await prefs.setInt('batch_carry_over_$batchId', carryOverUnits);
+      } else {
+        await prefs.remove('batch_carry_over_$batchId');
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _restoreCarryOverForBatch(String batchId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getInt('batch_carry_over_$batchId') ?? 0;
+      if (saved > 0) {
+        _carryOverByBatchId[batchId] = saved;
+      }
+    } catch (_) {}
+  }
+
   /// Inicia um novo lote de produção para um produto real.
+  /// [carryOverUnits]: quantidade de ovos da caixa anterior que estava incompleta (ex: 23 un.).
   /// Regra de negócio: proibido iniciar outro produto sem antes encerrar o lote atual.
   Future<Result<ProductionBatchModel>> startProductionBatch({
     required ProductModel product,
+    int carryOverUnits = 0,
   }) => Result.catchInAsync(
     fn: () async {
       await checkAndCloseExpiredBatches();
@@ -462,10 +561,20 @@ final class ProductionRepository {
         throw result.errorOrThrow;
       }
 
+      final boxCap = product.defaultBoxCapacity > 0
+          ? product.defaultBoxCapacity
+          : 50;
+      final safeCarryOver = carryOverUnits.clamp(0, boxCap - 1);
+
       _activeBatch = result.valueOrThrow;
       _lastHardwareCount = _activeBatch!.actualQuantity;
+      await _persistCarryOverForBatch(_activeBatch!.id, safeCarryOver);
+
       if (!_activeBatchController.isClosed) {
         _activeBatchController.add(_activeBatch);
+      }
+      if (!_carryOverUnitsController.isClosed) {
+        _carryOverUnitsController.add(safeCarryOver);
       }
       if (!_conveyorWithoutBatchController.isClosed) {
         _conveyorWithoutBatchController.add(false);
@@ -490,6 +599,7 @@ final class ProductionRepository {
   /// a produção do dia contínua até 23:59:59.
   Future<Result<ProductionBatchModel>> switchActiveBatchProduct({
     required ProductModel newProduct,
+    int carryOverUnits = 0,
   }) => Result.catchInAsync(
     fn: () async {
       await checkAndCloseExpiredBatches();
@@ -505,7 +615,10 @@ final class ProductionRepository {
         }
       }
 
-      final startRes = await startProductionBatch(product: newProduct);
+      final startRes = await startProductionBatch(
+        product: newProduct,
+        carryOverUnits: carryOverUnits,
+      );
       if (startRes.isError) {
         throw startRes.errorOrThrow;
       }
@@ -533,6 +646,9 @@ final class ProductionRepository {
             if (!_activeBatchController.isClosed) {
               _activeBatchController.add(null);
             }
+            if (!_carryOverUnitsController.isClosed) {
+              _carryOverUnitsController.add(0);
+            }
           }
 
           await refreshDailyAccounting();
@@ -555,6 +671,7 @@ final class ProductionRepository {
         (_activeBatch?.product.defaultBoxCapacity ?? 50) > 0
             ? (_activeBatch?.product.defaultBoxCapacity ?? 50)
             : 50;
+    final carryOver = currentActiveCarryOverUnits.clamp(0, boxCap - 1);
 
     if (deltaQty < 0) {
       final addedDiscards = deltaQty.abs();
@@ -567,7 +684,7 @@ final class ProductionRepository {
       _currentAccounting = _currentAccounting.copyWith(
         discardsCount: updatedDiscards,
         netCount: updatedNet,
-        completedBoxes: updatedNet ~/ boxCap,
+        completedBoxes: (updatedNet + carryOver) ~/ boxCap,
       );
     } else if (deltaQty > 0) {
       final updatedGross = _currentAccounting.grossCount + deltaQty;
@@ -578,7 +695,7 @@ final class ProductionRepository {
       _currentAccounting = _currentAccounting.copyWith(
         grossCount: updatedGross,
         netCount: updatedNet,
-        completedBoxes: updatedNet ~/ boxCap,
+        completedBoxes: (updatedNet + carryOver) ~/ boxCap,
       );
     }
     if (!_dailyAccountingController.isClosed) {
@@ -602,13 +719,17 @@ final class ProductionRepository {
   Future<Result<DailyProductionAccountingModel>> refreshDailyAccounting({
     DateTime? date,
   }) async {
-    final result = await _dao.getDailyAccounting(date: date);
+    final result = await _dao.getDailyAccounting(
+      date: date,
+      carryOverByBatchId: _carryOverByBatchId,
+    );
     if (result.isOk) {
       var accounting = result.valueOrThrow;
       final boxCap =
           (_activeBatch?.product.defaultBoxCapacity ?? 50) > 0
               ? (_activeBatch?.product.defaultBoxCapacity ?? 50)
               : 50;
+      final carryOver = currentActiveCarryOverUnits.clamp(0, boxCap - 1);
 
       final resolvedGross = (_hitBuffer.isNotEmpty &&
               _currentAccounting.grossCount > accounting.grossCount)
@@ -623,7 +744,10 @@ final class ProductionRepository {
         grossCount: resolvedGross,
         netCount: resolvedNet,
         completedBoxes: _activeBatch != null
-            ? (resolvedNet ~/ boxCap)
+            ? max(
+                accounting.completedBoxes,
+                (resolvedNet + carryOver) ~/ boxCap,
+              )
             : accounting.completedBoxes,
       );
 
@@ -655,5 +779,6 @@ final class ProductionRepository {
     _productsLoadingController.close();
     _productsErrorController.close();
     _roomController.close();
+    _carryOverUnitsController.close();
   }
 }
